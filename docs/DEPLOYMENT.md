@@ -14,7 +14,6 @@
 
 1. Make `abzops/xs-gym` public (required on GitHub Free) — or use a paid plan.
 2. Repo → Settings → Pages → Source: **GitHub Actions**.
-3. Give the Claude GitHub App access to the repo (see `PROGRESS.md` X1).
 
 **Workflow** `.github/workflows/pages.yml` deploys on every push to `main`:
 

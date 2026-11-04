@@ -84,7 +84,7 @@ Server-side only (Edge Function / GitHub Actions secrets, never `VITE_`):
 
 | Account | Needed by | Who creates | Cost |
 |---|---|---|---|
-| GitHub repo `abzops/xs-gym` + Claude GitHub App access | Now | Owner | Free (public repo) |
+| GitHub repo `abzops/xs-gym` | Now | Owner | Free (public repo) |
 | GitHub Pages (Source: GitHub Actions) | Phase 3 | Owner enables in repo settings | Free |
 | Supabase staging + production projects | Phase 3 | Owner (D-13) | Free to start; Pro from $25/month (D-09) |
 | DNS for `xelorsoft.com` | Phase 10 | Owner (D-14) | Existing |

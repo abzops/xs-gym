@@ -27,8 +27,8 @@
 
 | # | Blocker | Owner action | Status |
 |---|---|---|---|
-| X1 | Claude cannot push to `abzops/xs-gym` (GitHub 403). | Install the Claude GitHub App on `abzops` with access to `xs-gym` (<https://github.com/apps/claude/installations/select_target>), or reconnect GitHub in claude.ai connector settings. | **Resolved** 05 Nov 2026 |
-| X2 | This workspace cannot reach `supabase.com` or Docker registries. | Either allow Supabase domains for this workspace (claude.ai → Settings → Capabilities), or rely on CI for full-stack tests. | Open — workaround in ADR-0006 |
+| X1 | Push access to `abzops/xs-gym` (GitHub 403). | Grant repository write access to the build environment. | **Resolved** 05 Nov 2026 |
+| X2 | Build workspace cannot reach `supabase.com` or Docker registries. | Allow Supabase domains for the workspace, or rely on CI for full-stack tests. | Open — workaround in ADR-0006 |
 | X3 | Blocking business decisions D-02 to D-05. | Answer in `docs/OWNER_DECISIONS.md`. | Open |
 | X4 | GitHub Pages on a free plan requires the repo to be **public**. | Make `abzops/xs-gym` public (or upgrade the GitHub plan) and enable Pages → Source: GitHub Actions. | Repo is public ✓. **Pages not enabled yet** — owner must set Source: GitHub Actions, then re-run the workflow |
 
@@ -78,5 +78,5 @@
   configure-pages v5, upload-pages-artifact v4, deploy-pages v4).
 - 31 small commits; push succeeded once owner granted access. Pages enable
   is not reachable via this session's API proxy, so the owner enables it.
-- Workspace note: run throwaway Postgres as user `claude` under `/home/claude`
-  (scratchpad parent is not traversable by that user).
+- Workspace note: run throwaway Postgres as a non-root user in that user's home
+  directory (Postgres refuses to run as root).
