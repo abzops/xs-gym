@@ -1,0 +1,47 @@
+# --- Secrets: never commit ---------------------------------------------------
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+supabase/.env
+supabase/.temp/
+supabase/functions/.env
+supabase/functions/**/.env
+
+# --- Personal / member data: never commit ------------------------------------
+# Database dumps, exports and real imports may contain member PII.
+*.dump
+*.sql.gz
+*.backup
+/backups/
+/exports/
+/imports/
+**/real-data/
+# Seed and fixture files are allowed ONLY under supabase/seed.sql and
+# tests/fixtures/ and must contain synthetic data.
+
+# --- Dependencies and build output -------------------------------------------
+node_modules/
+dist/
+dev-dist/
+coverage/
+.vite/
+*.tsbuildinfo
+
+# --- Test artefacts ----------------------------------------------------------
+playwright-report/
+test-results/
+blob-report/
+.lighthouseci/
+/tests/.pgdata/
+
+# --- Tooling / OS ------------------------------------------------------------
+.DS_Store
+Thumbs.db
+*.log
+npm-debug.log*
+.idea/
+.vscode/*
+!.vscode/extensions.json
