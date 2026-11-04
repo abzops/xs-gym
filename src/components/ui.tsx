@@ -1,15 +1,26 @@
 import { AlertTriangle, CheckCircle2, Info, X } from 'lucide-react';
-import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
+import { Link, type LinkProps } from 'react-router';
+import { setTransition } from '../lib/motion';
 import type { MembershipStatus } from '../lib/types';
 
-/* ---------- Sheet: bottom sheet on phones, centred dialog on wider screens ---------- */
+/* ---------- Sheet: bottom sheet on phones, centred dialog on wider screens ----------
+   Swipe down to dismiss (distance or velocity), Escape or backdrop to close.
+   Closing plays a short exit before unmounting. */
 export function Sheet({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
   const ref = useRef<HTMLDivElement>(null);
+  const [closing, setClosing] = useState(false);
+  const drag = useRef<{ y: number; t: number; dy: number } | null>(null);
+  const close = useCallback(() => {
+    setClosing(true);
+    setTimeout(onClose, 200);
+  }, [onClose]);
+
   useEffect(() => {
     const prev = document.activeElement as HTMLElement | null;
     const first = ref.current?.querySelector<HTMLElement>('input, select, textarea, button:not([data-close])');
-    first?.focus();
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
+    if (window.matchMedia('(pointer: fine)').matches) first?.focus();
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && close();
     document.addEventListener('keydown', onKey);
     document.body.style.overflow = 'hidden';
     return () => {
@@ -17,18 +28,60 @@ export function Sheet({ title, onClose, children }: { title: string; onClose: ()
       document.body.style.overflow = '';
       prev?.focus();
     };
-  }, [onClose]);
+  }, [close]);
+
+  const onPointerDown = (e: ReactPointerEvent) => {
+    if (e.pointerType === 'mouse' || (e.target as HTMLElement).closest('button') || (ref.current && ref.current.scrollTop > 0)) return;
+    drag.current = { y: e.clientY, t: performance.now(), dy: 0 };
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+  };
+  const onPointerMove = (e: ReactPointerEvent) => {
+    const d = drag.current;
+    if (!d || !ref.current) return;
+    const dy = e.clientY - d.y;
+    d.dy = dy;
+    // Resist upward drags; follow downward drags.
+    const y = dy < 0 ? dy / 6 : dy;
+    ref.current.style.transition = 'none';
+    ref.current.style.transform = `translateY(${y}px)`;
+  };
+  const onPointerUp = () => {
+    const d = drag.current;
+    drag.current = null;
+    if (!d || !ref.current) return;
+    const velocity = d.dy / Math.max(1, performance.now() - d.t);
+    ref.current.style.transition = '';
+    if (d.dy > 120 || (d.dy > 24 && velocity > 0.11)) {
+      ref.current.style.transform = 'translateY(100%)';
+      setTimeout(onClose, 200);
+    } else {
+      ref.current.style.transform = '';
+    }
+  };
+
   return (
-    <div className="overlay" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+    <div className={`overlay ${closing ? 'closing' : ''}`} onMouseDown={(e) => e.target === e.currentTarget && close()}>
       <div className="sheet" role="dialog" aria-modal="true" aria-label={title} ref={ref}>
-        <div className="sheet-head">
-          <h2>{title}</h2>
-          <button className="btn ghost icon-btn" onClick={onClose} aria-label="Close" data-close>
-            <X size={20} />
-          </button>
+        <div className="sheet-grab" onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp}>
+          <span className="handle" aria-hidden />
+          <div className="sheet-head">
+            <h2>{title}</h2>
+            <button className="btn ghost icon-btn" onClick={close} aria-label="Close" data-close>
+              <X size={20} />
+            </button>
+          </div>
         </div>
         {children}
       </div>
+    </div>
+  );
+}
+
+/** Smoothly expands or collapses its content (used for optional form fields). */
+export function Collapse({ open, children }: { open: boolean; children: ReactNode }) {
+  return (
+    <div className={`collapse ${open ? 'open' : ''}`} aria-hidden={!open}>
+      <div>{children}</div>
     </div>
   );
 }
@@ -139,8 +192,21 @@ export function Field({ label, hint, error, children }: { label: string; hint?: 
 export function Segmented<T extends string>({ value, options, onChange, label }: {
   value: T; options: { value: T; label: string }[]; onChange: (v: T) => void; label: string;
 }) {
+  const wrap = useRef<HTMLDivElement>(null);
+  const [thumb, setThumb] = useState<{ x: number; w: number } | null>(null);
+  useLayoutEffect(() => {
+    const measure = () => {
+      const el = wrap.current?.querySelector<HTMLButtonElement>('button[aria-pressed="true"]');
+      if (el) setThumb({ x: el.offsetLeft, w: el.offsetWidth });
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    if (wrap.current) ro.observe(wrap.current);
+    return () => ro.disconnect();
+  }, [value, options.length]);
   return (
-    <div className="segmented" role="group" aria-label={label}>
+    <div className="segmented" role="group" aria-label={label} ref={wrap}>
+      {thumb && <span className="thumb" aria-hidden style={{ transform: `translateX(${thumb.x}px)`, width: thumb.w }} />}
       {options.map((o) => (
         <button key={o.value} type="button" aria-pressed={value === o.value} onClick={() => onChange(o.value)}>
           {o.label}
@@ -148,4 +214,14 @@ export function Segmented<T extends string>({ value, options, onChange, label }:
       ))}
     </div>
   );
+}
+
+/** Link that opens a detail screen with a push transition. */
+export function PushLink(props: LinkProps) {
+  return <Link viewTransition {...props} onClick={(e) => { setTransition('push'); props.onClick?.(e); }} />;
+}
+
+/** Link back to a parent screen with a pop transition. */
+export function BackLink(props: LinkProps) {
+  return <Link viewTransition {...props} onClick={(e) => { setTransition('pop'); props.onClick?.(e); }} />;
 }
