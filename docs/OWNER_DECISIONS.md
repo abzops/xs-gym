@@ -110,6 +110,25 @@ Who controls DNS for `xelorsoft.com`? Access is needed to add a `CNAME` for
 `gym` → `abzops.github.io` and a GitHub Pages domain-verification `TXT` record.
 **Decision:** _pending_
 
+## Assumed so the build could continue (05 Nov 2026)
+
+The owner asked to build end to end without stopping. These recommended options
+are now **implemented**; each can be changed later with a small migration.
+
+| Decision | Assumed | Where it lives |
+|---|---|---|
+| D-03 end date | Option A: inclusive last day, calendar months, month-end clamp | `private.membership_end_date` |
+| D-04 renewal start | Option A: continue after old end if within grace, else today; staff may pick a date 30 days back to 60 days ahead | `sell_membership` |
+| D-04 grace days | 3 (owner can change 0–60 in Settings) | `gyms.grace_days` |
+| D-05 sign-in | Email + password per person; staff sign up, then the owner adds them | `save_staff` |
+| D-06 expiry | Read-only: view and export stay available, writes blocked | `private.can_write` |
+| D-07 attendance | One check-in per day; expired or no plan needs a manager override with a reason (audited) | `check_in` |
+| D-08 member numbers | `XS-0001` sequence per gym; legacy numbers not yet supported | `private.next_member_no` |
+| D-10 brand | Functional status colours used for states only; transparent logo variants derived from the SVG | `src/styles/app.css`, `public/brand/` |
+| D-12 money | Admission fee optional at first sale; discounts by owner/manager with a reason; methods cash, UPI, card, bank, other; no refunds (reverse and re-record instead) | `sell_membership`, `record_payment` |
+| D-13 Supabase | One project `xs-gym` (ref `knuanihnxtxtyrgvsumq`, Mumbai, Free plan) used as production. No staging project yet | — |
+| D-15 trial start | Trial starts when the owner creates the gym (not on Xelorsoft activation); one gym per account | `create_gym` |
+
 ## Decided
 
 ### D-01 — Frontend hosting · decided 05 Nov 2026
