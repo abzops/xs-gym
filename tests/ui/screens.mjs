@@ -69,7 +69,7 @@ const session = { access_token: fakeJwt({ sub: userId, exp, role: 'authenticated
   user: { id: userId, email: 'owner@example.com', aud: 'authenticated', role: 'authenticated', app_metadata: {}, user_metadata: {}, created_at: '2026-11-01T00:00:00Z' } };
 
 const viewports = [['phone', 390, 844], ['tablet', 768, 1024], ['tablet-land', 1024, 768], ['laptop', 1366, 768]];
-const screens = [['dashboard', ''], ['members', '/members'], ['member', `/members/${members[0].id}`], ['checkin', '/check-in'],
+const screens = [['dashboard', ''], ['members', '/members'], ['import', '/members/import'], ['member', `/members/${members[0].id}`], ['checkin', '/check-in'],
   ['payments', '/payments'], ['receipt', '/receipts/py1'], ['plans', '/plans'], ['expenses', '/expenses'], ['reports', '/reports'], ['settings', '/settings']];
 
 const browser = await chromium.launch();
