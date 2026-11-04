@@ -74,17 +74,20 @@ const screens = [['dashboard', ''], ['members', '/members'], ['import', '/member
 
 const browser = await chromium.launch();
 let failures = 0;
-for (const [vpName, w, h] of [['login-phone', 390, 844], ['login-laptop', 1366, 768]]) {
-  const page = await browser.newPage({ viewport: { width: w, height: h } });
-  const errors = [];
-  page.on('console', (m) => m.type() === 'error' && errors.push(m.text()));
-  await page.goto(`${baseUrl}login`, { waitUntil: 'networkidle' });
-  const overflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth);
-  const ok = !overflow && errors.length === 0 && (await page.getByRole('button', { name: 'Sign in' }).count()) > 0;
-  if (!ok) failures++;
-  console.log(`${ok ? 'ok  ' : 'FAIL'} ${vpName}${overflow ? ' overflow' : ''}${errors.length ? ' errors=' + errors.join(' | ') : ''}`);
-  await page.screenshot({ path: `${outDir}/${vpName}.png` });
-  await page.close();
+for (const [vpName, w, h] of viewports) {
+  for (const [name, path, needle] of [['landing', '', 'Start free trial'], ['login', 'login', 'Sign in']]) {
+    const page = await browser.newPage({ viewport: { width: w, height: h } });
+    const errors = [];
+    page.on('console', (m) => m.type() === 'error' && errors.push(m.text()));
+    page.on('pageerror', (e) => errors.push(e.message));
+    await page.goto(`${baseUrl}${path}`, { waitUntil: 'networkidle' });
+    const overflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth);
+    const ok = !overflow && errors.length === 0 && (await page.getByRole('link', { name: needle }).or(page.getByRole('button', { name: needle })).count()) > 0;
+    if (!ok) failures++;
+    console.log(`${ok ? 'ok  ' : 'FAIL'} ${vpName.padEnd(11)} ${name.padEnd(9)}${overflow ? ' OVERFLOW' : ''}${errors.length ? ' errors=' + errors.join(' | ') : ''}`);
+    await page.screenshot({ path: `${outDir}/${vpName}-${name}.png`, fullPage: true });
+    await page.close();
+  }
 }
 for (const [vpName, w, h] of viewports) {
   const ctx = await browser.newContext({ viewport: { width: w, height: h } });
