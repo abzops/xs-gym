@@ -25,6 +25,7 @@ const PaymentsPage = lazy(() => import('./features/payments/PaymentsPage').then(
 const PlansPage = lazy(() => import('./features/plans/PlansPage').then((m) => ({ default: m.PlansPage })));
 const ReportsPage = lazy(() => import('./features/reports/ReportsPage').then((m) => ({ default: m.ReportsPage })));
 const ReceiptPage = lazy(() => import('./features/payments/ReceiptPage').then((m) => ({ default: m.ReceiptPage })));
+const ImportPage = lazy(() => import('./features/members/ImportPage').then((m) => ({ default: m.ImportPage })));
 const SettingsPage = lazy(() => import('./features/settings/SettingsPage').then((m) => ({ default: m.SettingsPage })));
 
 // GitHub Pages cannot send frame-ancestors; refuse to render inside a frame.
@@ -94,6 +95,7 @@ function App() {
           <Route index element={<GymHome />} />
           <Route path="check-in" element={<Allow perm="attendance.checkin"><CheckInPage /></Allow>} />
           <Route path="members" element={<Allow perm="members.read"><MembersPage /></Allow>} />
+          <Route path="members/import" element={<Allow perm="members.export"><ImportPage /></Allow>} />
           <Route path="members/new" element={<Allow perm="members.write"><NewMemberPage /></Allow>} />
           <Route path="members/:memberId" element={<Allow perm="members.read"><MemberDetail /></Allow>} />
           <Route path="payments" element={<Allow perm="payments.read"><PaymentsPage /></Allow>} />

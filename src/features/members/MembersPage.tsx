@@ -1,4 +1,4 @@
-import { Plus, Search } from 'lucide-react';
+import { Plus, Search, Upload } from 'lucide-react';
 import { useDeferredValue, useState } from 'react';
 import { Link, useSearchParams } from 'react-router';
 import { useGym } from '../../app/gym';
@@ -30,6 +30,7 @@ export function MembersPage() {
     <div className="stack lg">
       <div className="page-head">
         <h1>Members</h1>
+        {can('members.export') && <Link className="btn" to={`${base}/members/import`}><Upload size={18} /> Import</Link>}
         {can('members.write') && (
           <Link className="btn primary" to={`${base}/members/new`}><Plus size={18} /> Add member</Link>
         )}
