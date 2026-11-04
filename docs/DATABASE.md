@@ -20,6 +20,7 @@ the Phase 2 gate. Rules marked *pending* depend on `OWNER_DECISIONS.md`.
 ## 2. Tables
 
 ### Platform and identity
+
 | Table | Purpose / key columns |
 |---|---|
 | `gyms` | Tenant. `name, slug unique, timezone default 'Asia/Kolkata', currency default 'INR', grace_days, status, logo_path, settings jsonb (validated)` |
@@ -28,6 +29,7 @@ the Phase 2 gate. Rules marked *pending* depend on `OWNER_DECISIONS.md`.
 | `role_permissions` | `role, permission` — seeded matrix (see `SECURITY.md` §3) |
 
 ### Members and memberships
+
 | Table | Purpose / key columns |
 |---|---|
 | `members` | `member_no` (per-gym sequence, D-08), `legacy_member_no`, `full_name, phone_e164, phone_normalized, email, dob, gender, address, emergency_contact, photo_path, join_date, status (active/archived)`, `unique (gym_id, phone_normalized)` among active members |
@@ -38,9 +40,13 @@ the Phase 2 gate. Rules marked *pending* depend on `OWNER_DECISIONS.md`.
 | `membership_events` | Append-only history: created, renewed, frozen, unfrozen, cancelled |
 
 ### Attendance
+
+| Table | Purpose / key columns |
+|---|---|
 | `attendance_events` | `member_id, checked_in_at (server now()), source (desk/qr/kiosk), status_at_checkin, override_reason, recorded_by, corrected_from_id` — corrections insert a new row and mark the old one superseded; nothing is edited in place |
 
 ### Money (ledger — ADR-0003)
+
 | Table | Purpose / key columns |
 |---|---|
 | `charges` | **What a member owes** (added — blueprint gap B2). `member_id, kind (membership/admission/pt/other), member_membership_id, gross_paise > 0, discount_paise >= 0, discount_reason, net_paise generated (gross − discount) check >= 0, due_date, status (open/void), void_reason` |
@@ -50,15 +56,18 @@ the Phase 2 gate. Rules marked *pending* depend on `OWNER_DECISIONS.md`.
 | `expense_categories`, `expenses` | `category_id, amount_paise > 0, expense_date, method, description, attachment_path, recorded_by`; corrections via `expense_reversals` (same pattern) |
 
 ### Staff, workouts, notifications (P0 shape; P1 detail later)
+
 `trainers` (profile link, status), `trainer_assignments`, `notifications`,
 `notification_templates`, `communication_consents`; P1: `exercise_library`,
 `workout_plans`, `workout_plan_items`.
 
 ### SaaS subscription (separate billing domain — never joined to member money)
+
 `saas_plans`, `gym_subscriptions (trial_started_at, trial_ends_at timestamptz, status)`,
 `saas_subscription_events`, `saas_payments`, `feature_entitlements`.
 
 ### Audit and AI
+
 `audit_logs` (append-only), `ai_conversations`, `ai_messages`, `ai_tool_calls`,
 `ai_provider_usage`, `voice_session_events` (metadata only, no audio).
 
