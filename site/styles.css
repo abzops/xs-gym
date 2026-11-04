@@ -1,0 +1,65 @@
+@font-face { font-family: "Manrope"; font-weight: 400; font-display: swap; src: url("assets/fonts/manrope-latin-400-normal.woff2") format("woff2"); }
+@font-face { font-family: "Manrope"; font-weight: 600; font-display: swap; src: url("assets/fonts/manrope-latin-600-normal.woff2") format("woff2"); }
+@font-face { font-family: "IBM Plex Mono"; font-weight: 400; font-display: swap; src: url("assets/fonts/ibm-plex-mono-latin-400-normal.woff2") format("woff2"); }
+
+:root {
+  --carbon: #171719;
+  --porcelain: #F6F6F4;
+  --silver: #B7B7BD;
+  --line: color-mix(in srgb, var(--silver) 22%, var(--carbon)); /* Silver = dividers per brand guide */
+  --surface: var(--carbon);
+  --text: var(--porcelain);
+  --muted: var(--silver);
+  --font-sans: "Manrope", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+}
+
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  background: var(--surface);
+  color: var(--text);
+  font: 400 1rem/1.6 var(--font-sans);
+}
+
+.wrap { max-width: 44rem; margin: 0 auto; padding: 2.5rem 1rem 3rem; }
+
+.brand img { display: block; width: 240px; max-width: 100%; height: auto; }
+
+.label {
+  font: 400 0.75rem/1.4 var(--font-mono);
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  margin: 0 0 0.75rem;
+}
+
+.intro { margin: 3rem 0 2.5rem; }
+h1 { font-weight: 600; font-size: clamp(1.75rem, 5vw, 2.5rem); line-height: 1.15; margin: 0 0 1rem; }
+.lede { color: var(--muted); margin: 0; max-width: 36rem; }
+
+.phases { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--line); }
+.phases li {
+  display: grid;
+  grid-template-columns: 3.5rem 1fr auto;
+  gap: 0.75rem;
+  align-items: baseline;
+  padding: 0.875rem 0;
+  border-bottom: 1px solid var(--line);
+}
+.phases .n, .phases .s { font: 400 0.8125rem/1.4 var(--font-mono); color: var(--muted); }
+.phases .t { min-width: 0; }
+.phases .now .t { font-weight: 600; }
+.phases .now .s { color: var(--text); }
+.phases .now .s::before { content: ""; display: inline-block; width: 0.5rem; height: 0.5rem; border-radius: 50%; background: var(--porcelain); margin-right: 0.5rem; vertical-align: 0.05em; }
+
+.foot { margin-top: 3rem; color: var(--muted); font-size: 0.875rem; }
+.foot p { margin: 0 0 0.25rem; }
+a { color: var(--text); text-underline-offset: 0.2em; }
+a:focus-visible { outline: 2px solid var(--porcelain); outline-offset: 2px; }
+
+@media (max-width: 420px) {
+  .phases li { grid-template-columns: 2.75rem 1fr; }
+  .phases .s { grid-column: 2; }
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
