@@ -74,6 +74,11 @@
 - Owner set Pages source to `gh-pages`; site live.
 - Premium redesign: Carbon sidebar and Today band, split sign-in, adaptive transparent favicon,
   logo rule (black on light, white on dark), design rules from taste-skill and emilkowalski/skills (ADR-0007).
+- Native-app pass: data router with View Transitions (push/pop/tab), swipe-to-dismiss sheets with exit
+  animation, sliding segmented control, smooth field collapse on sign-in, frosted iOS-style tab bar
+  (< 720 px), Carbon icon rail (720–1099 px, fixes tablet), sidebar (≥ 1100 px), round icon actions on
+  phone headers, non-essential copy removed. UI checks now cover 6 sizes incl. iPad + a phone flow.
+- Known: first-load JS is ~185 KB gzip (budget 170 KB) after the data router; trim in a later pass.
 
 ### 2026-11-05 — Session 1
 
