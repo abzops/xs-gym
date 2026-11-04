@@ -3,6 +3,13 @@
 Official Xelorsoft identity, version 1.0 (P6 confirmed, 20 October 2026). Do not
 redesign, recolour, stretch or retype the logo. See `source/Xelorsoft-Brand-Guide.pdf`.
 
+## Logo colour rule (owner, 05 Nov 2026)
+
+On white or light backgrounds use the black logo (`xelorsoft-on-light.svg`, the
+transparent black badge). On black or Carbon backgrounds use the white logo
+(`xelorsoft-on-dark.svg`, the transparent white badge). The favicon follows the
+same rule automatically: black on light browser tabs, white on dark tabs.
+
 ## `source/` — as supplied by the owner (do not edit)
 
 Byte-identical copies of the files supplied on 05 Nov 2026. Checksums in

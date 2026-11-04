@@ -22,7 +22,8 @@ const NAV: NavItem[] = [
   { to: 'settings', label: 'Settings', icon: Settings, perm: 'staff.read' },
 ];
 
-const mark = `${import.meta.env.BASE_URL}brand/icon-192.png`;
+// Transparent badge: black on light backgrounds, white on dark (brand rule).
+const mark = `${import.meta.env.BASE_URL}brand/favicon.svg`;
 
 export function Shell() {
   const { gym, role, can, canWrite, subscription } = useGym();
@@ -59,7 +60,7 @@ export function Shell() {
 
       <div>
         <header className="topbar">
-          <img className="brand-mark" src={mark} alt="" width={28} height={28} />
+          <img className="brand-mark" src={mark} alt="" width={26} height={26} />
           <span className="gym">{gym.name}</span>
           <span className="spacer" />
           {trialDays !== null && <span className="chip">Trial: {trialDays} day{trialDays === 1 ? '' : 's'} left</span>}
