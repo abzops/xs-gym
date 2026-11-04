@@ -4,7 +4,7 @@ import '@fontsource/ibm-plex-mono/latin-400.css';
 import './styles/app.css';
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { StrictMode, type ReactNode } from 'react';
+import { lazy, StrictMode, Suspense, type ReactNode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { BrowserRouter, Link, Navigate, Outlet, Route, Routes, useParams } from 'react-router';
 import { AuthProvider, useAuth } from './app/auth';
@@ -14,15 +14,17 @@ import { Empty, Notice, ToastProvider } from './components/ui';
 import { LoginPage, SetNewPassword, SetupGym } from './features/auth/AuthPages';
 import { CheckInPage } from './features/checkin/CheckInPage';
 import { Dashboard } from './features/dashboard/Dashboard';
-import { ExpensesPage } from './features/expenses/ExpensesPage';
 import { MemberDetail } from './features/members/MemberDetail';
 import { NewMemberPage } from './features/members/MemberForm';
 import { MembersPage } from './features/members/MembersPage';
-import { PaymentsPage } from './features/payments/PaymentsPage';
-import { PlansPage } from './features/plans/PlansPage';
-import { ReportsPage } from './features/reports/ReportsPage';
-import { SettingsPage } from './features/settings/SettingsPage';
 import { errorMessage } from './lib/errors';
+
+// Less frequent screens load on demand to keep the first load small.
+const ExpensesPage = lazy(() => import('./features/expenses/ExpensesPage').then((m) => ({ default: m.ExpensesPage })));
+const PaymentsPage = lazy(() => import('./features/payments/PaymentsPage').then((m) => ({ default: m.PaymentsPage })));
+const PlansPage = lazy(() => import('./features/plans/PlansPage').then((m) => ({ default: m.PlansPage })));
+const ReportsPage = lazy(() => import('./features/reports/ReportsPage').then((m) => ({ default: m.ReportsPage })));
+const SettingsPage = lazy(() => import('./features/settings/SettingsPage').then((m) => ({ default: m.SettingsPage })));
 
 // GitHub Pages cannot send frame-ancestors; refuse to render inside a frame.
 if (window.top !== window.self) {
@@ -112,7 +114,9 @@ createRoot(document.getElementById('root')!).render(
       <AuthProvider>
         <ToastProvider>
           <BrowserRouter basename={import.meta.env.BASE_URL.replace(/\/$/, '')}>
-            <App />
+            <Suspense fallback={<Splash />}>
+              <App />
+            </Suspense>
           </BrowserRouter>
         </ToastProvider>
       </AuthProvider>
