@@ -270,3 +270,12 @@ table.data tfoot td { font-weight: 600; border-top: 1px solid var(--line-strong)
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }
+
+/* ---------- Print (receipts) ---------- */
+@media print {
+  :root { --bg: #fff; --surface: #fff; --text: #000; --text-2: #333; --line: #ccc; color-scheme: light; }
+  .sidebar, .topbar, .bottomnav, .toasts, .no-print { display: none !important; }
+  .shell { display: block; }
+  .main { padding: 0; }
+  .receipt { border: 0; padding: 0; }
+}
