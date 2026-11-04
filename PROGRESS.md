@@ -11,7 +11,7 @@
 | Phase | **0 — Repository and brand discovery** (finishing) → then Phase 1 |
 | Phase 0 status | Audit, plan and design drafts done. **Awaiting owner review + push access.** |
 | Branch | `main` |
-| Remote | `https://github.com/abzops/xs-gym` — **push blocked (403)**, see §3 |
+| Remote | `https://github.com/abzops/xs-gym` — public, pushing works (05 Nov 2026) |
 | Hosting | GitHub Pages (owner decision, 05 Nov 2026) |
 | Last updated | 05 Nov 2026 |
 
@@ -27,10 +27,10 @@
 
 | # | Blocker | Owner action | Status |
 |---|---|---|---|
-| X1 | Claude cannot push to `abzops/xs-gym` (GitHub 403). | Install the Claude GitHub App on `abzops` with access to `xs-gym` (<https://github.com/apps/claude/installations/select_target>), or reconnect GitHub in claude.ai connector settings. | Open |
+| X1 | Claude cannot push to `abzops/xs-gym` (GitHub 403). | Install the Claude GitHub App on `abzops` with access to `xs-gym` (<https://github.com/apps/claude/installations/select_target>), or reconnect GitHub in claude.ai connector settings. | **Resolved** 05 Nov 2026 |
 | X2 | This workspace cannot reach `supabase.com` or Docker registries. | Either allow Supabase domains for this workspace (claude.ai → Settings → Capabilities), or rely on CI for full-stack tests. | Open — workaround in ADR-0006 |
 | X3 | Blocking business decisions D-02 to D-05. | Answer in `docs/OWNER_DECISIONS.md`. | Open |
-| X4 | GitHub Pages on a free plan requires the repo to be **public**. | Make `abzops/xs-gym` public (or upgrade the GitHub plan) and enable Pages → Source: GitHub Actions. | Open |
+| X4 | GitHub Pages on a free plan requires the repo to be **public**. | Make `abzops/xs-gym` public (or upgrade the GitHub plan) and enable Pages → Source: GitHub Actions. | Repo is public ✓. **Pages not enabled yet** — owner must set Source: GitHub Actions, then re-run the workflow |
 
 ## 4. Done
 
@@ -52,10 +52,9 @@
 
 ## 5. Next steps (in order)
 
-1. **Owner:** fix X1, then push — `git push -u origin main` from this repo (or from
-   the bundle: `git clone xs-gym.bundle xs-gym && cd xs-gym && git remote set-url origin https://github.com/abzops/xs-gym && git push -u origin main`).
-2. **Owner:** X4 — make repo public, Settings → Pages → Source: GitHub Actions.
-   The workflow then publishes `site/` to <https://abzops.github.io/xs-gym/>.
+1. ~~Push access (X1)~~ — done; 31 commits pushed 05 Nov 2026.
+2. **Owner:** X4 — Settings → Pages → Source: **GitHub Actions**, then Actions →
+   "Deploy to GitHub Pages" → Re-run. Publishes `site/` to <https://abzops.github.io/xs-gym/>.
 3. **Owner:** review `docs/PROJECT_AUDIT.md` + `docs/IMPLEMENTATION_PLAN.md`
    (Phase 0 exit gate) and answer D-02…D-05 in `docs/OWNER_DECISIONS.md`.
 4. **Next session — Phase 1:** use `docs/PRODUCT_REQUIREMENTS.md` §4 discovery kit
@@ -77,6 +76,7 @@
   function on a throwaway PostgreSQL 16 (13/13 pass).
 - Built status page + Pages workflow (action versions from GitHub docs: checkout v6,
   configure-pages v5, upload-pages-artifact v4, deploy-pages v4).
-- ~35 small commits on `main`, all local; handed owner a git bundle.
+- 31 small commits; push succeeded once owner granted access. Pages enable
+  is not reachable via this session's API proxy, so the owner enables it.
 - Workspace note: run throwaway Postgres as user `claude` under `/home/claude`
   (scratchpad parent is not traversable by that user).
