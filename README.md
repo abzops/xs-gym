@@ -4,8 +4,8 @@ Gym management SaaS by Xelorsoft: members, memberships, attendance, payments,
 expenses, reports and an AI voice assistant, as an installable web app for phone,
 tablet and laptop. Backend: Supabase. Hosting: GitHub Pages.
 
-**Status:** Phase 0 (discovery and plan) — no application code yet.
-Live status page: <https://abzops.github.io/xs-gym/> (once Pages is enabled).
+**Status:** P0 core operations live for the pilot — <https://abzops.github.io/xs-gym/>.
+See [`PROGRESS.md`](PROGRESS.md) for what works, what is pending and owner actions.
 
 ## Start here
 
@@ -25,13 +25,25 @@ Design: [`ARCHITECTURE`](docs/ARCHITECTURE.md) · [`DATABASE`](docs/DATABASE.md)
 ## Repository layout
 
 ```text
+src/        React app (features/, app/, components/, lib/, styles/)
+supabase/   database migrations (tables, RLS, command and report functions)
+tests/      db/ (PostgreSQL tests), ui/ (responsive screen checks)
+public/     icons, logo variants, web manifest
 brand/      official Xelorsoft assets (source/ unchanged, derived/ recovered SVGs)
 docs/       specification, plans, design docs, decision records
-site/       Phase 0 status page published to GitHub Pages
-.github/    CI and Pages deployment
+.github/    CI: tests, build, publish to gh-pages
 ```
 
-`src/`, `supabase/` and `tests/` arrive in Phase 3.
+## Run locally
+
+```bash
+cp .env.example .env.local      # fill in the Supabase URL and publishable key
+npm ci
+npm run dev                     # http://localhost:5173
+npm test                        # unit tests
+PG_RUN_AS=$USER bash tests/db/run.sh   # database tests (needs PostgreSQL 16)
+npm run build                   # production build in dist/
+```
 
 ## Rules
 
