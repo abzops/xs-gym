@@ -106,6 +106,7 @@ export function MemberDetail() {
                           {reversed && <span className="meta">Reversed: {p.payment_reversals![0].reason}</span>}
                         </span>
                         <span className="end-col">
+                          <Link className="btn small ghost" to={`${base}/receipts/${p.id}`}>Receipt</Link>
                           {reversed ? <span className="badge bad">Reversed</span> : can('payments.reverse') && (
                             <button className="btn small ghost" onClick={() => setDialog({ reverse: p.id })}>Reverse</button>
                           )}

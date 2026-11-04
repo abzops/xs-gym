@@ -61,7 +61,7 @@ export function PaymentsPage() {
               const reversed = !!p.payment_reversals?.length;
               return (
                 <li key={p.id}>
-                  <Link className="item" to={`${base}/members/${p.member_id}`}>
+                  <Link className="item" to={`${base}/receipts/${p.id}`}>
                     <span className="main-col">
                       <span className="title">{p.members?.full_name}</span>
                       <span className="meta">{formatTime(p.received_at, gym.timezone)} · {METHOD_LABEL[p.method]}{p.reference ? ` · ${p.reference}` : ''}</span>

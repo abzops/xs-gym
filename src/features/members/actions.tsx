@@ -1,6 +1,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { ScanLine } from 'lucide-react';
 import { useState } from 'react';
+import { useNavigate } from 'react-router';
 import { useGym } from '../../app/gym';
 import { Field, Notice, Segmented, Sheet, useToast } from '../../components/ui';
 import { formatDate, formatTime } from '../../lib/dates';
@@ -133,6 +134,7 @@ const METHODS: { value: Method; label: string }[] = [
 
 export function PaymentSheet({ member, onClose }: { member: MemberOverview; onClose: () => void }) {
   const { gym } = useGym();
+  const navigate = useNavigate();
   const refresh = useRefreshMember(member.id);
   const toast = useToast();
   const [key] = useState(newKey);
@@ -151,6 +153,7 @@ export function PaymentSheet({ member, onClose }: { member: MemberOverview; onCl
       await refresh();
       toast(`${formatINR(p.amount_paise)} ${METHOD_LABEL[p.method]} recorded`);
       onClose();
+      navigate(`/g/${gym.slug}/receipts/${p.id}`);
     },
   });
 
