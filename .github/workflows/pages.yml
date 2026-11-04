@@ -35,7 +35,9 @@ jobs:
       - run: npm run build
       - name: Secret scan of the published bundle
         run: |
-          if grep -rEn "service_role|sb_secret_|sk-[A-Za-z0-9]{20,}|AIza[0-9A-Za-z_-]{30,}|-----BEGIN [A-Z ]*PRIVATE KEY" dist/; then
+          # Real key shapes only: Supabase secret keys, any JWT (service-role or
+          # legacy anon), provider keys, private keys. Bare prefixes are not keys.
+          if grep -rEno "sb_secret_[A-Za-z0-9_-]{16,}|eyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}|sk-[A-Za-z0-9]{20,}|AIza[0-9A-Za-z_-]{30,}|-----BEGIN [A-Z ]*PRIVATE KEY" dist/; then
             echo "Possible secret in dist/ — refusing to publish." >&2
             exit 1
           fi
