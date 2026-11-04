@@ -9,7 +9,7 @@
 | | |
 |---|---|
 | Phase | **0 — Repository and brand discovery** (finishing) → then Phase 1 |
-| Phase 0 status | Audit done. Planning docs in progress. Awaiting owner review. |
+| Phase 0 status | Audit, plan and design drafts done. **Awaiting owner review + push access.** |
 | Branch | `main` |
 | Remote | `https://github.com/abzops/xs-gym` — **push blocked (403)**, see §3 |
 | Hosting | GitHub Pages (owner decision, 05 Nov 2026) |
@@ -41,16 +41,27 @@
 | SVG masters recovered from the vector PDF and verified | `brand/derived/svg/`, `brand/README.md` |
 | Blueprint copied into repo as source spec | `docs/source/` |
 | `.gitignore` protecting secrets and member data | `.gitignore` |
+| Implementation plan (phases, gates, deps checked 05 Nov 2026, env vars, accounts, costs) | `docs/IMPLEMENTATION_PLAN.md` |
+| Owner decisions register (D-01 decided; D-02…D-14 open) | `docs/OWNER_DECISIONS.md` |
+| Design drafts: architecture, database, security, AI/voice, tests, deployment, requirements | `docs/*.md` |
+| Membership end-date function: 13 test vectors pass on PostgreSQL 16 | `docs/DATABASE.md` §5 |
+| ADR-0001…0008 | `docs/DECISIONS/` |
+| Status page (brand fonts self-hosted, strict CSP, anti-framing; checked at 360–1366 px) | `site/` |
+| GitHub Pages workflow with secret scan | `.github/workflows/pages.yml` |
+| README, CHANGELOG; all Markdown lint-clean, 0 broken links | repo root |
 
 ## 5. Next steps (in order)
 
-1. Finish planning docs: `IMPLEMENTATION_PLAN.md`, `OWNER_DECISIONS.md`, `DATABASE.md`,
-   `SECURITY.md`, `ARCHITECTURE.md`, `TEST_PLAN.md`, `DEPLOYMENT.md`,
-   `AI_AND_VOICE.md`, `PRODUCT_REQUIREMENTS.md`, ADRs in `docs/DECISIONS/`.
-2. Add GitHub Pages workflow with a Phase 0 status page (no app yet).
-3. Push once X1 is fixed.
-4. Owner review of audit + plan → answers to D-02…D-05 → start Phase 1
-   (pilot gym discovery: interviews, workflows, wireframes).
+1. **Owner:** fix X1, then push — `git push -u origin main` from this repo (or from
+   the bundle: `git clone xs-gym.bundle xs-gym && cd xs-gym && git remote set-url origin https://github.com/abzops/xs-gym && git push -u origin main`).
+2. **Owner:** X4 — make repo public, Settings → Pages → Source: GitHub Actions.
+   The workflow then publishes `site/` to <https://abzops.github.io/xs-gym/>.
+3. **Owner:** review `docs/PROJECT_AUDIT.md` + `docs/IMPLEMENTATION_PLAN.md`
+   (Phase 0 exit gate) and answer D-02…D-05 in `docs/OWNER_DECISIONS.md`.
+4. **Next session — Phase 1:** use `docs/PRODUCT_REQUIREMENTS.md` §4 discovery kit
+   with the pilot gym; write `docs/USER_STORIES.md` and responsive wireframes for
+   the top-10 tasks (phone, tablet portrait, tablet landscape, laptop).
+5. Do **not** start Phase 3 code until Phase 1 and 2 gates pass.
 
 ## 6. Session log
 
@@ -62,3 +73,10 @@
 - Verified: Supabase Free has no backups and pauses after 1 week idle; GitHub Pages
   needs a public repo on free plans and cannot set HTTP security headers.
 - Owner chose GitHub Pages and repo `abzops/xs-gym`; push refused (X1).
+- Wrote plan, decisions register, 8 design docs and 8 ADRs; tested the date
+  function on a throwaway PostgreSQL 16 (13/13 pass).
+- Built status page + Pages workflow (action versions from GitHub docs: checkout v6,
+  configure-pages v5, upload-pages-artifact v4, deploy-pages v4).
+- ~35 small commits on `main`, all local; handed owner a git bundle.
+- Workspace note: run throwaway Postgres as user `claude` under `/home/claude`
+  (scratchpad parent is not traversable by that user).
