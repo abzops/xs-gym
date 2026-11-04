@@ -9,7 +9,7 @@
 | | |
 |---|---|
 | Phase | **P0 core operations built and deployed** (Phases 3–4 compressed at owner's request) |
-| Live app | <https://abzops.github.io/xs-gym/> — **blank until Pages source is set to `gh-pages`** (X5) |
+| Live app | <https://abzops.github.io/xs-gym/> — served from `gh-pages`, updated by CI on every push to `main` |
 | Backend | Supabase project `xs-gym`, ref `knuanihnxtxtyrgvsumq`, region `ap-south-1`, Free plan |
 | Database | 3 migrations applied (`supabase/migrations/`), 16 tables, RLS on all |
 | CI | `.github/workflows/pages.yml`: typecheck, lint, unit tests, DB tests on PG16, secret scan → `gh-pages` |
@@ -29,7 +29,7 @@
 
 | # | Item | Owner action | Status |
 |---|---|---|---|
-| X5 | Pages publishes `main` source, so the site is blank. Each push to `main` republishes the raw source. | Settings → Pages → Source: **GitHub Actions** (or Deploy from a branch → `gh-pages` / root) → Save. CI publishes both ways. | **Open** |
+| X5 | Pages publishes `main` source, so the site is blank. Each push to `main` republishes the raw source. | Settings → Pages → Source: **GitHub Actions** (or Deploy from a branch → `gh-pages` / root) → Save. CI publishes both ways. | **Resolved** 05 Nov 2026 |
 | X6 | Supabase Auth Site URL is the default, so email links (confirm, reset) redirect to localhost. | Supabase → Authentication → URL Configuration: Site URL `https://abzops.github.io/xs-gym/`; add the same to Redirect URLs. | Open |
 | X7 | Supabase's built-in email only delivers to members of the Supabase organisation and is rate-limited. Staff sign-ups may never get a confirmation email. | Either set up custom SMTP (e.g. a free transactional email account) or, for the pilot only, turn off "Confirm email" in Authentication → Providers → Email. | Open |
 | X8 | Free plan: no backups, pauses after 1 week idle (D-09). | Upgrade to Pro before real member data, or approve scheduled encrypted dumps. | Open — before go-live |
@@ -71,6 +71,9 @@
 - Pushing `gh-pages` auto-enabled Pages, but the existing Pages source is `main` → blank page (X5).
 - Rewrote early history so all commits are authored by `abzops`; no tool attribution anywhere.
 - Added receipts and CSV import; CI now also publishes through the Pages deployment API.
+- Owner set Pages source to `gh-pages`; site live.
+- Premium redesign: Carbon sidebar and Today band, split sign-in, adaptive transparent favicon,
+  logo rule (black on light, white on dark), design rules from taste-skill and emilkowalski/skills (ADR-0007).
 
 ### 2026-11-05 — Session 1
 
