@@ -1,0 +1,181 @@
+-- Core database tests: tenancy, permissions, money, dates, attendance.
+-- Run with tests/db/run.sh. Any failed assertion aborts with a message.
+\set ON_ERROR_STOP on
+set client_min_messages = notice;
+\o /dev/null
+
+create schema t;
+create function t.eq(actual anyelement, expected anyelement, label text) returns void language plpgsql as $$
+begin
+  if actual is distinct from expected then
+    raise exception 'FAIL %: expected %, got %', label, expected, actual;
+  end if;
+  raise notice 'ok  %', label;
+end $$;
+-- Runs a statement and asserts it fails with a message containing `needle`.
+create function t.fails(stmt text, needle text, label text) returns void language plpgsql as $$
+begin
+  begin
+    execute stmt;
+  exception when others then
+    if position(needle in sqlerrm) > 0 then raise notice 'ok  %', label; return; end if;
+    raise exception 'FAIL %: wrong error: %', label, sqlerrm;
+  end;
+  raise exception 'FAIL %: statement succeeded but should fail', label;
+end $$;
+grant usage on schema t to authenticated, anon;
+grant execute on all functions in schema t to authenticated, anon;
+
+insert into auth.users (id, email) values
+  ('00000000-0000-0000-0000-0000000000a1', 'owner.a@test.local'),
+  ('00000000-0000-0000-0000-0000000000a2', 'desk.a@test.local'),
+  ('00000000-0000-0000-0000-0000000000a3', 'trainer.a@test.local'),
+  ('00000000-0000-0000-0000-0000000000b1', 'owner.b@test.local');
+
+create table t.ids (k text primary key, v uuid);
+grant all on t.ids to authenticated;
+create function t.id(k text) returns uuid language sql as $$ select v from t.ids where ids.k = $1 $$;
+grant execute on function t.id(text) to authenticated;
+
+-- ---------------------------------------------------------------- dates
+select t.eq(private.membership_end_date(s, u, n), e, format('end date %s +%s %s', s, n, u))
+from (values
+  ('2027-01-15'::date,'month',1,'2027-02-14'::date),('2027-01-28','month',1,'2027-02-27'),
+  ('2027-01-29','month',1,'2027-02-28'),('2027-01-31','month',1,'2027-02-28'),
+  ('2028-01-29','month',1,'2028-02-28'),('2028-01-31','month',1,'2028-02-29'),
+  ('2027-03-01','month',1,'2027-03-31'),('2027-03-31','month',1,'2027-04-30'),
+  ('2027-08-31','month',3,'2027-11-30'),('2026-12-31','month',2,'2027-02-28'),
+  ('2027-01-01','month',12,'2027-12-31'),('2028-02-29','month',12,'2029-02-28'),
+  ('2026-11-05','day',15,'2026-11-19')) v(s,u,n,e);
+
+select t.eq(private.membership_status('active','2026-01-01','2026-01-31','2026-01-31',3), 'active', 'status on last day');
+select t.eq(private.membership_status('active','2026-01-01','2026-01-31','2026-02-03',3), 'grace', 'status on last grace day');
+select t.eq(private.membership_status('active','2026-01-01','2026-01-31','2026-02-04',3), 'expired', 'status day after grace');
+select t.eq(private.membership_status('active','2026-02-01','2026-02-28','2026-01-31',3), 'upcoming', 'status before start');
+
+select t.eq(private.normalize_phone('98765 43210'), '+919876543210', 'phone: 10 digits');
+select t.eq(private.normalize_phone('+91-98765-43210'), '+919876543210', 'phone: with code');
+select t.eq(private.normalize_phone('09876543210'), '+919876543210', 'phone: leading zero');
+
+-- ---------------------------------------------------------------- set up two gyms
+set role authenticated;
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000a1', false);
+insert into t.ids select 'gymA', id from public.create_gym('Iron Temple Kozhikode', '9876500001');
+select t.fails($$select public.create_gym('Second Gym')$$, 'XS409', 'one trial gym per user');
+select t.eq((select slug from public.gyms where id = t.id('gymA')), 'iron-temple-kozhikode', 'slug generated');
+select t.eq((select role from public.gym_staff where gym_id = t.id('gymA')), 'owner', 'creator is owner');
+
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000b1', false);
+insert into t.ids select 'gymB', id from public.create_gym('Gym B', null);
+insert into t.ids select 'memberB', id from public.create_member(t.id('gymB'), 'Bee Member', '9000000002');
+
+-- Owner A adds staff
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000a1', false);
+select public.save_staff(t.id('gymA'), 'desk.a@test.local', 'reception');
+select public.save_staff(t.id('gymA'), 'trainer.a@test.local', 'trainer');
+select t.fails($$select public.save_staff(t.id('gymA'), 'nobody@test.local', 'reception')$$, 'XS404', 'staff must have an account');
+select t.fails($$select public.save_staff(t.id('gymA'), 'desk.a@test.local', 'owner')$$, 'XS422', 'cannot grant owner role');
+
+-- ---------------------------------------------------------------- tenant isolation
+select t.eq((select count(*) from public.gyms)::int, 1, 'owner A sees only gym A');
+select t.eq((select count(*) from public.members where gym_id = t.id('gymB'))::int, 0, 'A cannot read B members');
+select t.fails($$select public.create_member(t.id('gymB'), 'Intruder', '9000000003')$$, 'XS403', 'A cannot write into gym B');
+select t.fails($$select public.record_payment(t.id('gymB'), t.id('memberB'), 1000, 'cash', gen_random_uuid())$$, 'XS403', 'A cannot pay into gym B');
+select t.fails($$insert into public.members (gym_id, member_no, full_name, phone, join_date) values (t.id('gymA'), 'X', 'Direct', '+919000000009', current_date)$$,
+  'permission denied', 'no direct table writes');
+
+-- ---------------------------------------------------------------- members and plans
+insert into t.ids select 'm1', id from public.create_member(t.id('gymA'), 'Rahul K', '98765 11111');
+select t.eq((select member_no from public.members where id = t.id('m1')), 'XS-0001', 'member number assigned');
+select t.fails($$select public.create_member(t.id('gymA'), 'Rahul Again', '+919876511111')$$, 'XS409', 'duplicate phone blocked');
+insert into t.ids select 'plan1m', id from public.save_plan(t.id('gymA'), null, 'Monthly', 'month', 1, 100000);
+insert into t.ids select 'plan3m', id from public.save_plan(t.id('gymA'), null, 'Quarterly', 'month', 3, 270000);
+
+-- Reception sells, records payment, checks in
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000a2', false);
+select t.fails($$select public.save_plan(t.id('gymA'), null, 'Cheap', 'month', 1, 100)$$, 'XS403', 'reception cannot manage plans');
+select t.fails($$select public.sell_membership(t.id('gymA'), t.id('m1'), t.id('plan1m'), gen_random_uuid(), null, 5000, 'friend')$$,
+  'XS403', 'reception cannot discount');
+select t.fails($$select public.check_in(t.id('gymA'), t.id('m1'))$$, 'XS412', 'no membership blocks check-in');
+
+insert into t.ids values ('sellKey', gen_random_uuid());
+insert into t.ids select 'mm1', id from public.sell_membership(t.id('gymA'), t.id('m1'), t.id('plan1m'), t.id('sellKey'), null, 0, null, 50000);
+select t.eq((select id from public.sell_membership(t.id('gymA'), t.id('m1'), t.id('plan1m'), t.id('sellKey'))), t.id('mm1'), 'sell is idempotent');
+select t.eq((select count(*) from public.member_memberships where member_id = t.id('m1'))::int, 1, 'one membership after retry');
+select t.eq((select due_paise from public.member_overview where id = t.id('m1')), 150000::bigint, 'due = plan + admission');
+select t.eq((select membership_status from public.member_overview where id = t.id('m1')), 'active', 'membership active');
+
+-- Partial payment, idempotent retry
+insert into t.ids values ('payKey', gen_random_uuid());
+insert into t.ids select 'pay1', id from public.record_payment(t.id('gymA'), t.id('m1'), 120000, 'upi', t.id('payKey'), 'UTR123');
+select public.record_payment(t.id('gymA'), t.id('m1'), 120000, 'upi', t.id('payKey'));
+select t.eq((select count(*) from public.payments where member_id = t.id('m1'))::int, 1, 'payment retry creates one row');
+select t.fails($$select public.record_payment(t.id('gymA'), t.id('m1'), 999, 'upi', t.id('payKey'))$$, 'XS409', 'same key, different amount rejected');
+select t.eq((select due_paise from public.member_overview where id = t.id('m1')), 30000::bigint, 'due after partial payment');
+select t.eq((select sum(amount_paise) from public.payment_allocations where payment_id = t.id('pay1')), 120000::numeric, 'payment fully allocated');
+
+-- Overpayment becomes credit
+select public.record_payment(t.id('gymA'), t.id('m1'), 50000, 'cash', gen_random_uuid());
+select t.eq((select due_paise from public.member_overview where id = t.id('m1')), 0::bigint, 'no due after overpay');
+select t.eq((select credit_paise from public.member_overview where id = t.id('m1')), 20000::bigint, 'overpay becomes credit');
+
+-- Check-in rules
+select public.check_in(t.id('gymA'), t.id('m1'));
+select t.fails($$select public.check_in(t.id('gymA'), t.id('m1'))$$, 'XS409', 'second check-in same day blocked');
+select t.fails($$select public.check_in(t.id('gymA'), t.id('m1'), 'forgot card')$$, 'XS403', 'reception cannot override');
+
+-- Reversal needs manager/owner
+select t.fails($$select public.reverse_payment(t.id('gymA'), t.id('pay1'), 'wrong')$$, 'XS403', 'reception cannot reverse');
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000a1', false);
+select public.reverse_payment(t.id('gymA'), t.id('pay1'), 'UPI failed');
+select t.eq((select due_paise from public.member_overview where id = t.id('m1')), 100000::bigint, 'reversal reopens due, credit reapplied');
+select t.fails($$select public.reverse_payment(t.id('gymA'), t.id('pay1'), 'again')$$, 'XS409', 'double reversal blocked');
+
+-- Renewal continues from old end date
+insert into t.ids select 'mm2', id from public.sell_membership(t.id('gymA'), t.id('m1'), t.id('plan3m'), gen_random_uuid(), null, 20000, 'loyalty');
+select t.eq((select start_date from public.member_memberships where id = t.id('mm2')),
+            (select end_date + 1 from public.member_memberships where id = t.id('mm1')), 'renewal starts day after old end');
+select t.eq((select membership_status from public.member_overview where id = t.id('m1')), 'active', 'still active (not upcoming) after early renewal');
+select t.eq((select valid_until from public.member_overview where id = t.id('m1')),
+            (select end_date from public.member_memberships where id = t.id('mm2')), 'valid_until is renewal end');
+
+-- Ledger immutability (even for the definer role path, via triggers)
+reset role;
+select t.fails($$update public.payments set amount_paise = 1 where id = t.id('pay1')$$, 'XS405', 'payments immutable');
+select t.fails($$delete from public.audit_logs$$, 'XS405', 'audit log immutable');
+select t.fails($$update public.charges set gross_paise = 1 where member_id = t.id('m1')$$, 'XS405', 'charges cannot be edited');
+set role authenticated;
+
+-- Reports and permissions
+select t.eq((select (public.dashboard_summary(t.id('gymA')) ->> 'checkins_today')::int), 1, 'dashboard check-ins');
+select t.eq((select (public.dashboard_summary(t.id('gymA')) -> 'financial' ->> 'collections_today')::bigint), 170000::bigint,
+  'collections count received payments before reversals');
+select t.eq((select (public.dashboard_summary(t.id('gymA')) -> 'financial' ->> 'reversals_today')::bigint), 120000::bigint, 'reversals reported separately');
+select t.eq((select sum(collections_paise - reversals_paise) from public.daily_report(t.id('gymA'), current_date - 1, current_date + 1)),
+            (select sum(amount_paise) from public.payments p where p.gym_id = t.id('gymA')
+               and not exists (select 1 from public.payment_reversals r where r.payment_id = p.id))::numeric,
+            'report net equals raw non-reversed payments');
+
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000a2', false);
+select t.eq((select public.dashboard_summary(t.id('gymA')) -> 'financial'), 'null'::jsonb, 'reception gets no financial totals');
+select t.fails($$select * from public.daily_report(t.id('gymA'), current_date, current_date)$$, 'XS403', 'reception cannot see financial report');
+
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000a3', false);
+select t.eq((select count(*) from public.payments)::int, 0, 'trainer cannot read payments');
+select t.fails($$select public.create_member(t.id('gymA'), 'T', '9000000004')$$, 'XS403', 'trainer cannot add members');
+
+-- Expired subscription: read-only
+reset role;
+update public.gym_subscriptions set trial_ends_at = now() - interval '1 minute' where gym_id = t.id('gymA');
+set role authenticated;
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000a1', false);
+select t.fails($$select public.create_member(t.id('gymA'), 'Late', '9000000005')$$, 'XS402', 'expired trial blocks writes');
+select t.eq((select count(*) from public.members where gym_id = t.id('gymA'))::int, 1, 'expired trial still reads');
+
+-- Anonymous gets nothing
+reset role;
+set role anon;
+select t.fails($$select count(*) from public.members$$, 'permission denied', 'anon cannot read');
+reset role;
+
+\echo 'ALL DATABASE TESTS PASSED'
