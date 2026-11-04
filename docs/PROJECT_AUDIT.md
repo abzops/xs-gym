@@ -107,7 +107,7 @@ or listed in `docs/OWNER_DECISIONS.md`.
 | B2 | §2.5 outstanding dues | Schema has payments but nothing that records **what is owed**. Dues cannot be computed from payments alone. | Add a **charges ledger** (`charges`) with `payment_allocations`. ADR-0003. |
 | B3 | §2.3 membership end dates | Inclusive vs exclusive end date and the month-end rule (31 Jan + 1 month) are undefined. | Proposed rule with test vectors in `DATABASE.md` §5. **Owner decision D-03.** |
 | B4 | §2.3 renewals | Whether an early or late renewal starts from the old end date or from the payment date is undefined. | **Owner decision D-04.** |
-| B5 | §5.2 GitHub Pages | On GitHub Free, Pages works only for **public** repositories (source code public). Pages cannot send HTTP headers: no CSP `frame-ancestors`, no `Permissions-Policy`, no HSTS header. Deep links need a 404 workaround. | ADR-0005 compares options. Recommended: Cloudflare Pages (free, private repo, `_headers`, SPA fallback). **Owner decision D-01.** |
+| B5 | §5.2 GitHub Pages | On GitHub Free, Pages works only for **public** repositories (source code public). Pages cannot send HTTP headers: no CSP `frame-ancestors`, no `Permissions-Policy`, no HSTS header. Deep links need a 404 workaround. | Cloudflare Pages was the alternative (free, private repo, `_headers`). **Owner decided D-01: GitHub Pages** on `abzops/xs-gym`; constraints handled in ADR-0005 and `SECURITY.md` §7. |
 | B6 | §5.3, §20 Supabase Free | Verified 05 Nov 2026: no backups on Free; projects pause after 1 week of inactivity; Pro from $25/month includes daily backups kept 7 days. | Pilot can develop on Free. **Before go-live:** Pro, or scheduled encrypted off-site dumps plus a tested restore. **Owner decision D-09.** |
 | B7 | §11.2 trial expiry: "block paid features" | Every operational feature is paid, so this could mean full lock-out. | Recommended: expired tenant becomes **read-only** with export and billing available. **Owner decision D-06.** |
 | B8 | §8.1 auth | Front-desk tablets are often shared; staff may not have email addresses. Shared logins break the audit trail. | Individual accounts required. Sign-in method is **owner decision D-05**. |
@@ -173,4 +173,5 @@ maskable icon and multi-size `favicon.ico` (Phase 5, after approval).
 - [x] Environment limits documented with workaround
 - [x] Implementation plan and design docs drafted (`docs/IMPLEMENTATION_PLAN.md`)
 - [ ] **Owner reviews this audit and the plan**
-- [ ] **Owner answers blocking decisions D-01 to D-05** (`docs/OWNER_DECISIONS.md`)
+- [x] Hosting decided: GitHub Pages (D-01)
+- [ ] **Owner answers blocking decisions D-02 to D-05** (`docs/OWNER_DECISIONS.md`)
