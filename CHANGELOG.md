@@ -6,6 +6,7 @@ Versions follow semantic versioning from the first app release.
 ## [Unreleased]
 
 ### Added — P0 core operations (05 Nov 2026)
+
 - Supabase backend: tenants, staff roles and permissions, 30-day trial, append-only audit log,
   members, plans, memberships, charges/payments/allocations/reversals ledger, attendance, expenses.
 - Command functions for every write (authorise, validate, idempotent, audited) and report functions.
