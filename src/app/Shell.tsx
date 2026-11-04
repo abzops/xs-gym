@@ -5,6 +5,7 @@ import { useState, type ComponentType } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router';
 import { Logo, Notice, Sheet } from '../components/ui';
 import { daysBetween, todayInGym } from '../lib/dates';
+import { setTransition } from '../lib/motion';
 import { supabase } from '../lib/supabase';
 import { ROLE_LABEL } from '../lib/types';
 import { useGym } from './gym';
@@ -24,6 +25,7 @@ const NAV: NavItem[] = [
 
 // Transparent badge: black on light backgrounds, white on dark (brand rule).
 const mark = `${import.meta.env.BASE_URL}brand/favicon.svg`;
+const markOnDark = `${import.meta.env.BASE_URL}brand/badge-white.svg`;
 
 export function Shell() {
   const { gym, role, can, canWrite, subscription } = useGym();
@@ -38,62 +40,63 @@ export function Shell() {
   const trialDays = subscription?.status === 'trial' && subscription.trial_ends_at
     ? Math.max(0, daysBetween(todayInGym(gym.timezone), subscription.trial_ends_at.slice(0, 10)))
     : null;
+  const tab = () => setTransition('tab');
 
   return (
     <div className="shell">
+      {/* Laptop and tablet landscape: full sidebar. Tablet portrait: icon rail. */}
       <nav className="sidebar" aria-label="Main">
-        <Logo onDark width={148} />
+        <Logo onDark width={148} className="logo full" />
+        <img className="rail-mark" src={markOnDark} alt="Xelorsoft" width={36} height={36} />
         <div className="gym-block">
           <strong>{gym.name}</strong>
           <span>{ROLE_LABEL[role]}</span>
+          {trialDays !== null && <span>Trial ends in {trialDays} day{trialDays === 1 ? '' : 's'}</span>}
         </div>
         {items.map((n) => (
-          <NavLink key={n.label} to={link(n)} end={!n.to}>
-            <n.icon size={19} strokeWidth={1.9} /> {n.label}
+          <NavLink key={n.label} to={link(n)} end={!n.to} viewTransition onClick={tab} title={n.label}>
+            <n.icon size={20} strokeWidth={1.9} /> <span className="nav-label">{n.label}</span>
           </NavLink>
         ))}
         <div className="grow" />
-        <button className="signout" onClick={() => supabase.auth.signOut()}>
-          <LogOut size={19} strokeWidth={1.9} /> Sign out
+        <button className="signout" onClick={() => supabase.auth.signOut()} title="Sign out">
+          <LogOut size={20} strokeWidth={1.9} /> <span className="nav-label">Sign out</span>
         </button>
       </nav>
 
-      <div>
+      <div className="content">
         <header className="topbar">
           <img className="brand-mark" src={mark} alt="" width={26} height={26} />
           <span className="gym">{gym.name}</span>
-          <span className="spacer" />
-          {trialDays !== null && <span className="chip">Trial: {trialDays} day{trialDays === 1 ? '' : 's'} left</span>}
         </header>
         <main className="main">
           {!canWrite && (
             <div style={{ marginBottom: 20 }}>
-              <Notice tone="warn">
-                This gym's subscription has ended. Everything stays available to view and export; changes are paused until it is renewed.
-              </Notice>
+              <Notice tone="warn">Subscription ended. You can view and export, but changes are paused.</Notice>
             </div>
           )}
           <Outlet />
         </main>
       </div>
 
-      <nav className="bottomnav" aria-label="Main">
+      {/* Phone: iOS-style tab bar */}
+      <nav className="tabbar" aria-label="Main">
         {primary.map((n) => (
-          <NavLink key={n.label} to={link(n)} end={!n.to}>
-            <span className="ico"><n.icon size={20} strokeWidth={1.9} /></span> {n.label}
+          <NavLink key={n.label} to={link(n)} end={!n.to} viewTransition onClick={tab}>
+            <n.icon size={23} strokeWidth={1.8} /> <span>{n.label}</span>
           </NavLink>
         ))}
         <button onClick={() => setMore(true)} className={onOverflowRoute ? 'active' : ''} aria-haspopup="dialog">
-          <span className="ico"><Menu size={20} strokeWidth={1.9} /></span> More
+          <Menu size={23} strokeWidth={1.8} /> <span>More</span>
         </button>
       </nav>
 
       {more && (
         <Sheet title="More" onClose={() => setMore(false)}>
-          <ul className="list card flush">
+          <ul className="list grouped">
             {overflow.map((n) => (
               <li key={n.label}>
-                <NavLink className="item" to={link(n)} onClick={() => setMore(false)}>
+                <NavLink className="item" to={link(n)} viewTransition onClick={() => { tab(); setMore(false); }}>
                   <n.icon size={20} /> <span className="main-col"><span className="title">{n.label}</span></span>
                 </NavLink>
               </li>
