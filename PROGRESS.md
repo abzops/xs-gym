@@ -8,75 +8,67 @@
 
 | | |
 |---|---|
-| Phase | **0 — Repository and brand discovery** (finishing) → then Phase 1 |
-| Phase 0 status | Audit, plan and design drafts done. **Awaiting owner review + push access.** |
-| Branch | `main` |
-| Remote | `https://github.com/abzops/xs-gym` — public, pushing works (05 Nov 2026) |
-| Hosting | GitHub Pages (owner decision, 05 Nov 2026) |
+| Phase | **P0 core operations built and deployed** (Phases 3–4 compressed at owner's request) |
+| Live app | <https://abzops.github.io/xs-gym/> — **blank until Pages source is set to `gh-pages`** (X5) |
+| Backend | Supabase project `xs-gym`, ref `knuanihnxtxtyrgvsumq`, region `ap-south-1`, Free plan |
+| Database | 3 migrations applied (`supabase/migrations/`), 16 tables, RLS on all |
+| CI | `.github/workflows/pages.yml`: typecheck, lint, unit tests, DB tests on PG16, secret scan → `gh-pages` |
+| Remote | `https://github.com/abzops/xs-gym`, branch `main`; commits authored as `abzops` |
 | Last updated | 05 Nov 2026 |
 
 ## 2. Rules for whoever continues
 
 1. The spec is `docs/source/XS_Gym_End_to_End_Engineering_Blueprint.md`. Follow its §0 instructions.
-2. Small commits: one logical change each, message `type: summary` (`docs:`, `feat:`, `fix:`, `test:`, `chore:`, `brand:`, `ci:`).
+2. Small commits, `type: summary`. No attribution or tool trailers in commits. Author is `abzops <87251316+abzops@users.noreply.github.com>`.
 3. Push after every few commits. Update this file in the same commit as the work.
-4. Never commit secrets, `.env` files, database dumps or real member data.
-5. Do not start a phase until the previous phase's exit gate in `docs/IMPLEMENTATION_PLAN.md` is met.
+4. Never commit secrets, `.env*` (except `.env.example`), dumps or real member data.
+5. Every database change: new migration file → run `PG_RUN_AS=<non-root user> bash tests/db/run.sh` → apply to Supabase → run security advisors.
+6. All writes go through command functions (ADR-0002). Money is integer paise (ADR-0003).
 
-## 3. Blockers
+## 3. Blockers and owner actions
 
-| # | Blocker | Owner action | Status |
+| # | Item | Owner action | Status |
 |---|---|---|---|
-| X1 | Push access to `abzops/xs-gym` (GitHub 403). | Grant repository write access to the build environment. | **Resolved** 05 Nov 2026 |
-| X2 | Build workspace cannot reach `supabase.com` or Docker registries. | Allow Supabase domains for the workspace, or rely on CI for full-stack tests. | Open — workaround in ADR-0006 |
-| X3 | Blocking business decisions D-02 to D-05. | Answer in `docs/OWNER_DECISIONS.md`. | Open |
-| X4 | GitHub Pages on a free plan requires the repo to be **public**. | Make `abzops/xs-gym` public (or upgrade the GitHub plan) and enable Pages → Source: GitHub Actions. | Repo is public ✓. **Pages not enabled yet** — owner must set Source: GitHub Actions, then re-run the workflow |
+| X5 | Pages publishes `main` source, so the site is blank. | Settings → Pages → Source: Deploy from a branch → `gh-pages` / root → Save. | **Open** |
+| X6 | Supabase Auth Site URL is the default, so email links (confirm, reset) redirect to localhost. | Supabase → Authentication → URL Configuration: Site URL `https://abzops.github.io/xs-gym/`; add the same to Redirect URLs. | Open |
+| X7 | Supabase's built-in email only delivers to members of the Supabase organisation and is rate-limited. Staff sign-ups may never get a confirmation email. | Either set up custom SMTP (e.g. a free transactional email account) or, for the pilot only, turn off "Confirm email" in Authentication → Providers → Email. | Open |
+| X8 | Free plan: no backups, pauses after 1 week idle (D-09). | Upgrade to Pro before real member data, or approve scheduled encrypted dumps. | Open — before go-live |
+| X2 | Build workspace cannot reach Supabase or github.io from the shell. | None needed: CI runs DB tests; Supabase changes go through the connector. | Workaround |
 
 ## 4. Done
 
 | Item | Where |
 |---|---|
-| Workspace, asset and toolchain inspection | `docs/PROJECT_AUDIT.md` |
-| Supplied brand assets, byte-identical, with checksums | `brand/source/`, `brand/SHA256SUMS` |
-| SVG masters recovered from the vector PDF and verified | `brand/derived/svg/`, `brand/README.md` |
-| Blueprint copied into repo as source spec | `docs/source/` |
-| `.gitignore` protecting secrets and member data | `.gitignore` |
-| Implementation plan (phases, gates, deps checked 05 Nov 2026, env vars, accounts, costs) | `docs/IMPLEMENTATION_PLAN.md` |
-| Owner decisions register (D-01 decided; D-02…D-14 open) | `docs/OWNER_DECISIONS.md` |
-| Design drafts: architecture, database, security, AI/voice, tests, deployment, requirements | `docs/*.md` |
-| Membership end-date function: 13 test vectors pass on PostgreSQL 16 | `docs/DATABASE.md` §5 |
-| ADR-0001…0008 | `docs/DECISIONS/` |
-| Status page (brand fonts self-hosted, strict CSP, anti-framing; checked at 360–1366 px) | `site/` |
-| GitHub Pages workflow with secret scan | `.github/workflows/pages.yml` |
-| README, CHANGELOG; all Markdown lint-clean, 0 broken links | repo root |
+| Phase 0 audit, plan, design docs, ADRs, decisions register | `docs/` |
+| Supabase project created and 3 migrations applied; security advisor clean except expected definer-function notice | Supabase `xs-gym` |
+| Database tests: 67 checks (dates, tenancy, permissions, money, attendance, immutability, reports, expiry, anon) | `tests/db/` — pass locally and in CI |
+| Live smoke test on production DB in a rolled-back block: sell → pay → idempotent retry → check-in → dashboard → cross-tenant block | 0 rows left behind |
+| Unit tests: money (incl. 2,858-amount round trip), dates, CSV injection | `src/lib/*.test.ts` — 29 pass |
+| App: sign-in/up/reset, gym setup + trial, dashboard, check-in, members (list/add/edit/archive), sell/renew, payments (record/reverse), charges (void), plans, expenses (record/reverse), reports (daily, dues, expiring, CSV), settings (gym, staff, subscription) | `src/` |
+| Responsive check: 9 screens × phone/tablet/tablet-landscape/laptop, no overflow, no console errors | `tests/ui/screens.mjs` |
+| Security: strict CSP meta, anti-framing, no secrets in bundle (CI scan), RLS on all tables, anon has no grants | |
 
 ## 5. Next steps (in order)
 
-1. ~~Push access (X1)~~ — done; 31 commits pushed 05 Nov 2026.
-2. **Owner:** X4 — Settings → Pages → Source: **GitHub Actions**, then Actions →
-   "Deploy to GitHub Pages" → Re-run. Publishes `site/` to <https://abzops.github.io/xs-gym/>.
-3. **Owner:** review `docs/PROJECT_AUDIT.md` + `docs/IMPLEMENTATION_PLAN.md`
-   (Phase 0 exit gate) and answer D-02…D-05 in `docs/OWNER_DECISIONS.md`.
-4. **Next session — Phase 1:** use `docs/PRODUCT_REQUIREMENTS.md` §4 discovery kit
-   with the pilot gym; write `docs/USER_STORIES.md` and responsive wireframes for
-   the top-10 tasks (phone, tablet portrait, tablet landscape, laptop).
-5. Do **not** start Phase 3 code until Phase 1 and 2 gates pass.
+1. Owner: X5, X6, X7. Then sign up at the live URL, create the gym, add plans.
+2. Pilot onboarding: add real plans, a few members, try a day of check-ins and payments; collect feedback.
+3. P0 gaps still open: CSV member import with preview; printable/shareable receipt; membership freeze;
+   audit log viewer; staging Supabase project; CI job running the real Supabase stack.
+4. Phase 5: PWA service worker + offline indicator, maskable icon, axe accessibility pass.
+5. Phase 8: trial expiry reminders, manual verified payment activation by Xelorsoft.
+6. Phases 6–7 (AI text and voice) only after the pilot uses the core daily.
 
 ## 6. Session log
 
+### 2026-11-05 — Session 1 (continued)
+
+- Owner asked to build end to end; recommended options applied and recorded as "Assumed" in `docs/OWNER_DECISIONS.md`.
+- Created Supabase project `xs-gym` (Mumbai, $0). Wrote and applied migrations: foundation, operations, commands.
+- Local DB tests caught a real bug (allocation guard counted reversed payments); fixed before deploying.
+- Built the React app (Vite 8, React 19, TypeScript 7 strict, TanStack Query, React Router 8).
+- Pushing `gh-pages` auto-enabled Pages, but the existing Pages source is `main` → blank page (X5).
+- Rewrote early history so all commits are authored by `abzops`; no tool attribution anywhere.
+
 ### 2026-11-05 — Session 1
 
-- Inspected all supplied files; workspace had no existing code (greenfield).
-- Recovered 3 SVG masters from `Xelorsoft-Vector-Masters.pdf`; pixel-verified against PNGs.
-- Found 13 blueprint gaps (audit §6) and 7 asset findings (audit §5).
-- Verified: Supabase Free has no backups and pauses after 1 week idle; GitHub Pages
-  needs a public repo on free plans and cannot set HTTP security headers.
-- Owner chose GitHub Pages and repo `abzops/xs-gym`; push refused (X1).
-- Wrote plan, decisions register, 8 design docs and 8 ADRs; tested the date
-  function on a throwaway PostgreSQL 16 (13/13 pass).
-- Built status page + Pages workflow (action versions from GitHub docs: checkout v6,
-  configure-pages v5, upload-pages-artifact v4, deploy-pages v4).
-- 31 small commits; push succeeded once owner granted access. Pages enable
-  is not reachable via this session's API proxy, so the owner enables it.
-- Workspace note: run throwaway Postgres as a non-root user in that user's home
-  directory (Postgres refuses to run as root).
+- Phase 0: inspected supplied files (greenfield), recovered SVG masters, wrote audit, plan, design docs and ADRs.
