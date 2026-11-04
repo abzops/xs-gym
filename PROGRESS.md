@@ -27,7 +27,7 @@
 
 | # | Blocker | Owner action | Status |
 |---|---|---|---|
-| X1 | Claude cannot push to `abzops/xs-gym` (GitHub 403). | Install the Claude GitHub App on `abzops` with access to `xs-gym` (https://github.com/apps/claude/installations/select_target), or reconnect GitHub in claude.ai connector settings. | Open |
+| X1 | Claude cannot push to `abzops/xs-gym` (GitHub 403). | Install the Claude GitHub App on `abzops` with access to `xs-gym` (<https://github.com/apps/claude/installations/select_target>), or reconnect GitHub in claude.ai connector settings. | Open |
 | X2 | This workspace cannot reach `supabase.com` or Docker registries. | Either allow Supabase domains for this workspace (claude.ai → Settings → Capabilities), or rely on CI for full-stack tests. | Open — workaround in ADR-0006 |
 | X3 | Blocking business decisions D-02 to D-05. | Answer in `docs/OWNER_DECISIONS.md`. | Open |
 | X4 | GitHub Pages on a free plan requires the repo to be **public**. | Make `abzops/xs-gym` public (or upgrade the GitHub plan) and enable Pages → Source: GitHub Actions. | Open |
@@ -55,6 +55,7 @@
 ## 6. Session log
 
 ### 2026-11-05 — Session 1
+
 - Inspected all supplied files; workspace had no existing code (greenfield).
 - Recovered 3 SVG masters from `Xelorsoft-Vector-Masters.pdf`; pixel-verified against PNGs.
 - Found 13 blueprint gaps (audit §6) and 7 asset findings (audit §5).

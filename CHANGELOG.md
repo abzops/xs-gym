@@ -6,6 +6,7 @@ Versions follow semantic versioning from the first app release.
 ## [Unreleased]
 
 ### Added — Phase 0 (05 Nov 2026)
+
 - Engineering blueprint v1.0 as the source specification.
 - Supplied Xelorsoft brand assets (unchanged, with checksums) and three SVG masters
   recovered from the vector PDF.

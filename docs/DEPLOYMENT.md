@@ -11,11 +11,13 @@
 ## 2. GitHub Pages (D-01)
 
 **One-time setup by the owner**
+
 1. Make `abzops/xs-gym` public (required on GitHub Free) — or use a paid plan.
 2. Repo → Settings → Pages → Source: **GitHub Actions**.
 3. Give the Claude GitHub App access to the repo (see `PROGRESS.md` X1).
 
 **Workflow** `.github/workflows/pages.yml` deploys on every push to `main`:
+
 - Phase 0–2: publishes `site/` (a project status page; no app yet).
 - Phase 3 onward: runs `npm ci && npm run build`, then publishes `dist/`. The
   deploy job runs only after lint, typecheck, tests and the secret scan pass.

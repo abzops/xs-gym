@@ -5,7 +5,7 @@ expenses, reports and an AI voice assistant, as an installable web app for phone
 tablet and laptop. Backend: Supabase. Hosting: GitHub Pages.
 
 **Status:** Phase 0 (discovery and plan) — no application code yet.
-Live status page: https://abzops.github.io/xs-gym/ (once Pages is enabled).
+Live status page: <https://abzops.github.io/xs-gym/> (once Pages is enabled).
 
 ## Start here
 

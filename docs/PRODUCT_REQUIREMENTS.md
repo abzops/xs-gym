@@ -16,6 +16,7 @@ amount entry; new member ≤ 60 s with name and phone only.
 ## 2. P0 user stories and acceptance criteria
 
 **Members**
+
 - *As reception, I add a member with name and phone.* Phone normalised to E.164;
   duplicate active phone in the same gym is blocked with a link to the existing
   member; member number assigned by the server; optional fields can be skipped.
@@ -26,6 +27,7 @@ amount entry; new member ≤ 60 s with name and phone only.
   report and explicit confirm before anything is saved; import is audited.
 
 **Plans and memberships**
+
 - *As owner, I create plans* (name, duration in days or months, price in ₹).
 - *As reception, I sell or renew a plan.* End date computed by the server (D-03);
   renewal start follows D-04; price snapshot and a charge are created in the same
@@ -33,11 +35,13 @@ amount entry; new member ≤ 60 s with name and phone only.
 - *As manager, I freeze or cancel* (if D-12 allows), with reason, audited.
 
 **Attendance**
+
 - *As reception, I check a member in.* Status (active/grace/expired/frozen) and
   dues shown before confirming; server timestamp; duplicate and expired rules per
   D-07; corrections by manager with reason, original kept.
 
 **Payments**
+
 - *As reception, I record a payment* (cash/UPI/other), with optional reference.
   Saved only on server confirmation; double tap creates one payment; UPI labelled
   "manually verified"; receipt viewable and shareable.
@@ -45,15 +49,18 @@ amount entry; new member ≤ 60 s with name and phone only.
 - *As owner, I see dues per member* and a gym-wide outstanding list.
 
 **Expenses**
+
 - *As manager, I record an expense* with category, amount, date and method;
   corrections by reversal.
 
 **Dashboard and reports**
+
 - Dashboard shows the metrics in §3 with date, timezone and definitions one tap away.
 - Reports: daily and monthly collections, expenses, dues, expiry list, new
   members, attendance, payment history; filters shown; CSV export with permission.
 
 **Platform**
+
 - Every important action appears in the audit log (blueprint §2.12).
 - Works on all devices in `TEST_PLAN.md` §6. Loading, empty, error and offline
   states on every screen.
