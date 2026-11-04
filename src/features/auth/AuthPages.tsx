@@ -2,7 +2,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState, type FormEvent, type ReactNode } from 'react';
 import { Navigate, useNavigate } from 'react-router';
 import { useAuth } from '../../app/auth';
-import { Field, Logo, Notice, Segmented, useToast } from '../../components/ui';
+import { Collapse, Field, Logo, Notice, Segmented, useToast } from '../../components/ui';
 import { errorMessage } from '../../lib/errors';
 import { rpc, supabase } from '../../lib/supabase';
 import type { Gym } from '../../lib/types';
@@ -14,15 +14,7 @@ function AuthLayout({ children }: { children: ReactNode }) {
     <div className="auth-split">
       <aside className="auth-brand">
         <Logo onDark />
-        <div className="stack lg">
-          <h1>Run your gym simply. Know your numbers accurately.</h1>
-          <p>Members, renewals, check-ins and collections for your front desk, on any phone, tablet or laptop.</p>
-        </div>
-        <ul className="points">
-          <li><strong>Check in at the desk in seconds</strong>Search by name, phone or member number.</li>
-          <li><strong>Every rupee accounted for</strong>Payments, dues and reversals reconcile to the paisa.</li>
-          <li><strong>Each person signs in as themselves</strong>Roles decide who can discount, reverse or export.</li>
-        </ul>
+        <h1>Run your gym simply. Know your numbers accurately.</h1>
       </aside>
       <main className="auth-main">{children}</main>
     </div>
@@ -70,19 +62,12 @@ export function LoginPage() {
     }
   }
 
-  const title = mode === 'signin' ? 'Sign in to XS Gym' : mode === 'signup' ? 'Create your account' : 'Reset your password';
+  const title = mode === 'signin' ? 'Welcome back' : mode === 'signup' ? 'Create your account' : 'Reset password';
 
   return (
     <AuthLayout>
       <div className="auth">
-        <div className="stack">
-          <h2>{title}</h2>
-          <p className="muted">
-            {mode === 'signin' && 'Use the email and password you registered with.'}
-            {mode === 'signup' && 'Owners create the gym after signing up. Staff sign up, then the owner adds them.'}
-            {mode === 'reset' && 'Enter your email and we will send a link to set a new password.'}
-          </p>
-        </div>
+        <h2 key={title} className="swap">{title}</h2>
         {mode !== 'reset' && (
           <Segmented
             label="Account"
@@ -94,22 +79,23 @@ export function LoginPage() {
         {sent ? (
           <Notice tone="ok">{sent}</Notice>
         ) : (
-          <form className="stack lg" onSubmit={submit} noValidate>
-            {mode === 'signup' && (
+          <form className="stack lg auth-form" onSubmit={submit} noValidate>
+            <Collapse open={mode === 'signup'}>
               <Field label="Your name">
-                <input className="input" value={name} onChange={(e) => setName(e.target.value)} autoComplete="name" required />
+                <input className="input" value={name} onChange={(e) => setName(e.target.value)} autoComplete="name"
+                  tabIndex={mode === 'signup' ? 0 : -1} />
               </Field>
-            )}
+            </Collapse>
             <Field label="Email">
               <input className="input" type="email" inputMode="email" autoComplete="email" value={email}
                 onChange={(e) => setEmail(e.target.value)} required />
             </Field>
-            {mode !== 'reset' && (
+            <Collapse open={mode !== 'reset'}>
               <Field label="Password" hint={mode === 'signup' ? 'At least 8 characters' : undefined}>
                 <input className="input" type="password" value={password} onChange={(e) => setPassword(e.target.value)}
-                  autoComplete={mode === 'signup' ? 'new-password' : 'current-password'} required />
+                  autoComplete={mode === 'signup' ? 'new-password' : 'current-password'} tabIndex={mode !== 'reset' ? 0 : -1} />
               </Field>
-            )}
+            </Collapse>
             {error && <Notice tone="bad">{error}</Notice>}
             <button className="btn primary block" disabled={busy || !email || (mode !== 'reset' && !password)}>
               {busy ? <span className="spinner" /> : mode === 'signin' ? 'Sign in' : mode === 'signup' ? 'Create account' : 'Send reset link'}
@@ -126,7 +112,6 @@ export function LoginPage() {
             Back to sign in
           </button>
         )}
-        <p className="muted" style={{ fontSize: 'var(--t-xs)' }}>XS Gym by Xelorsoft</p>
       </div>
     </AuthLayout>
   );
@@ -177,7 +162,7 @@ export function SetupGym() {
       <form className="auth" onSubmit={(e) => { e.preventDefault(); create.mutate(); }}>
         <div className="stack">
           <h2>Set up your gym</h2>
-          <p className="muted">You will be the owner. The 30-day trial with every feature starts now; staff can be added later.</p>
+          <p className="muted">Your 30-day trial starts now.</p>
         </div>
         <Field label="Gym name">
           <input className="input" value={name} onChange={(e) => setName(e.target.value)} required minLength={2} autoFocus />
