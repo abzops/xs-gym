@@ -43,15 +43,27 @@ export function Dashboard() {
   if (summary.error) return <Notice tone="bad">{errorMessage(summary.error)}</Notice>;
   const s = summary.data;
   const f = s.financial;
+  const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
+  const finding = [
+    s.expiring_7_days > 0
+      ? `${plural(s.expiring_7_days, 'membership ends', 'memberships end')} in the next 7 days`
+      : 'No memberships end this week',
+    f && f.members_with_dues > 0
+      ? `${plural(f.members_with_dues, 'member owes', 'members owe')} ${formatINR(f.dues_total)} in total`
+      : f ? 'nobody owes anything' : null,
+  ].filter(Boolean).join(', and ') + '.';
   const day = new Intl.DateTimeFormat('en-IN', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' })
     .format(new Date(`${s.today}T12:00:00Z`));
 
   return (
     <div className="stack xl">
       <section className="today" aria-label="Today">
-        <div className="when">
-          <h1>{day}</h1>
-          <span>India Standard Time</span>
+        <div className="stack">
+          <div className="when">
+            <h1>{day}</h1>
+            <span>India Standard Time</span>
+          </div>
+          <p className="finding">{finding}</p>
         </div>
         <div className="figures">
           {f ? (
