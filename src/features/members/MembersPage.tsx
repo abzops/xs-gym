@@ -2,7 +2,7 @@ import { Plus, Search, Upload } from 'lucide-react';
 import { useDeferredValue, useState } from 'react';
 import { Link, useSearchParams } from 'react-router';
 import { useGym } from '../../app/gym';
-import { Empty, Loading, Notice, Segmented, StatusBadge, initials } from '../../components/ui';
+import { Empty, Loading, Notice, PushLink, Segmented, StatusBadge, initials } from '../../components/ui';
 import { formatDate } from '../../lib/dates';
 import { errorMessage } from '../../lib/errors';
 import { formatINR } from '../../lib/money';
@@ -30,9 +30,9 @@ export function MembersPage() {
     <div className="stack lg">
       <div className="page-head">
         <h1>Members</h1>
-        {can('members.export') && <Link className="btn" to={`${base}/members/import`}><Upload size={18} /> Import</Link>}
+        {can('members.export') && <Link className="btn" to={`${base}/members/import`} aria-label="Import"><Upload size={18} /> <span className="btn-text">Import</span></Link>}
         {can('members.write') && (
-          <Link className="btn primary" to={`${base}/members/new`}><Plus size={18} /> Add member</Link>
+          <Link className="btn primary" to={`${base}/members/new`} aria-label="Add member"><Plus size={18} /> <span className="btn-text">Add member</span></Link>
         )}
       </div>
 
@@ -62,13 +62,12 @@ export function MembersPage() {
         <ul className="list card flush">
           {members.data.map((m) => (
             <li key={m.id}>
-              <Link className="item" to={`${base}/members/${m.id}`}>
+              <PushLink className="item" to={`${base}/members/${m.id}`}>
                 <span className="avatar" aria-hidden>{initials(m.full_name)}</span>
                 <span className="main-col">
                   <span className="title">{m.full_name}</span>
                   <span className="meta">
                     <span className="mono">{m.member_no}</span>
-                    <span>{m.phone.replace(/^\+91/, '')}</span>
                     {m.valid_until && <span>Till {formatDate(m.valid_until)}</span>}
                   </span>
                 </span>
@@ -76,7 +75,7 @@ export function MembersPage() {
                   <StatusBadge status={m.membership_status} />
                   {m.due_paise > 0 && <span className="num amount-due">{formatINR(m.due_paise)} due</span>}
                 </span>
-              </Link>
+              </PushLink>
             </li>
           ))}
         </ul>

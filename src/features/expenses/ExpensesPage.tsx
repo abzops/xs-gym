@@ -50,10 +50,11 @@ export function ExpensesPage() {
     <div className="stack lg">
       <div className="page-head">
         <h1>Expenses</h1>
-        <Field label="Month"><input className="input" type="month" value={period} max={month} onChange={(e) => e.target.value && setPeriod(e.target.value)} /></Field>
-        {can('expenses.record') && <button className="btn primary" onClick={() => setAdding(true)}><Plus size={18} /> Add expense</button>}
+        {can('expenses.record') && <button className="btn primary" onClick={() => setAdding(true)} aria-label="Add expense"><Plus size={18} /> <span className="btn-text">Add expense</span></button>}
       </div>
 
+      <input className="input" type="month" value={period} max={month} onChange={(e) => e.target.value && setPeriod(e.target.value)}
+        aria-label="Month" style={{ maxWidth: 220 }} />
       <div className="tiles">
         <div className="tile"><span className="label">Total</span><span className="value">{formatINR(total)}</span><span className="sub">{live.length} entries</span></div>
         {byCategory.slice(0, 3).map(([name, amount]) => (

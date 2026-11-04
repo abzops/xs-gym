@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Plus, Receipt, ScanLine, Users } from 'lucide-react';
 import { Link } from 'react-router';
 import { useGym } from '../../app/gym';
-import { Empty, Loading, Notice, initials } from '../../components/ui';
+import { Empty, Loading, Notice, PushLink, initials } from '../../components/ui';
 import { formatTime } from '../../lib/dates';
 import { errorMessage } from '../../lib/errors';
 import { formatINR } from '../../lib/money';
@@ -43,15 +43,6 @@ export function Dashboard() {
   if (summary.error) return <Notice tone="bad">{errorMessage(summary.error)}</Notice>;
   const s = summary.data;
   const f = s.financial;
-  const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
-  const finding = [
-    s.expiring_7_days > 0
-      ? `${plural(s.expiring_7_days, 'membership ends', 'memberships end')} in the next 7 days`
-      : 'No memberships end this week',
-    f && f.members_with_dues > 0
-      ? `${plural(f.members_with_dues, 'member owes', 'members owe')} ${formatINR(f.dues_total)} in total`
-      : f ? 'nobody owes anything' : null,
-  ].filter(Boolean).join(', and ') + '.';
   const day = new Intl.DateTimeFormat('en-IN', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' })
     .format(new Date(`${s.today}T12:00:00Z`));
 
@@ -59,17 +50,13 @@ export function Dashboard() {
     <div className="stack xl">
       <section className="today" aria-label="Today">
         <div className="stack">
-          <div className="when">
-            <h1>{day}</h1>
-            <span>India Standard Time</span>
-          </div>
-          <p className="finding">{finding}</p>
+          <div className="when"><h1>{day}</h1></div>
         </div>
         <div className="figures">
           {f ? (
             <Link className="figure lead" to={`${base}/payments`}>
               <span className="value">{formatINR(f.collections_today)}</span>
-              <span>Collected today{f.collections_today ? `, cash ${formatINR(f.cash_today)} and UPI ${formatINR(f.upi_today)}` : ''}</span>
+              <span>Collected today</span>
             </Link>
           ) : (
             <Link className="figure lead" to={`${base}/check-in`}>
@@ -102,12 +89,10 @@ export function Dashboard() {
           <Link className="tile" to={`${base}/members?filter=expiring`}>
             <span className="label">Expiring in 7 days</span>
             <span className="value">{s.expiring_7_days}</span>
-            <span className="sub">{s.expiring_30_days} within 30 days</span>
           </Link>
           <Link className="tile" to={`${base}/members?filter=expired`}>
             <span className="label">Recently expired</span>
             <span className="value">{s.expired_last_30_days}</span>
-            <span className="sub">{s.in_grace} in grace period now</span>
           </Link>
           {f ? (
             <Link className="tile" to={`${base}/members?filter=dues`}>
@@ -122,7 +107,6 @@ export function Dashboard() {
             <Link className="tile" to={`${base}/reports`}>
               <span className="label">This month, net</span>
               <span className="value">{formatINR(f.collections_month - f.reversals_month)}</span>
-              <span className="sub">{formatINR(f.expenses_month)} spent</span>
             </Link>
           ) : (
             <div className="tile"><span className="label">In grace period</span><span className="value">{s.in_grace}</span></div>
@@ -135,20 +119,19 @@ export function Dashboard() {
         <section className="card flush">
           <div className="card-head">
             <h2>Latest check-ins</h2>
-            <Link to={`${base}/check-in`}>Check someone in</Link>
           </div>
-          {recent.data && recent.data.length === 0 ? <Empty title="No check-ins yet">The first visit of the day shows up here.</Empty> : (
+          {recent.data && recent.data.length === 0 ? <Empty title="No check-ins yet" /> : (
             <ul className="list">
               {recent.data?.map((a) => (
                 <li key={a.id}>
-                  <Link className="item" to={`${base}/members/${a.member_id}`}>
+                  <PushLink className="item" to={`${base}/members/${a.member_id}`}>
                     <span className="avatar" aria-hidden>{initials(a.members?.full_name ?? '?')}</span>
                     <span className="main-col">
                       <span className="title">{a.members?.full_name}</span>
                       <span className="meta"><span className="mono">{a.members?.member_no}</span></span>
                     </span>
                     <span className="mono muted">{formatTime(a.checked_in_at, gym.timezone)}</span>
-                  </Link>
+                  </PushLink>
                 </li>
               ))}
             </ul>

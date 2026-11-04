@@ -19,7 +19,6 @@ type Day = {
 type Tab = 'daily' | 'dues' | 'expiring';
 
 export function ReportsPage() {
-  const { gym } = useGym();
   const [tab, setTab] = useState<Tab>('daily');
   return (
     <div className="stack lg">
@@ -29,7 +28,6 @@ export function ReportsPage() {
       {tab === 'daily' && <DailyReport />}
       {tab === 'dues' && <MemberReport kind="dues" />}
       {tab === 'expiring' && <MemberReport kind="expiring" />}
-      <p className="muted">All dates are {gym.timezone === 'Asia/Kolkata' ? 'Indian Standard Time' : gym.timezone}. Collections count payments on the day received; reversals count on the day they were reversed.</p>
     </div>
   );
 }

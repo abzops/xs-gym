@@ -9,7 +9,7 @@ import { rpc, supabase } from '../../lib/supabase';
 import { ROLE_LABEL, type Role, type StaffRow } from '../../lib/types';
 
 export function SettingsPage() {
-  const { gym, can, subscription } = useGym();
+  const { can, subscription } = useGym();
   return (
     <div className="stack lg" style={{ maxWidth: 820 }}>
       <div className="page-head"><h1>Settings</h1></div>
@@ -24,9 +24,7 @@ export function SettingsPage() {
             {subscription.paid_until && <><dt>Paid until</dt><dd>{formatDate(subscription.paid_until.slice(0, 10))}</dd></>}
           </dl>
         ) : <p className="muted">No subscription found.</p>}
-        <p className="muted">When a subscription ends, all data stays available to view and export. To renew, contact Xelorsoft.</p>
       </section>
-      <p className="label">{gym.name} · {gym.slug}</p>
     </div>
   );
 }
@@ -53,7 +51,7 @@ function GymSettings() {
         <Field label="Phone"><input className="input" type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} /></Field>
       </div>
       <Field label="Address"><textarea className="input" rows={2} value={address} onChange={(e) => setAddress(e.target.value)} /></Field>
-      <Field label="Grace period after expiry (days)" hint="Members can still check in for this many days after their plan ends. 0–60.">
+      <Field label="Grace days after expiry">
         <input className="input" inputMode="numeric" value={grace} onChange={(e) => setGrace(e.target.value.replace(/\D/g, ''))} style={{ maxWidth: 140 }} />
       </Field>
       {save.error && <Notice tone="bad">{errorMessage(save.error)}</Notice>}
@@ -98,7 +96,7 @@ function StaffSection() {
           ))}
         </ul>
       )}
-      {manage && <p className="muted" style={{ padding: '0 16px 16px' }}>Each person signs up with their own email first, then you add them here. Shared logins are not allowed so every action is traceable.</p>}
+      {manage && <p className="muted" style={{ padding: '0 18px 18px' }}>Staff sign up first; then add them by email.</p>}
       {adding && <StaffSheet staff={adding === 'new' ? null : adding} onClose={() => setAdding(null)} />}
     </section>
   );
@@ -118,14 +116,14 @@ function StaffSheet({ staff, onClose }: { staff: StaffRow | null; onClose: () =>
   return (
     <Sheet title={staff ? 'Edit staff access' : 'Add staff'} onClose={onClose}>
       <form className="stack lg" onSubmit={(e) => { e.preventDefault(); if (email.trim()) save.mutate(); }}>
-        <Field label="Their account email" hint="They must have created an XS Gym account with this email">
+        <Field label="Email they signed up with">
           <input className="input" type="email" value={email} onChange={(e) => setEmail(e.target.value)} disabled={!!staff} />
         </Field>
         <Field label="Role">
           <select className="input" value={role} onChange={(e) => setRole(e.target.value as Exclude<Role, 'owner'>)}>
-            <option value="reception">Reception — members, check-in, sell plans, record payments</option>
-            <option value="manager">Manager — everything except staff, settings and billing</option>
-            <option value="trainer">Trainer — view members and check in</option>
+            <option value="reception">Reception</option>
+            <option value="manager">Manager</option>
+            <option value="trainer">Trainer</option>
           </select>
         </Field>
         {staff && <label className="row" style={{ gap: 10 }}><input type="checkbox" checked={active} onChange={(e) => setActive(e.target.checked)} /> Has access</label>}

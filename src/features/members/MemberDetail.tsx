@@ -3,7 +3,7 @@ import { ArrowLeft, Pencil, Phone, RefreshCw, Wallet } from 'lucide-react';
 import { useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router';
 import { useGym } from '../../app/gym';
-import { Empty, Loading, Notice, Sheet, StatusBadge, initials, useToast } from '../../components/ui';
+import { BackLink, Empty, Loading, Notice, PushLink, Sheet, StatusBadge, initials, useToast } from '../../components/ui';
 import { formatDate, formatDateTime } from '../../lib/dates';
 import { errorMessage } from '../../lib/errors';
 import { formatINR } from '../../lib/money';
@@ -46,7 +46,7 @@ export function MemberDetail() {
 
   return (
     <div className="stack lg">
-      <Link to={`${base}/members`} className="btn ghost small" style={{ justifySelf: 'start' }}><ArrowLeft size={16} /> Members</Link>
+      <BackLink to={`${base}/members`} className="btn ghost small" style={{ justifySelf: 'start' }}><ArrowLeft size={16} /> Members</BackLink>
 
       <div className="card stack lg">
         <div className="detail-head">
@@ -106,7 +106,7 @@ export function MemberDetail() {
                           {reversed && <span className="meta">Reversed: {p.payment_reversals![0].reason}</span>}
                         </span>
                         <span className="end-col">
-                          <Link className="btn small ghost" to={`${base}/receipts/${p.id}`}>Receipt</Link>
+                          <PushLink className="btn small ghost" to={`${base}/receipts/${p.id}`}>Receipt</PushLink>
                           {reversed ? <span className="badge bad">Reversed</span> : can('payments.reverse') && (
                             <button className="btn small ghost" onClick={() => setDialog({ reverse: p.id })}>Reverse</button>
                           )}

@@ -5,6 +5,7 @@ import { useNavigate } from 'react-router';
 import { useGym } from '../../app/gym';
 import { Field, Notice, useToast } from '../../components/ui';
 import { errorMessage } from '../../lib/errors';
+import { setTransition } from '../../lib/motion';
 import { rpc } from '../../lib/supabase';
 import type { MemberOverview } from '../../lib/types';
 
@@ -44,7 +45,7 @@ export function MemberForm({ member, onDone }: { member?: MemberOverview; onDone
       await qc.invalidateQueries({ queryKey: ['member', gym.id, saved.id] });
       toast(member ? 'Member updated' : 'Member added');
       if (onDone) onDone();
-      else navigate(`/g/${gym.slug}/members/${saved.id}?sell=1`, { replace: true });
+      else { setTransition('push'); navigate(`/g/${gym.slug}/members/${saved.id}?sell=1`, { replace: true, viewTransition: true }); }
     },
   });
 
@@ -63,8 +64,7 @@ export function MemberForm({ member, onDone }: { member?: MemberOverview; onDone
         <Field label="Full name">
           <input className="input" value={v.full_name} onChange={set('full_name')} autoComplete="off" required autoFocus={!member} />
         </Field>
-        <Field label="Mobile number" hint="10 digits; +91 is added for you"
-          error={v.phone && !phoneOk ? 'Enter at least 10 digits' : null}>
+        <Field label="Mobile number" error={v.phone && !phoneOk ? 'Enter 10 digits' : null}>
           <input className="input" type="tel" inputMode="tel" value={v.phone} onChange={set('phone')} autoComplete="off" required
             aria-invalid={!!v.phone && !phoneOk} />
         </Field>
@@ -72,7 +72,7 @@ export function MemberForm({ member, onDone }: { member?: MemberOverview; onDone
 
       {!more ? (
         <button type="button" className="btn ghost small" onClick={() => setMore(true)} style={{ justifySelf: 'start' }}>
-          <ChevronDown size={16} /> More details (optional)
+          <ChevronDown size={16} /> More details
         </button>
       ) : (
         <div className="grid-2">

@@ -4,9 +4,10 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router';
 import { useGym } from '../../app/gym';
 import { Field, Notice, Segmented, Sheet, useToast } from '../../components/ui';
-import { formatDate, formatTime } from '../../lib/dates';
+import { addDays, formatDate, formatTime, todayInGym } from '../../lib/dates';
 import { errorMessage } from '../../lib/errors';
 import { formatINR, paiseToInput, parseINR } from '../../lib/money';
+import { setTransition } from '../../lib/motion';
 import { newKey, rpc } from '../../lib/supabase';
 import { METHOD_LABEL, type MemberOverview, type Membership, type Method, type Payment } from '../../lib/types';
 import { planDuration, usePlans } from './api';
@@ -44,6 +45,10 @@ export function SellPlanSheet({ member, onClose, onSold }: {
   const admissionPaise = admission ? parseINR(admission) : 0;
   const total = plan ? plan.price_paise - (discountPaise ?? 0) + (admissionPaise ?? 0) : 0;
   const renewing = !!member.valid_until;
+  // Preview of the server's rule (the database decides): continue after the
+  // current end date if still within grace, otherwise start today.
+  const today = todayInGym(gym.timezone);
+  const autoStart = member.valid_until && today <= addDays(member.valid_until, gym.grace_days) ? addDays(member.valid_until, 1) : today;
   const invalid = !plan || discountPaise === null || admissionPaise === null
     || (discountPaise ?? 0) > (plan?.price_paise ?? 0) || ((discountPaise ?? 0) > 0 && !reason.trim())
     || (customStart && !start);
@@ -76,17 +81,13 @@ export function SellPlanSheet({ member, onClose, onSold }: {
           ))}
         </div>
 
-        {renewing && !customStart && (
-          <p className="muted">
-            Starts automatically: the day after {formatDate(member.valid_until)} if renewed within the grace period, otherwise today.
-          </p>
-        )}
+        {!customStart && <p className="muted">Starts {formatDate(autoStart)}</p>}
         <label className="row" style={{ gap: 10 }}>
           <input type="checkbox" checked={customStart} onChange={(e) => setCustomStart(e.target.checked)} />
-          Choose a different start date
+          Different start date
         </label>
         {customStart && (
-          <Field label="Start date" hint="Within 30 days before or 60 days after today">
+          <Field label="Start date">
             <input className="input" type="date" value={start} onChange={(e) => setStart(e.target.value)} />
           </Field>
         )}
@@ -115,7 +116,7 @@ export function SellPlanSheet({ member, onClose, onSold }: {
               <span>Amount to collect</span>
               <strong className="num" style={{ fontSize: '1.25rem' }}>{formatINR(total)}</strong>
             </div>
-            {member.credit_paise > 0 && <p className="muted">Available credit of {formatINR(member.credit_paise)} is applied automatically.</p>}
+            {member.credit_paise > 0 && <p className="muted">{formatINR(member.credit_paise)} credit will be used</p>}
           </div>
         )}
         {sell.error && <Notice tone="bad">{errorMessage(sell.error)}</Notice>}
@@ -153,7 +154,8 @@ export function PaymentSheet({ member, onClose }: { member: MemberOverview; onCl
       await refresh();
       toast(`${formatINR(p.amount_paise)} ${METHOD_LABEL[p.method]} recorded`);
       onClose();
-      navigate(`/g/${gym.slug}/receipts/${p.id}`);
+      setTransition('push');
+      navigate(`/g/${gym.slug}/receipts/${p.id}`, { viewTransition: true });
     },
   });
 
@@ -161,7 +163,7 @@ export function PaymentSheet({ member, onClose }: { member: MemberOverview; onCl
     <Sheet title="Record payment" onClose={onClose}>
       <form className="stack lg" onSubmit={(e) => { e.preventDefault(); if (paise) pay.mutate(); }}>
         <p className="muted">
-          {member.full_name} · {member.due_paise > 0 ? `${formatINR(member.due_paise)} due` : 'nothing due — extra becomes credit'}
+          {member.due_paise > 0 ? `${formatINR(member.due_paise)} due` : 'Nothing due'}
         </p>
         <Field label="Amount received" error={amount && paise === null ? 'Enter an amount like 1500 or 1500.50' : null}>
           <input className="input num" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)}
@@ -170,7 +172,7 @@ export function PaymentSheet({ member, onClose }: { member: MemberOverview; onCl
         <Segmented label="Payment method" value={method} options={METHODS} onChange={setMethod} />
         {method !== 'cash' && (
           <Field label={method === 'upi' ? 'UPI reference (optional)' : 'Reference (optional)'}
-            hint="Check the amount arrived before saving — this is recorded as manually verified.">
+            hint="Confirm the money arrived before saving.">
             <input className="input" value={reference} onChange={(e) => setReference(e.target.value)} />
           </Field>
         )}
@@ -220,8 +222,7 @@ export function CheckInButton({ member, compact = false }: { member: MemberOverv
         <Sheet title="Check in with override" onClose={() => setOverride(false)}>
           <form className="stack lg" onSubmit={(e) => { e.preventDefault(); if (reason.trim()) checkIn.mutate(reason); }}>
             <Notice tone="warn">
-              {member.full_name}'s membership is {member.membership_status === 'none' ? 'not set up' : member.membership_status}.
-              The override and your reason are saved in the audit log.
+              Membership is {member.membership_status === 'none' ? 'not set up' : member.membership_status}. Your reason is logged.
             </Notice>
             <Field label="Reason">
               <input className="input" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="e.g. paying tomorrow" />

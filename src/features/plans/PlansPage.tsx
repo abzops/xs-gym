@@ -28,11 +28,11 @@ export function PlansPage() {
     <div className="stack lg">
       <div className="page-head">
         <h1>Plans</h1>
-        {manage && <button className="btn primary" onClick={() => setEditing('new')}><Plus size={18} /> Add plan</button>}
+        {manage && <button className="btn primary" onClick={() => setEditing('new')} aria-label="Add plan"><Plus size={18} /> <span className="btn-text">Add plan</span></button>}
       </div>
       {params.get('welcome') && (
         <Notice tone="ok">
-          Your gym is ready. Add the plans you sell — then <Link to={`/g/${gym.slug}/members/new`}>add your first member</Link>.
+          Add the plans you sell, then <Link to={`/g/${gym.slug}/members/new`}>add a member</Link>.
         </Notice>
       )}
       {plans.isPending ? <Loading /> : plans.error ? <Notice tone="bad">{errorMessage(plans.error)}</Notice> :
@@ -118,7 +118,7 @@ function PlanSheet({ plan, onClose }: { plan: Plan | null; onClose: () => void }
             <input type="checkbox" checked={active} onChange={(e) => setActive(e.target.checked)} /> Still sold
           </label>
         )}
-        {plan && <p className="muted">Changing the price affects new sales only. Existing memberships keep the price they were sold at.</p>}
+        {plan && <p className="muted">New prices apply to new sales only.</p>}
         {save.error && <Notice tone="bad">{errorMessage(save.error)}</Notice>}
         <button className="btn primary block" disabled={!valid || save.isPending}>{plan ? 'Save plan' : 'Add plan'}</button>
       </form>

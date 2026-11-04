@@ -3,7 +3,7 @@ import { ArrowLeft, Upload } from 'lucide-react';
 import { useState } from 'react';
 import { Link } from 'react-router';
 import { useGym } from '../../app/gym';
-import { Notice } from '../../components/ui';
+import { BackLink, Notice } from '../../components/ui';
 import { downloadCSV } from '../../lib/csv';
 import { parseCSV, toImportRows, type ImportRow } from '../../lib/csvParse';
 import { errorMessage } from '../../lib/errors';
@@ -57,12 +57,11 @@ export function ImportPage() {
 
   return (
     <div className="stack lg" style={{ maxWidth: 880 }}>
-      <Link to={`/g/${gym.slug}/members`} className="btn ghost small" style={{ justifySelf: 'start' }}><ArrowLeft size={16} /> Members</Link>
+      <BackLink to={`/g/${gym.slug}/members`} className="btn ghost small" style={{ justifySelf: 'start' }}><ArrowLeft size={16} /> Members</BackLink>
       <div className="page-head"><h1>Import members</h1></div>
 
       <div className="card stack">
-        <p>Upload a CSV file (save your Excel or Google Sheet as CSV). Columns <strong>name</strong> and <strong>phone</strong> are required;
-          <span className="mono"> email, gender, date of birth, join date</span> are optional. Dates like 05/11/2026 are read day-first.</p>
+        <p>CSV with <strong>name</strong> and <strong>phone</strong> columns. Optional: email, gender, date of birth, join date.</p>
         <div className="row">
           <label className="btn primary">
             <Upload size={18} /> Choose CSV file
@@ -71,7 +70,6 @@ export function ImportPage() {
           <button className="btn" type="button" onClick={() => downloadCSV('xs-gym-import-template.csv', ['name', 'phone', 'email', 'gender', 'date of birth', 'join date'],
             [['Rahul Krishnan', '9876543210', '', 'male', '15/08/1995', '01/10/2026']])}>Download template</button>
         </div>
-        <p className="muted">Plans and payments are not imported — sell each member's current plan from their profile after import.</p>
       </div>
 
       {missing.length > 0 && <Notice tone="bad">{fileName}: missing {missing.join(' and ')} column.</Notice>}

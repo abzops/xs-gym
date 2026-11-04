@@ -2,7 +2,7 @@ import { Search } from 'lucide-react';
 import { useDeferredValue, useState } from 'react';
 import { Link } from 'react-router';
 import { useGym } from '../../app/gym';
-import { Empty, Loading, Notice, StatusBadge, initials } from '../../components/ui';
+import { Empty, Loading, Notice, PushLink, StatusBadge, initials } from '../../components/ui';
 import { formatDate } from '../../lib/dates';
 import { errorMessage } from '../../lib/errors';
 import { formatINR } from '../../lib/money';
@@ -28,7 +28,7 @@ export function CheckInPage() {
       </div>
 
       {deferred.length < 2 ? (
-        <p className="muted">Start typing to find a member.</p>
+        null
       ) : results.isPending ? <Loading rows={3} /> : results.error ? (
         <Notice tone="bad">{errorMessage(results.error)}</Notice>
       ) : results.data.length === 0 ? (
@@ -40,7 +40,7 @@ export function CheckInPage() {
           {results.data.slice(0, 12).map((m) => (
             <li key={m.id} className="item" style={{ cursor: 'default' }}>
               <span className="avatar" aria-hidden>{initials(m.full_name)}</span>
-              <Link to={`${base}/members/${m.id}`} className="main-col" style={{ textDecoration: 'none' }}>
+              <PushLink to={`${base}/members/${m.id}`} className="main-col" style={{ textDecoration: 'none' }}>
                 <span className="title">{m.full_name}</span>
                 <span className="meta">
                   <span className="mono">{m.member_no}</span>
@@ -48,7 +48,7 @@ export function CheckInPage() {
                   {m.due_paise > 0 && <span className="amount-due">{formatINR(m.due_paise)} due</span>}
                 </span>
                 <span><StatusBadge status={m.membership_status} /></span>
-              </Link>
+              </PushLink>
               <CheckInButton member={m} compact />
             </li>
           ))}

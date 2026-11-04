@@ -1,8 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
-import { Link } from 'react-router';
 import { useGym } from '../../app/gym';
-import { Empty, Field, Loading, Notice } from '../../components/ui';
+import { Empty, Field, Loading, Notice, PushLink } from '../../components/ui';
 import { addDays, formatDate, formatTime, todayInGym } from '../../lib/dates';
 import { errorMessage } from '../../lib/errors';
 import { formatINR } from '../../lib/money';
@@ -45,14 +44,13 @@ export function PaymentsPage() {
 
       <div className="tiles">
         <div className="tile"><span className="label">Received on {formatDate(day)}</span><span className="value">{formatINR(total)}</span>
-          <span className="sub">{live.length} payment{live.length === 1 ? '' : 's'}, excluding reversed</span></div>
+          <span className="sub">{live.length} payment{live.length === 1 ? '' : 's'}</span></div>
         {(['cash', 'upi'] as Method[]).map((m) => (
           <div className="tile" key={m}><span className="label">{METHOD_LABEL[m]}</span><span className="value">{formatINR(byMethod[m] ?? 0)}</span></div>
         ))}
         <div className="tile"><span className="label">Card / bank / other</span>
           <span className="value">{formatINR((byMethod.card ?? 0) + (byMethod.bank ?? 0) + (byMethod.other ?? 0))}</span></div>
       </div>
-      <p className="muted">To record a payment, open the member and tap Payment. UPI and bank entries are manually verified by staff.</p>
 
       {payments.isPending ? <Loading /> : payments.error ? <Notice tone="bad">{errorMessage(payments.error)}</Notice> :
         payments.data.length === 0 ? <div className="card"><Empty title="No payments on this day" /></div> : (
@@ -61,7 +59,7 @@ export function PaymentsPage() {
               const reversed = !!p.payment_reversals?.length;
               return (
                 <li key={p.id}>
-                  <Link className="item" to={`${base}/receipts/${p.id}`}>
+                  <PushLink className="item" to={`${base}/receipts/${p.id}`}>
                     <span className="main-col">
                       <span className="title">{p.members?.full_name}</span>
                       <span className="meta"><span className="mono">{formatTime(p.received_at, gym.timezone)}</span><span>{METHOD_LABEL[p.method]}</span>{p.reference && <span>{p.reference}</span>}</span>
@@ -70,7 +68,7 @@ export function PaymentsPage() {
                       <span className="num" style={{ fontWeight: 600, textDecoration: reversed ? 'line-through' : undefined }}>{formatINR(p.amount_paise)}</span>
                       {reversed && <span className="badge bad">Reversed</span>}
                     </span>
-                  </Link>
+                  </PushLink>
                 </li>
               );
             })}

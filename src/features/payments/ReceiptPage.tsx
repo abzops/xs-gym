@@ -1,8 +1,8 @@
 import { useQuery } from '@tanstack/react-query';
 import { ArrowLeft, Printer, Share2 } from 'lucide-react';
-import { Link, useParams } from 'react-router';
+import { useParams } from 'react-router';
 import { useGym } from '../../app/gym';
-import { Empty, Loading, Notice, useToast } from '../../components/ui';
+import { BackLink, Empty, Loading, Notice, useToast } from '../../components/ui';
 import { formatDateTime } from '../../lib/dates';
 import { errorMessage } from '../../lib/errors';
 import { formatINR } from '../../lib/money';
@@ -59,7 +59,7 @@ export function ReceiptPage() {
   return (
     <div className="stack lg" style={{ maxWidth: 560 }}>
       <div className="row no-print">
-        <Link to={`/g/${gym.slug}/members/${r.member_id}`} className="btn ghost small"><ArrowLeft size={16} /> Member</Link>
+        <BackLink to={`/g/${gym.slug}/members/${r.member_id}`} className="btn ghost small"><ArrowLeft size={16} /> Member</BackLink>
         <span style={{ flex: 1 }} />
         <button className="btn small" onClick={share}><Share2 size={16} /> Share</button>
         <button className="btn small" onClick={() => window.print()}><Printer size={16} /> Print</button>
@@ -93,7 +93,7 @@ export function ReceiptPage() {
           </tbody>
           <tfoot><tr><td>Total received</td><td className="r num" style={{ textDecoration: reversed ? 'line-through' : undefined }}>{formatINR(r.amount_paise, { showZeroPaise: true })}</td></tr></tfoot>
         </table>
-        <p className="muted" style={{ fontSize: '0.8125rem' }}>Computer-generated receipt from XS Gym by Xelorsoft. No signature required.</p>
+        <p className="muted" style={{ fontSize: 'var(--t-xs)' }}>Computer-generated receipt.</p>
       </article>
     </div>
   );
