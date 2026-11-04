@@ -114,6 +114,35 @@ for (const [vpName, w, h] of viewports) {
   }
   await ctx.close();
 }
+// Interaction flow on a phone: push into a member, open and close a sheet, go back.
+{
+  const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+  await ctx.addInitScript(([key, value]) => localStorage.setItem(key, value), [`sb-${REF}-auth-token`, JSON.stringify(session)]);
+  await ctx.route(`https://${REF}.supabase.co/**`, (route) => {
+    const accept = route.request().headers()['accept'] ?? '';
+    let data = body(route.request().url());
+    if (accept.includes('vnd.pgrst.object') && Array.isArray(data)) data = data[0] ?? null;
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(data) });
+  });
+  const page = await ctx.newPage();
+  const errors = [];
+  page.on('pageerror', (e) => errors.push(e.message));
+  await page.goto(`${baseUrl}g/${gym.slug}/members`, { waitUntil: 'networkidle' });
+  await page.locator('.list .item').first().tap();
+  await page.waitForURL(/\/members\/[0-9a-f-]{36}/);
+  const vt = await page.evaluate(() => document.documentElement.dataset.vt);
+  await page.getByRole('button', { name: 'Payment' }).tap();
+  const sheetOpen = await page.getByRole('dialog', { name: 'Record payment' }).isVisible();
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(350);
+  const sheetClosed = (await page.getByRole('dialog').count()) === 0;
+  await page.getByRole('link', { name: 'Members' }).first().tap();
+  await page.waitForURL(/\/members$/);
+  const ok = vt === 'push' && sheetOpen && sheetClosed && errors.length === 0;
+  if (!ok) failures++;
+  console.log(`${ok ? 'ok  ' : 'FAIL'} flow        push=${vt} sheetOpen=${sheetOpen} sheetClosed=${sheetClosed}${errors.length ? ' errors=' + errors.join(' | ') : ''}`);
+  await ctx.close();
+}
 await browser.close();
 console.log(failures ? `${failures} FAILURES` : 'ALL SCREENS OK');
 process.exit(failures ? 1 : 0);
