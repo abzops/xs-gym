@@ -47,9 +47,11 @@ function body(url) {
     { id: 'p3', gym_id: gym.id, name: 'Yearly', duration_unit: 'month', duration_count: 12, price_paise: 960000, description: null, status: 'active' }];
   if (p.endsWith('/attendance_events')) return members.slice(0, 4).map((m, i) => ({ id: `a${i}`, member_id: m.id, checked_in_at: `2026-11-05T0${3 - i}:1${i}:00Z`,
     membership_status: 'active', override_reason: null, voided_at: null, void_reason: null, members: { full_name: m.full_name, member_no: m.member_no } }));
+  if (p.endsWith('/payments') && u.searchParams.get('id') === 'eq.py1') return [body(url.replace('id=eq.py1', 'x=1'))[0]];
   if (p.endsWith('/payments')) return [
     { id: 'py1', gym_id: gym.id, member_id: members[0].id, amount_paise: 100000, method: 'upi', received_at: '2026-11-05T03:30:00Z', reference: 'UTR 4521', notes: null,
-      payment_reversals: [], members: { full_name: members[0].full_name, member_no: 'XS-0001' } },
+      payment_reversals: [], members: { full_name: members[0].full_name, member_no: 'XS-0001', phone: '+919876500011' },
+      payment_allocations: [{ amount_paise: 50000, charges: { description: 'Admission fee' } }, { amount_paise: 50000, charges: { description: 'Monthly · 20 Oct 2026 – 19 Nov 2026' } }] },
     { id: 'py2', gym_id: gym.id, member_id: members[1].id, amount_paise: 270000, method: 'cash', received_at: '2026-11-05T02:10:00Z', reference: null, notes: null,
       payment_reversals: [{ id: 'r', reason: 'Wrong member', reversed_at: '2026-11-05T02:20:00Z' }], members: { full_name: members[1].full_name, member_no: 'XS-0002' } }];
   if (p.endsWith('/member_memberships')) return [{ id: 'mm1', member_id: members[0].id, plan_id: 'p1', plan_name: 'Monthly', start_date: '2026-10-20', end_date: '2026-11-19', price_paise: 100000, status: 'active', cancel_reason: null, created_at: '2026-10-20T00:00:00Z' }];
@@ -68,7 +70,7 @@ const session = { access_token: fakeJwt({ sub: userId, exp, role: 'authenticated
 
 const viewports = [['phone', 390, 844], ['tablet', 768, 1024], ['tablet-land', 1024, 768], ['laptop', 1366, 768]];
 const screens = [['dashboard', ''], ['members', '/members'], ['member', `/members/${members[0].id}`], ['checkin', '/check-in'],
-  ['payments', '/payments'], ['plans', '/plans'], ['expenses', '/expenses'], ['reports', '/reports'], ['settings', '/settings']];
+  ['payments', '/payments'], ['receipt', '/receipts/py1'], ['plans', '/plans'], ['expenses', '/expenses'], ['reports', '/reports'], ['settings', '/settings']];
 
 const browser = await chromium.launch();
 let failures = 0;
