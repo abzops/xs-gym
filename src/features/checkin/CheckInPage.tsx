@@ -43,8 +43,9 @@ export function CheckInPage() {
               <Link to={`${base}/members/${m.id}`} className="main-col" style={{ textDecoration: 'none' }}>
                 <span className="title">{m.full_name}</span>
                 <span className="meta">
-                  {m.member_no} · {m.valid_until ? `till ${formatDate(m.valid_until)}` : 'no plan'}
-                  {m.due_paise > 0 ? ` · ${formatINR(m.due_paise)} due` : ''}
+                  <span className="mono">{m.member_no}</span>
+                  <span>{m.valid_until ? `Till ${formatDate(m.valid_until)}` : 'No plan yet'}</span>
+                  {m.due_paise > 0 && <span className="amount-due">{formatINR(m.due_paise)} due</span>}
                 </span>
                 <span><StatusBadge status={m.membership_status} /></span>
               </Link>

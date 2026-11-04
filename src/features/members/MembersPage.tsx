@@ -42,7 +42,7 @@ export function MembersPage() {
           <input className="input" type="search" placeholder="Name, phone or member number" value={search}
             onChange={(e) => setSearch(e.target.value)} aria-label="Search members" />
         </div>
-        <div style={{ overflowX: 'auto' }}>
+        <div className="scroll-x">
           <Segmented label="Filter members" value={filter} options={FILTERS}
             onChange={(v) => setParams((p) => { p.set('filter', v); return p; }, { replace: true })} />
         </div>
@@ -67,13 +67,14 @@ export function MembersPage() {
                 <span className="main-col">
                   <span className="title">{m.full_name}</span>
                   <span className="meta">
-                    {m.member_no} · {m.phone.replace(/^\+91/, '')}
-                    {m.valid_until ? ` · till ${formatDate(m.valid_until)}` : ''}
+                    <span className="mono">{m.member_no}</span>
+                    <span>{m.phone.replace(/^\+91/, '')}</span>
+                    {m.valid_until && <span>Till {formatDate(m.valid_until)}</span>}
                   </span>
                 </span>
                 <span className="end-col">
                   <StatusBadge status={m.membership_status} />
-                  {m.due_paise > 0 && <span className="num" style={{ color: 'var(--bad)', fontWeight: 600 }}>{formatINR(m.due_paise)} due</span>}
+                  {m.due_paise > 0 && <span className="num amount-due">{formatINR(m.due_paise)} due</span>}
                 </span>
               </Link>
             </li>

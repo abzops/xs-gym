@@ -101,8 +101,8 @@ export function MemberDetail() {
                     return (
                       <li key={p.id} className="item" style={{ cursor: 'default' }}>
                         <span className="main-col">
-                          <span className="title num" style={{ textDecoration: reversed ? 'line-through' : undefined }}>{formatINR(p.amount_paise)} · {METHOD_LABEL[p.method]}</span>
-                          <span className="meta">{formatDateTime(p.received_at, gym.timezone)}{p.reference ? ` · ${p.reference}` : ''}</span>
+                          <span className="title num" style={{ textDecoration: reversed ? 'line-through' : undefined }}>{formatINR(p.amount_paise)} by {METHOD_LABEL[p.method]}</span>
+                          <span className="meta"><span>{formatDateTime(p.received_at, gym.timezone)}</span>{p.reference && <span>{p.reference}</span>}</span>
                           {reversed && <span className="meta">Reversed: {p.payment_reversals![0].reason}</span>}
                         </span>
                         <span className="end-col">
@@ -127,7 +127,7 @@ export function MemberDetail() {
                   <li key={mm.id} className="item" style={{ cursor: 'default' }}>
                     <span className="main-col">
                       <span className="title">{mm.plan_name}</span>
-                      <span className="meta">{formatDate(mm.start_date)} – {formatDate(mm.end_date)} · {formatINR(mm.price_paise)}</span>
+                      <span className="meta"><span>{formatDate(mm.start_date)} – {formatDate(mm.end_date)}</span><span>{formatINR(mm.price_paise)}</span></span>
                     </span>
                     {mm.status === 'cancelled' && <span className="badge neutral">Cancelled</span>}
                   </li>
