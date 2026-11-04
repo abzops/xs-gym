@@ -1,0 +1,17 @@
+# ADR-0007 — Brand assets, tokens and fonts
+
+**Status:** Proposed — pending owner decision D-10 · 05 Nov 2026
+
+**Context.** SVG masters, token files and font files listed in the brand guide
+were not supplied (audit §3).
+
+**Decision.** Use SVGs recovered from the official vector PDF
+(`brand/derived/svg/`, pixel-verified). Build CSS tokens from the guide: Carbon
+`#171719`, Porcelain `#F6F6F4`, Silver `#B7B7BD` (never for text on light).
+Self-host Manrope (SemiBold headings, Regular body) and IBM Plex Mono (labels)
+from `@fontsource` — no third-party font requests. Add functional status tokens
+(success, warning, danger, info) for state only, always with icon + text. Export a
+maskable icon from the SVG for Android.
+
+**Consequences.** No new brand design is invented. If original SVGs or tokens
+are supplied they replace the derived ones with no code change beyond file swap.
