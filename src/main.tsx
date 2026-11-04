@@ -5,7 +5,9 @@ import './styles/app.css';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { lazy, StrictMode, Suspense, type ReactNode } from 'react';
 import { createRoot } from 'react-dom/client';
-import { BrowserRouter, Link, Navigate, Outlet, Route, Routes, useParams } from 'react-router';
+import {
+  createBrowserRouter, createRoutesFromElements, Link, Navigate, Outlet, Route, RouterProvider, useParams,
+} from 'react-router';
 import { AuthProvider, useAuth } from './app/auth';
 import { GymProvider, useGym, useGymBySlug, useMyGyms } from './app/gym';
 import { Shell } from './app/Shell';
@@ -44,12 +46,12 @@ function Splash() {
   return <div className="center-screen" aria-busy="true"><span className="spinner" /></div>;
 }
 
-function RequireAuth({ children }: { children: ReactNode }) {
+function RequireAuth() {
   const { session, loading, recovering } = useAuth();
   if (loading) return <Splash />;
   if (recovering) return <SetNewPassword />;
   if (!session) return <Navigate to="/login" replace />;
-  return <>{children}</>;
+  return <Outlet />;
 }
 
 function Home() {
@@ -66,15 +68,15 @@ function GymLayout() {
   if (ctx.isPending) return <Splash />;
   if (ctx.error) return <div className="center-screen"><Notice tone="bad">{errorMessage(ctx.error)}</Notice></div>;
   if (!ctx.data) {
-    return <div className="center-screen"><Empty title="Gym not found"><p>You may not have access to this gym.</p><Link className="btn" to="/">Go home</Link></Empty></div>;
+    return <div className="center-screen"><Empty title="Gym not found"><Link className="btn" to="/">Go home</Link></Empty></div>;
   }
   return <GymProvider value={ctx.data}><Shell /></GymProvider>;
 }
 
 function Allow({ perm, children }: { perm: string; children: ReactNode }) {
   const { can } = useGym();
-  if (!can(perm)) return <Empty title="No access"><p>Your role does not include this page. Ask the gym owner.</p></Empty>;
-  return <>{children}</>;
+  if (!can(perm)) return <Empty title="No access">Ask the gym owner for access.</Empty>;
+  return <Suspense fallback={null}>{children}</Suspense>;
 }
 
 function GymHome() {
@@ -83,11 +85,11 @@ function GymHome() {
   return <Navigate to="check-in" replace />;
 }
 
-function App() {
-  return (
-    <Routes>
+const router = createBrowserRouter(
+  createRoutesFromElements(
+    <>
       <Route path="/login" element={<LoginPage />} />
-      <Route element={<RequireAuth><Outlet /></RequireAuth>}>
+      <Route element={<RequireAuth />}>
         <Route path="/" element={<Home />} />
         <Route path="/setup" element={<SetupGym />} />
         <Route path="/g/:slug" element={<GymLayout />}>
@@ -107,20 +109,17 @@ function App() {
         </Route>
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
-    </Routes>
-  );
-}
+    </>,
+  ),
+  { basename: import.meta.env.BASE_URL.replace(/\/$/, '') || '/' },
+);
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
         <ToastProvider>
-          <BrowserRouter basename={import.meta.env.BASE_URL.replace(/\/$/, '')}>
-            <Suspense fallback={<Splash />}>
-              <App />
-            </Suspense>
-          </BrowserRouter>
+          <RouterProvider router={router} />
         </ToastProvider>
       </AuthProvider>
     </QueryClientProvider>
