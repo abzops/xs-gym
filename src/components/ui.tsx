@@ -63,9 +63,13 @@ export function ToastProvider({ children }: { children: ReactNode }) {
 /* ---------- Brand ---------- */
 const BRAND = `${import.meta.env.BASE_URL}brand/`;
 
-/** Official Xelorsoft lockup; dark artwork on light theme, light artwork on dark. */
-export function Logo({ width = 180, className = 'logo' }: { width?: number; className?: string }) {
+/**
+ * Official Xelorsoft lockup. `onDark` always uses the Night artwork (for
+ * Carbon panels); otherwise it follows the system theme.
+ */
+export function Logo({ width = 180, className = 'logo', onDark = false }: { width?: number; className?: string; onDark?: boolean }) {
   const height = Math.round((width * 496) / 1439);
+  if (onDark) return <img className={className} src={`${BRAND}xelorsoft-on-dark.svg`} alt="Xelorsoft" width={width} height={height} />;
   return (
     <picture>
       <source srcSet={`${BRAND}xelorsoft-on-dark.svg`} media="(prefers-color-scheme: dark)" />
