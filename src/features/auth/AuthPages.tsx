@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { useState, type FormEvent } from 'react';
+import { useState, type FormEvent, type ReactNode } from 'react';
 import { Navigate, useNavigate } from 'react-router';
 import { useAuth } from '../../app/auth';
 import { Field, Logo, Notice, Segmented, useToast } from '../../components/ui';
@@ -8,6 +8,26 @@ import { rpc, supabase } from '../../lib/supabase';
 import type { Gym } from '../../lib/types';
 
 const appUrl = () => new URL(import.meta.env.BASE_URL, window.location.origin).toString();
+
+function AuthLayout({ children }: { children: ReactNode }) {
+  return (
+    <div className="auth-split">
+      <aside className="auth-brand">
+        <Logo onDark />
+        <div className="stack lg">
+          <h1>Run your gym simply. Know your numbers accurately.</h1>
+          <p>Members, renewals, check-ins and collections for your front desk, on any phone, tablet or laptop.</p>
+        </div>
+        <ul className="points">
+          <li><strong>Check in at the desk in seconds</strong>Search by name, phone or member number.</li>
+          <li><strong>Every rupee accounted for</strong>Payments, dues and reversals reconcile to the paisa.</li>
+          <li><strong>Each person signs in as themselves</strong>Roles decide who can discount, reverse or export.</li>
+        </ul>
+      </aside>
+      <main className="auth-main">{children}</main>
+    </div>
+  );
+}
 
 export function LoginPage() {
   const { session } = useAuth();
@@ -50,59 +70,65 @@ export function LoginPage() {
     }
   }
 
+  const title = mode === 'signin' ? 'Sign in to XS Gym' : mode === 'signup' ? 'Create your account' : 'Reset your password';
+
   return (
-    <div className="center-screen">
+    <AuthLayout>
       <div className="auth">
-        <Logo />
-        <div>
-          <h1>XS Gym</h1>
-          <p className="muted">Members, payments and attendance for your gym.</p>
+        <div className="stack">
+          <h2>{title}</h2>
+          <p className="muted">
+            {mode === 'signin' && 'Use the email and password you registered with.'}
+            {mode === 'signup' && 'Owners create the gym after signing up. Staff sign up, then the owner adds them.'}
+            {mode === 'reset' && 'Enter your email and we will send a link to set a new password.'}
+          </p>
         </div>
-        <div className="card stack">
+        {mode !== 'reset' && (
           <Segmented
             label="Account"
-            value={mode === 'reset' ? 'signin' : mode}
+            value={mode}
             onChange={(v) => { setMode(v); setError(null); setSent(null); }}
             options={[{ value: 'signin', label: 'Sign in' }, { value: 'signup', label: 'Create account' }]}
           />
-          {sent ? (
-            <Notice tone="ok">{sent}</Notice>
-          ) : (
-            <form className="stack" onSubmit={submit} noValidate>
-              {mode === 'reset' && <p className="muted">Enter your email and we will send a link to set a new password.</p>}
-              {mode === 'signup' && (
-                <Field label="Your name">
-                  <input className="input" value={name} onChange={(e) => setName(e.target.value)} autoComplete="name" required />
-                </Field>
-              )}
-              <Field label="Email">
-                <input className="input" type="email" inputMode="email" autoComplete="email" value={email}
-                  onChange={(e) => setEmail(e.target.value)} required />
+        )}
+        {sent ? (
+          <Notice tone="ok">{sent}</Notice>
+        ) : (
+          <form className="stack lg" onSubmit={submit} noValidate>
+            {mode === 'signup' && (
+              <Field label="Your name">
+                <input className="input" value={name} onChange={(e) => setName(e.target.value)} autoComplete="name" required />
               </Field>
-              {mode !== 'reset' && (
-                <Field label="Password" hint={mode === 'signup' ? 'At least 8 characters' : undefined}>
-                  <input className="input" type="password" value={password} onChange={(e) => setPassword(e.target.value)}
-                    autoComplete={mode === 'signup' ? 'new-password' : 'current-password'} required />
-                </Field>
-              )}
-              {error && <Notice tone="bad">{error}</Notice>}
-              <button className="btn primary block" disabled={busy || !email || (mode !== 'reset' && !password)}>
-                {busy ? <span className="spinner" /> : mode === 'signin' ? 'Sign in' : mode === 'signup' ? 'Create account' : 'Send reset link'}
-              </button>
-              {mode === 'signin' && (
-                <button type="button" className="btn ghost small" onClick={() => { setMode('reset'); setError(null); }}>
-                  Forgot password?
-                </button>
-              )}
-              {mode === 'reset' && (
-                <button type="button" className="btn ghost small" onClick={() => setMode('signin')}>Back to sign in</button>
-              )}
-            </form>
-          )}
-        </div>
-        <p className="label">AI. Software. Digital.</p>
+            )}
+            <Field label="Email">
+              <input className="input" type="email" inputMode="email" autoComplete="email" value={email}
+                onChange={(e) => setEmail(e.target.value)} required />
+            </Field>
+            {mode !== 'reset' && (
+              <Field label="Password" hint={mode === 'signup' ? 'At least 8 characters' : undefined}>
+                <input className="input" type="password" value={password} onChange={(e) => setPassword(e.target.value)}
+                  autoComplete={mode === 'signup' ? 'new-password' : 'current-password'} required />
+              </Field>
+            )}
+            {error && <Notice tone="bad">{error}</Notice>}
+            <button className="btn primary block" disabled={busy || !email || (mode !== 'reset' && !password)}>
+              {busy ? <span className="spinner" /> : mode === 'signin' ? 'Sign in' : mode === 'signup' ? 'Create account' : 'Send reset link'}
+            </button>
+          </form>
+        )}
+        {mode === 'signin' && !sent && (
+          <button type="button" className="btn ghost small" style={{ justifySelf: 'start' }} onClick={() => { setMode('reset'); setError(null); }}>
+            Forgot password?
+          </button>
+        )}
+        {mode === 'reset' && (
+          <button type="button" className="btn ghost small" style={{ justifySelf: 'start' }} onClick={() => { setMode('signin'); setSent(null); }}>
+            Back to sign in
+          </button>
+        )}
+        <p className="muted" style={{ fontSize: 'var(--t-xs)' }}>XS Gym by Xelorsoft</p>
       </div>
-    </div>
+    </AuthLayout>
   );
 }
 
@@ -121,16 +147,16 @@ export function SetNewPassword() {
     onError: (e) => setError(errorMessage(e)),
   });
   return (
-    <div className="center-screen">
-      <form className="auth card stack" onSubmit={(e) => { e.preventDefault(); save.mutate(); }}>
-        <h1>Set a new password</h1>
+    <AuthLayout>
+      <form className="auth" onSubmit={(e) => { e.preventDefault(); save.mutate(); }}>
+        <h2>Set a new password</h2>
         <Field label="New password" hint="At least 8 characters">
           <input className="input" type="password" autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} />
         </Field>
         {error && <Notice tone="bad">{error}</Notice>}
         <button className="btn primary block" disabled={save.isPending}>Save password</button>
       </form>
-    </div>
+    </AuthLayout>
   );
 }
 
@@ -147,27 +173,24 @@ export function SetupGym() {
     },
   });
   return (
-    <div className="center-screen">
-      <form className="auth stack lg" onSubmit={(e) => { e.preventDefault(); create.mutate(); }}>
-        <Logo />
+    <AuthLayout>
+      <form className="auth" onSubmit={(e) => { e.preventDefault(); create.mutate(); }}>
         <div className="stack">
-          <h1>Set up your gym</h1>
-          <p className="muted">You will be the owner. Your 30-day trial with every feature starts now. Staff can be added later.</p>
+          <h2>Set up your gym</h2>
+          <p className="muted">You will be the owner. The 30-day trial with every feature starts now; staff can be added later.</p>
         </div>
-        <div className="card stack">
-          <Field label="Gym name">
-            <input className="input" value={name} onChange={(e) => setName(e.target.value)} required minLength={2} autoFocus />
-          </Field>
-          <Field label="Gym phone (optional)">
-            <input className="input" type="tel" inputMode="tel" value={phone} onChange={(e) => setPhone(e.target.value)} />
-          </Field>
-          {create.error && <Notice tone="bad">{errorMessage(create.error)}</Notice>}
-          <button className="btn primary block" disabled={create.isPending || name.trim().length < 2}>
-            {create.isPending ? <span className="spinner" /> : 'Create gym'}
-          </button>
-          <button type="button" className="btn ghost small" onClick={() => supabase.auth.signOut()}>Sign out</button>
-        </div>
+        <Field label="Gym name">
+          <input className="input" value={name} onChange={(e) => setName(e.target.value)} required minLength={2} autoFocus />
+        </Field>
+        <Field label="Gym phone (optional)">
+          <input className="input" type="tel" inputMode="tel" value={phone} onChange={(e) => setPhone(e.target.value)} />
+        </Field>
+        {create.error && <Notice tone="bad">{errorMessage(create.error)}</Notice>}
+        <button className="btn primary block" disabled={create.isPending || name.trim().length < 2}>
+          {create.isPending ? <span className="spinner" /> : 'Create gym'}
+        </button>
+        <button type="button" className="btn ghost small" style={{ justifySelf: 'start' }} onClick={() => supabase.auth.signOut()}>Sign out</button>
       </form>
-    </div>
+    </AuthLayout>
   );
 }
