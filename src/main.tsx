@@ -18,6 +18,7 @@ import { Dashboard } from './features/dashboard/Dashboard';
 import { MemberDetail } from './features/members/MemberDetail';
 import { NewMemberPage } from './features/members/MemberForm';
 import { MembersPage } from './features/members/MembersPage';
+import { LandingPage } from './features/landing/LandingPage';
 import { errorMessage } from './lib/errors';
 
 // Less frequent screens load on demand to keep the first load small.
@@ -50,8 +51,17 @@ function RequireAuth() {
   const { session, loading, recovering } = useAuth();
   if (loading) return <Splash />;
   if (recovering) return <SetNewPassword />;
-  if (!session) return <Navigate to="/login" replace />;
+  if (!session) return <Navigate to="/" replace />;
   return <Outlet />;
+}
+
+/** Signed out: landing page. Signed in: straight to the gym. */
+function Root() {
+  const { session, loading, recovering } = useAuth();
+  if (loading) return <Splash />;
+  if (recovering) return <SetNewPassword />;
+  if (!session) return <LandingPage />;
+  return <Home />;
 }
 
 function Home() {
@@ -88,9 +98,9 @@ function GymHome() {
 const router = createBrowserRouter(
   createRoutesFromElements(
     <>
+      <Route path="/" element={<Root />} />
       <Route path="/login" element={<LoginPage />} />
       <Route element={<RequireAuth />}>
-        <Route path="/" element={<Home />} />
         <Route path="/setup" element={<SetupGym />} />
         <Route path="/g/:slug" element={<GymLayout />}>
           <Route index element={<GymHome />} />

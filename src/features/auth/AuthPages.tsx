@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState, type FormEvent, type ReactNode } from 'react';
-import { Navigate, useNavigate } from 'react-router';
+import { Link, Navigate, useNavigate, useSearchParams } from 'react-router';
 import { useAuth } from '../../app/auth';
 import { Collapse, Field, Logo, Notice, Segmented, useToast } from '../../components/ui';
 import { errorMessage } from '../../lib/errors';
@@ -13,7 +13,7 @@ function AuthLayout({ children }: { children: ReactNode }) {
   return (
     <div className="auth-split">
       <aside className="auth-brand">
-        <Logo onDark />
+        <Link to="/" aria-label="XS Gym home"><Logo onDark /></Link>
         <h1>Run your gym simply. Know your numbers accurately.</h1>
       </aside>
       <main className="auth-main">{children}</main>
@@ -23,7 +23,8 @@ function AuthLayout({ children }: { children: ReactNode }) {
 
 export function LoginPage() {
   const { session } = useAuth();
-  const [mode, setMode] = useState<'signin' | 'signup' | 'reset'>('signin');
+  const [params] = useSearchParams();
+  const [mode, setMode] = useState<'signin' | 'signup' | 'reset'>(params.get('mode') === 'signup' ? 'signup' : 'signin');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
