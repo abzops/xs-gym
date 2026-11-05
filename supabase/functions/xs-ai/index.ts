@@ -8,7 +8,8 @@ const ALLOWED_ORIGINS = ['https://abzops.github.io', 'http://localhost:5173', 'h
 function configuredProviders(): LlmProvider[] {
   const providers: LlmProvider[] = [];
   const nvidiaKey = Deno.env.get('NVIDIA_API_KEY');
-  const xaiKey = Deno.env.get('XAI_API_KEY');
+  // Accept the existing dashboard secret name `Grok` as well as standard names.
+  const xaiKey = Deno.env.get('XAI_API_KEY') || Deno.env.get('GROK_API_KEY') || Deno.env.get('Grok');
   const legacyKey = Deno.env.get('LLM_API_KEY');
   if (nvidiaKey) providers.push({
     name: 'NVIDIA NIM', apiKey: nvidiaKey,
