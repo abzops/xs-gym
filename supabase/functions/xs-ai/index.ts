@@ -1,6 +1,6 @@
 // Supabase Edge Function: /functions/v1/xs-ai
 //   POST { gym_id, messages, lang }         → agent reply (reads/changes data as the user)
-//   POST { transcribe: { audio, lang } }    → { text } speech-to-text for the app's own recorder
+//   POST { gym_id, transcribe: { audio, lang } } → { text } for authenticated gym staff
 //   GET                                     → which providers are configured (no gym data)
 // Credentials only live in Supabase Edge Function Secrets.
 //
@@ -9,7 +9,7 @@
 //   GROQ_API_KEY                       Groq (fast; also Whisper speech-to-text)
 //   GEMINI_API_KEY or LLM_API_KEY      Google Gemini (LLM_BASE_URL switches LLM_API_KEY to any OpenAI-compatible service)
 //   NVIDIA_API_KEY                     NVIDIA NIM
-//   XAI_API_KEY / GROK_API_KEY / Grok  xAI Grok
+//   XAI_API_KEY / GROK_API_KEY / Grok  xAI Grok (also voice transcription)
 import { ApiError, runAgent, type LlmProvider } from './agent.ts';
 import { sttConfigured, transcribe, type SttEnv } from './stt.ts';
 
@@ -41,6 +41,7 @@ const sttEnv = (): SttEnv => ({
   groqKey: env('GROQ_API_KEY'),
   geminiKey: env('GEMINI_API_KEY') ?? (env('LLM_BASE_URL') ? undefined : env('LLM_API_KEY')),
   geminiModel: env('GEMINI_STT_MODEL'),
+  xaiKey: env('XAI_API_KEY') ?? env('GROK_API_KEY') ?? env('Grok'),
 });
 
 Deno.serve(async (req) => {
@@ -67,9 +68,24 @@ Deno.serve(async (req) => {
     const body = await req.json();
 
     if (body?.transcribe) {
-      // Signed-in staff only: the speech keys must not become a free public service.
-      const who = await fetch(`${supabaseUrl}/auth/v1/user`, { headers: { apikey: anonKey, authorization: `Bearer ${token}` } });
-      if (!who.ok) throw new ApiError('not signed in', 401);
+      // Speech is a billable server resource: verify both authentication and
+      // ACTIVE gym membership with the caller's own JWT (never service-role).
+      const authHeaders = { apikey: anonKey, authorization: `Bearer ${token}` };
+      const who = await fetch(`${supabaseUrl}/auth/v1/user`, { headers: authHeaders });
+      if (!who.ok) throw new ApiError('Sign in to use voice.', 401);
+      const user = await who.json() as { id?: string };
+      const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      const gymId = body.gym_id;
+      if (!uuid.test(user.id ?? '') || typeof gymId !== 'string' || !uuid.test(gymId)) {
+        throw new ApiError('Choose your gym before using voice.', 400);
+      }
+      const staff = await fetch(
+        `${supabaseUrl}/rest/v1/gym_staff?select=role&gym_id=eq.${gymId}&user_id=eq.${user.id}&status=eq.active&limit=1`,
+        { headers: authHeaders },
+      );
+      if (!staff.ok) throw new ApiError('Voice access could not be verified.', 403);
+      const rows = await staff.json() as { role?: string }[];
+      if (!Array.isArray(rows) || rows.length === 0) throw new ApiError('Voice is available only to staff in this gym.', 403);
       return json(200, { text: await transcribe(body.transcribe, sttEnv()) });
     }
     return json(200, await runAgent(body, { supabaseUrl, anonKey, userToken: token, providers }));
