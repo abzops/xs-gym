@@ -46,7 +46,7 @@ Each role only gets the tools its permissions allow (reception has no reversals 
 
 ## Tests
 
-`tests/ai/agent.test.mjs` runs the agent against the local real-schema stack with a scripted model
+`tests/ai/agent.check.mjs` runs the agent against the local real-schema stack with a scripted model
 (payments in paise, undo, role tool filtering, cross-gym refusal, limits, validation, untrusted data,
 Malayalam). `tests/ui/ai.mjs` checks the panel with a simulated microphone and speaker on phone and laptop.
 Both run in `tests/e2e/run.sh`.

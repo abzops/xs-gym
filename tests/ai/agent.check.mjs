@@ -1,7 +1,7 @@
 // XS AI agent against the local real-schema stack (tests/e2e: Postgres 16 with
 // the migrations + RLS, Supabase-compatible API on :54321). The LLM is a
 // scripted stand-in so every tool path is exercised deterministically.
-//   node --experimental-strip-types tests/ai/agent.test.mjs
+//   node --experimental-strip-types tests/ai/agent.check.mjs
 // Expects tests/e2e/start_db.sh to have run and tests/e2e/server.mjs to be up.
 import { execFileSync } from 'node:child_process';
 import http from 'node:http';
