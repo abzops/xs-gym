@@ -19,8 +19,9 @@ Code: `supabase/functions/xs-ai/agent.ts` (agent, tools, limits), `index.ts` (HT
 1. Supabase Dashboard → project `xs-gym` → **Edge Functions → Secrets**.
 2. Add `NVIDIA_API_KEY` for NVIDIA NIM. The default model is `mistralai/mistral-nemotron`
    at `https://integrate.api.nvidia.com/v1`; optional override: `NVIDIA_MODEL`.
-3. Add `XAI_API_KEY` for xAI Grok. Default: `grok-4.3` at `https://api.x.ai/v1`;
-   optional override: `XAI_MODEL`.
+3. Add `XAI_API_KEY` for xAI Grok. The existing secret name `Grok` is also supported
+   (as is `GROK_API_KEY`), so no re-entry of the key is needed. Default model:
+   `grok-4.3` at `https://api.x.ai/v1`; optional override: `XAI_MODEL`.
 4. Optional third fallback: `LLM_API_KEY`, `LLM_BASE_URL` and `LLM_MODEL`.
    The defaults are the Gemini-compatible endpoint and `gemini-2.5-flash`.
 
