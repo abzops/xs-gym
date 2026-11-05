@@ -117,6 +117,9 @@
   (`src/lib/sections.ts`) and prefetched on idle and on hover/touch; tab/sidebar switches no longer run a view
   transition (push/pop still do). Tap-to-content 13–40 ms in page; 110–180 ms end to end with CDN/API delays
   (was 290–370 ms on first visit). `tests/ui/switching.mjs` guards it. Cancelled phone transitions are silenced.
+- XS AI (docs/XS_AI.md): voice + text assistant, English and Malayalam, full control without confirmation
+  (owner's choice) but with Undo cards, ≤ 6 changes/request, role-filtered tools, user-token-only data access.
+  Edge Function `xs-ai` deployed (v1). OWNER ACTION: add secret LLM_API_KEY (free Gemini key) in Supabase.
 
 ### 2026-11-05 — Session 1
 
