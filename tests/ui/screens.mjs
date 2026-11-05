@@ -178,6 +178,54 @@ for (const [vpName, w, h] of viewports) {
   console.log(`${ok ? 'ok  ' : 'FAIL'} flow        push=${vt} sheetOpen=${sheetOpen} sheetClosed=${sheetClosed}${errors.length ? ' errors=' + errors.join(' | ') : ''}`);
   await ctx.close();
 }
+// Appearance: the sidebar button cycles Auto → Light → Dark, the choice survives a reload
+// (applied before first paint), and the phone "More" sheet switches it too.
+{
+  const mock = async (ctx) => {
+    await ctx.addInitScript(([key, value]) => localStorage.setItem(key, value), [`sb-${REF}-auth-token`, JSON.stringify(session)]);
+    await ctx.route(`https://${REF}.supabase.co/**`, (route) => {
+      const accept = route.request().headers()['accept'] ?? '';
+      let data = body(route.request().url());
+      if (accept.includes('vnd.pgrst.object') && Array.isArray(data)) data = data[0] ?? null;
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(data) });
+    });
+  };
+  const state = (page) => page.evaluate(() => ({
+    theme: document.documentElement.dataset.theme,
+    bg: getComputedStyle(document.body).backgroundColor,
+    logo: [...document.querySelectorAll('.topbar .brand-mark, .sidebar .logo')].filter((e) => e.offsetParent).length,
+  }));
+  const desk = await browser.newContext({ viewport: { width: 1366, height: 900 }, colorScheme: 'light' });
+  await mock(desk);
+  const page = await desk.newPage();
+  await page.goto(`${baseUrl}g/${gym.slug}`, { waitUntil: 'networkidle' });
+  const start = await state(page);
+  await page.getByRole('button', { name: /Appearance: Auto/ }).click();
+  const light = await state(page);
+  await page.getByRole('button', { name: /Appearance: Light/ }).click();
+  const dark = await state(page);
+  await page.screenshot({ path: `${outDir}/appearance-desktop-dark.png` });
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  const early = await page.evaluate(() => document.documentElement.dataset.theme);
+  await desk.close();
+
+  const phone = await browser.newContext({ viewport: { width: 390, height: 844 }, colorScheme: 'dark', hasTouch: true, isMobile: true });
+  await mock(phone);
+  const p2 = await phone.newPage();
+  await p2.goto(`${baseUrl}g/${gym.slug}`, { waitUntil: 'networkidle' });
+  const before = await state(p2);
+  await p2.getByRole('button', { name: 'More' }).tap();
+  await p2.getByRole('group', { name: 'Appearance' }).getByRole('button', { name: 'Light' }).tap();
+  await p2.waitForTimeout(300);
+  const after = await state(p2);
+  await p2.screenshot({ path: `${outDir}/appearance-phone-sheet.png` });
+  await phone.close();
+
+  const ok = start.theme === 'light' && light.theme === 'light' && dark.theme === 'dark' && dark.bg === 'rgb(0, 0, 0)'
+    && early === 'dark' && before.theme === 'dark' && after.theme === 'light' && after.bg !== 'rgb(0, 0, 0)';
+  if (!ok) failures++;
+  console.log(`${ok ? 'ok  ' : 'FAIL'} appearance  desktop ${start.theme}→${light.theme}→${dark.theme} (bg ${dark.bg}), after reload ${early}; phone sheet ${before.theme}→${after.theme}`);
+}
 await browser.close();
 console.log(failures ? `${failures} FAILURES` : 'ALL SCREENS OK');
 process.exit(failures ? 1 : 0);
