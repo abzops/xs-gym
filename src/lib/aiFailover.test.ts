@@ -77,11 +77,48 @@ describe('XS AI inference failover', () => {
     expect(fetcher).toHaveBeenCalledTimes(2);
   });
 
-  it('reports exhausted providers without revealing API keys', async () => {
+  it('gives the user a plain message and logs the provider chain for the owner', async () => {
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {});
     const fetcher = vi.fn(async () => new Response('forbidden', { status: 403 }));
-    await expect(requestLlmWithFailover(providers, convo, tools, fetcher as typeof fetch))
-      .rejects.toThrow(/NVIDIA NIM \(403\).*xAI Grok \(403\)/);
+    const err = await requestLlmWithFailover(providers, convo, tools, fetcher as typeof fetch).catch((e) => e);
+    expect(err.message).toMatch(/can't reach its AI service/);
+    expect(err.message).not.toMatch(/test-nvidia|test-xai|403/);
+    expect(String(log.mock.calls[0][0])).toMatch(/NVIDIA NIM \(403.*xAI Grok \(403/);
     expect(fetcher).toHaveBeenCalledTimes(2);
-    await expect(requestLlmWithFailover([], convo, tools, fetcher as typeof fetch)).rejects.toThrow('NVIDIA_API_KEY');
+    await expect(requestLlmWithFailover([], convo, tools, fetcher as typeof fetch)).rejects.toThrow(/not set up/);
+    log.mockRestore();
+  });
+
+  // Never-answering endpoint: resolves only when aborted.
+  const hang = (init?: RequestInit) => new Promise<Response>((_, reject) =>
+    init?.signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError'))));
+
+  it('starts a backup from another provider when the first is slow, and takes the first answer', async () => {
+    const slowSibling = { ...providers[0], name: 'NVIDIA sibling', model: 'other' };
+    const fetcher = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) =>
+      String(url).includes('nvidia.com') ? hang(init) : ok({ role: 'assistant', content: 'Grok was faster.' }));
+    const t = Date.now();
+    const out = await requestLlmWithFailover([providers[0], slowSibling, providers[1]], convo, tools, fetcher as typeof fetch, { hedgeMs: 50, perMs: 2_000, totalMs: 3_000 });
+    expect(out.content).toBe('Grok was faster.');
+    expect(Date.now() - t).toBeLessThan(1_000);
+    // The hedge skipped NVIDIA's sibling model (same endpoint) and went to Grok.
+    expect(fetcher.mock.calls.map((c) => String(c[0]))).toEqual([expect.stringContaining('nvidia.com'), expect.stringContaining('x.ai')]);
+  });
+
+  it('after a timeout skips sibling models of the same provider', async () => {
+    const sibling = { ...providers[0], name: 'NVIDIA sibling', model: 'other' };
+    const fetcher = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) =>
+      String(url).includes('nvidia.com') ? hang(init) : ok({ role: 'assistant', content: 'Fallback.' }));
+    const out = await requestLlmWithFailover([providers[0], sibling, providers[1]], convo, tools, fetcher as typeof fetch, { hedgeMs: 10_000, perMs: 100, totalMs: 3_000 });
+    expect(out.content).toBe('Fallback.');
+    expect(fetcher).toHaveBeenCalledTimes(2);
+  });
+
+  it('never waits past the overall time limit', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const fetcher = vi.fn(async (_u: RequestInfo | URL, init?: RequestInit) => hang(init));
+    const t = Date.now();
+    await expect(requestLlmWithFailover(providers, convo, tools, fetcher as typeof fetch, { hedgeMs: 50, perMs: 5_000, totalMs: 300 })).rejects.toThrow(/can't reach/);
+    expect(Date.now() - t).toBeLessThan(1_000);
   });
 });
