@@ -1,6 +1,7 @@
 import '@fontsource/manrope/latin-400.css';
 import '@fontsource/manrope/latin-600.css';
 import './styles/app.css';
+import './styles/elevation.css';
 import './lib/theme';
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
