@@ -13,7 +13,7 @@ import './ai.css';
 type Action = { tool: string; ok: boolean; summary: string; undo?: { rpc: string; args: Record<string, unknown> }; undone?: boolean };
 type Turn = { role: 'user' | 'assistant'; content: string; actions?: Action[]; tone?: 'bad' };
 type State = 'idle' | 'listening' | 'thinking' | 'speaking';
-type MicDialog = 'intro' | 'denied' | 'unavailable' | 'service' | 'setup' | null;
+type MicDialog = 'intro' | 'denied' | 'unavailable' | 'service' | 'setup' | 'cloud' | null;
 
 // Whether the server can turn recordings into text (a speech key is set).
 // Asked once per app load; until known, recording is tried first.
@@ -37,14 +37,16 @@ const MIC_COPY: Record<Lang, Record<Exclude<MicDialog, null>, MicCopy>> = {
     denied: { title: 'Microphone permission needed', detail: 'Your phone did not allow microphone access. Try again to request permission. If access was permanently denied, iOS may not show the Allow pop-up again.', button: 'Try again' },
     service: { title: 'Speech recognition unavailable', detail: 'The microphone is ready, but speech recognition could not start in this installed app. Try voice again, or dictate using your phone’s keyboard.', button: 'Try voice again' },
     unavailable: { title: 'Microphone unavailable', detail: 'This device could not open a microphone. You can still type or use your keyboard’s dictation feature.', button: '' },
-    setup: { title: 'Voice is not set up yet', detail: 'The gym owner needs to add a speech key (GROQ_API_KEY) in Supabase. Until then, type here or use the microphone on your keyboard.', button: '' },
+    setup: { title: 'Voice needs a transcription service', detail: 'Your gym needs a working cloud speech provider. Supported keys are GROQ_API_KEY, GEMINI_API_KEY and XAI_API_KEY (or Grok). You can still type or use keyboard dictation.', button: '' },
+    cloud: { title: 'Voice transcription unavailable', detail: 'Your microphone is working, but the speech provider could not transcribe this recording. Try again, or type instead. The gym owner may need to check API access and credits.', button: 'Try again' },
   },
   ml: {
     intro: { title: 'മൈക്രോഫോൺ അനുവദിക്കുക', detail: 'ജിം കാര്യങ്ങൾ സംസാരിച്ച് ചോദിക്കാൻ XS AI-ക്ക് മൈക്രോഫോൺ അനുമതി നൽകൂ. ഫോണിൽ Allow എന്ന പോപ്പപ്പ് വന്നേക്കാം.', button: 'മൈക്രോഫോൺ അനുവദിക്കുക' },
     denied: { title: 'മൈക്രോഫോൺ അനുമതി ആവശ്യമാണ്', detail: 'ഫോൺ മൈക്രോഫോൺ അനുവദിച്ചില്ല. വീണ്ടും ശ്രമിക്കൂ. സ്ഥിരമായി ബ്ലോക്ക് ചെയ്തിട്ടുണ്ടെങ്കിൽ Allow പോപ്പപ്പ് വീണ്ടും വരണമെന്നില്ല.', button: 'വീണ്ടും ശ്രമിക്കുക' },
     service: { title: 'ശബ്ദം തിരിച്ചറിയാൻ കഴിയുന്നില്ല', detail: 'മൈക്രോഫോൺ അനുവദിച്ചിട്ടുണ്ട്. പക്ഷേ ഈ ഇൻസ്റ്റാൾ ചെയ്ത ആപ്പിൽ ശബ്ദം തിരിച്ചറിയൽ തുടങ്ങാനായില്ല. വീണ്ടും ശ്രമിക്കൂ, അല്ലെങ്കിൽ കീബോർഡ് ഉപയോഗിക്കൂ.', button: 'വീണ്ടും സംസാരിക്കുക' },
     unavailable: { title: 'മൈക്രോഫോൺ ലഭ്യമല്ല', detail: 'ഈ ഫോണിൽ മൈക്രോഫോൺ തുറക്കാനായില്ല. പകരം ടൈപ്പ് ചെയ്യാം, അല്ലെങ്കിൽ കീബോർഡിലെ ഡിക്റ്റേഷൻ ഉപയോഗിക്കാം.', button: '' },
-    setup: { title: 'വോയ്സ് ഇതുവരെ സജ്ജമാക്കിയിട്ടില്ല', detail: 'ജിം ഉടമ Supabase-ൽ സ്പീച്ച് കീ (GROQ_API_KEY) ചേർക്കണം. അതുവരെ ടൈപ്പ് ചെയ്യൂ, അല്ലെങ്കിൽ കീബോർഡിലെ മൈക്ക് ഉപയോഗിക്കൂ.', button: '' },
+    setup: { title: 'വോയ്സ് സർവീസ് ആവശ്യമാണ്', detail: 'ജിം ഉടമ Supabase-ൽ പ്രവർത്തിക്കുന്ന സ്പീച്ച് API കീ ചേർക്കണം: GROQ_API_KEY, GEMINI_API_KEY, അല്ലെങ്കിൽ XAI_API_KEY (Grok). അതുവരെ ടൈപ്പ് ചെയ്യാം.', button: '' },
+    cloud: { title: 'സംസാരം തിരിച്ചറിയാനായില്ല', detail: 'മൈക്രോഫോൺ പ്രവർത്തിക്കുന്നു. പക്ഷേ സ്പീച്ച് സർവീസിന് ഈ റെക്കോർഡിംഗ് തിരിച്ചറിയാനായില്ല. വീണ്ടും ശ്രമിക്കാം, അല്ലെങ്കിൽ ടൈപ്പ് ചെയ്യാം.', button: 'വീണ്ടും ശ്രമിക്കുക' },
   },
 };
 
@@ -143,12 +145,14 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
       if (!audio) { setState('idle'); toast(lang === 'ml' ? 'ഒന്നും കേട്ടില്ല. വീണ്ടും ശ്രമിക്കൂ.' : "Didn't hear anything. Tap and speak again."); return; }
       setLive(lang === 'ml' ? 'മനസ്സിലാക്കുന്നു…' : 'Understanding…');
       setState('thinking');
-      const { data, error } = await supabase.functions.invoke('xs-ai', { body: { transcribe: { audio, lang } } });
+      const { data, error } = await supabase.functions.invoke('xs-ai', { body: { gym_id: gym.id, transcribe: { audio, lang } } });
       if (error) {
         let msg = errorMessage(error); let status = 0;
         try { const ctx = (error as { context?: Response }).context; status = ctx?.status ?? 0; const body = await ctx?.json(); if (body?.error) msg = body.error; } catch { /* not JSON */ }
-        // No speech key on the server: use the browser's recognition where it works.
-        if (status === 503 && /speech key/.test(msg)) sttKnown = false;
+        if (status === 503 && /speech API key|speech key/.test(msg)) sttKnown = false;
+        if (status === 503 || status === 429 || status === 502) {
+          setState('idle'); setMicDialog(sttKnown === false ? 'setup' : 'cloud'); return;
+        }
         throw new Error(msg);
       }
       const heard = String(data?.text ?? '').trim();
