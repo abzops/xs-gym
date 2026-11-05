@@ -362,6 +362,15 @@ export async function runAgent(req: AgentRequest, env: AgentEnv): Promise<AgentR
   const perms = new Set(((await rest(`role_permissions?select=permission&role=eq.${role}`)) as Json[]).map((p) => String(p.permission)));
   const ctx: Ctx = { gym: gyms[0], role, perms, today: gymToday(gyms[0].timezone, env.now?.() ?? new Date()), rest, rpc };
 
+  // Direct, role-checked read-only answer during model outages.
+  const question = messages[messages.length - 1].content.toLowerCase().trim().replace(/[?.!]+$/, '');
+  if (question === 'who has dues') {
+    if (!perms.has('members.read')) throw new ApiError('You cannot view members.', 403);
+    const data = (await rest('member_overview?select=full_name,member_no,due_paise&gym_id=eq.' + req.gym_id + '&status=eq.active&due_paise=gt.0&order=due_paise.desc&limit=25')) as Json[];
+    const lines = data.map((m) => str(m.full_name, 100) + ' (' + str(m.member_no, 30) + '): ' + rupees(m.due_paise));
+    const reply = lines.length ? ['Members with outstanding dues:', ...lines, ...(lines.length === 25 ? ['Showing first 25; there may be more.'] : [])].join('\n') : 'No active members have outstanding dues.';
+    return { reply, actions: [], changed: [] };
+  }
   const tools = TOOLS.filter((t) => !t.perm || perms.has(t.perm));
   const byName = new Map(tools.map((t) => [t.name, t]));
   const llmTools = tools.map((t) => ({ type: 'function', function: { name: t.name, description: t.description, parameters: t.parameters } }));
