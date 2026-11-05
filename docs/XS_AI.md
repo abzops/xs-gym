@@ -17,8 +17,8 @@ Code: `supabase/functions/xs-ai/agent.ts` (agent, tools, limits), `index.ts` (HT
 ## Setup (owner)
 
 1. Supabase Dashboard → project `xs-gym` → **Edge Functions → Secrets**.
-2. Add `NVIDIA_API_KEY` for NVIDIA NIM. The default model is `mistralai/mistral-nemotron`
-   at `https://integrate.api.nvidia.com/v1`; optional override: `NVIDIA_MODEL`.
+2. Add `NVIDIA_API_KEY` for NVIDIA NIM. Candidates: `openai/gpt-oss-20b`, `nvidia/nemotron-3.5-lightning-30b-a3b`,
+   then `z-ai/glm-5.3-flash`; `NVIDIA_MODEL` overrides first choice.
 3. Add `XAI_API_KEY` for xAI Grok. The existing secret name `Grok` is also supported
    (as is `GROK_API_KEY`), so no re-entry of the key is needed. Default model:
    `grok-4.3` at `https://api.x.ai/v1`; optional override: `XAI_MODEL`.
@@ -29,15 +29,19 @@ Keys must remain **server-side Supabase secrets**, never in GitHub, Vite variabl
 the browser. The authenticated `GET /functions/v1/xs-ai` endpoint reports configured
 providers/models without exposing credentials.
 
-The function tries NVIDIA first, then Grok, then an optional third provider.
-401/403, 429, 5xx, invalid responses, network failures and timeouts trigger
-failover. **Only the inference call is retried**; completed gym writes are not
+The function tries the NVIDIA candidates first (410/404 means try another model),
+ then Grok and the optional provider. Key-level 401/402/403 or rate-limit 429
+ errors skip sibling models on that provider; network/5xx/invalid responses also fail over. **Only the inference call is retried**; completed gym writes are not
 replayed. Their results remain in the conversation passed to the next model.
 Usage may be charged by multiple providers. Grok API billing is separate
 from a Grok web subscription. If every model fails, the UI shows which providers
 were tried, without exposing their API keys.
 
 ## What it can do
+
+The exact question **Who has dues?** reads the current gym's outstanding balances
+via the signed-in user's permission checks, without requiring an AI provider.
+The response lists up to 25 active members with dues.
 
 Read: today's overview, member search and details, plans, payments by day, reports for a date range, expenses by month.
 Change: check in (with override reason when needed), record payment, sell/renew plan (with discount reason and admission fee),
