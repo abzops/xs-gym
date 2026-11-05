@@ -9,11 +9,11 @@ import { errorMessage } from '../../lib/errors';
 import { formatINR } from '../../lib/money';
 import { rpc } from '../../lib/supabase';
 import { METHOD_LABEL } from '../../lib/types';
-import { CheckInButton, PaymentSheet, ReasonSheet, SellPlanSheet } from './actions';
+import { PaymentSheet, ReasonSheet, SellPlanSheet } from './actions';
 import { useMember, useMemberHistory } from './api';
 import { MemberForm } from './MemberForm';
 
-type Dialog = null | 'sell' | 'pay' | 'edit' | { reverse: string } | { voidCharge: string } | { voidCheckIn: string } | 'archive';
+type Dialog = null | 'sell' | 'pay' | 'edit' | { reverse: string } | { voidCharge: string } | 'archive';
 
 export function MemberDetail() {
   const { memberId = '' } = useParams();
@@ -67,13 +67,11 @@ export function MemberDetail() {
           {m.valid_until && m.valid_until !== m.end_date && <><dt>Paid till</dt><dd>{formatDate(m.valid_until)}</dd></>}
           {canMoney && <><dt>Due</dt><dd className="num" style={{ color: m.due_paise > 0 ? 'var(--bad)' : undefined, fontWeight: 600 }}>
             {formatINR(m.due_paise)}{m.credit_paise > 0 ? ` · ${formatINR(m.credit_paise)} credit` : ''}</dd></>}
-          <dt>Last visit</dt><dd>{m.last_check_in_at ? formatDateTime(m.last_check_in_at, gym.timezone) : 'Never'}</dd>
           <dt>Joined</dt><dd>{formatDate(m.join_date)}</dd>
         </dl>
 
         {!archived && (
           <div className="row">
-            {can('attendance.checkin') && <CheckInButton member={m} />}
             {can('memberships.sell') && <button className="btn" onClick={() => setDialog('sell')}><RefreshCw size={18} /> {m.valid_until ? 'Renew' : 'Sell plan'}</button>}
             {can('payments.record') && <button className="btn" onClick={() => setDialog('pay')}><Wallet size={18} /> Payment</button>}
             {can('members.write') && <button className="btn ghost" onClick={() => setDialog('edit')}><Pencil size={18} /> Edit</button>}
@@ -158,25 +156,6 @@ export function MemberDetail() {
             </section>
           )}
 
-          <section className="card flush">
-            <div className="card-head" style={{ padding: '16px 16px 0' }}><h2>Recent visits</h2></div>
-            {history.data.attendance.length === 0 ? <Empty title="No visits yet" /> : (
-              <ul className="list">
-                {history.data.attendance.map((a) => (
-                  <li key={a.id} className="item" style={{ cursor: 'default' }}>
-                    <span className="main-col">
-                      <span className="title" style={{ textDecoration: a.voided_at ? 'line-through' : undefined }}>{formatDateTime(a.checked_in_at, gym.timezone)}</span>
-                      {a.override_reason && <span className="meta">Override: {a.override_reason}</span>}
-                      {a.voided_at && <span className="meta">Removed: {a.void_reason}</span>}
-                    </span>
-                    {!a.voided_at && can('attendance.correct') && (
-                      <button className="btn small ghost" onClick={() => setDialog({ voidCheckIn: a.id })}>Remove</button>
-                    )}
-                  </li>
-                ))}
-              </ul>
-            )}
-          </section>
         </div>
       )}
 
@@ -191,7 +170,7 @@ export function MemberDetail() {
       )}
       {dialog === 'archive' && (
         <ReasonSheet title="Archive member" confirmLabel="Archive" onClose={close}
-          warning="Archived members are hidden from lists and cannot check in. Their history is kept and they can be restored."
+          warning="Archived members are hidden from lists. Their history is kept and they can be restored."
           onConfirm={(reason) => rpc('set_member_status', { p_gym: gym.id, p_member: m.id, p_status: 'archived', p_reason: reason }).then(refresh)} />
       )}
       {dialog && typeof dialog === 'object' && 'reverse' in dialog && (
@@ -204,11 +183,6 @@ export function MemberDetail() {
         <ReasonSheet title="Void charge" confirmLabel="Void charge" onClose={close}
           warning="The member will no longer owe this amount. Any payment applied to it becomes credit."
           onConfirm={(reason) => rpc('void_charge', { p_gym: gym.id, p_charge: dialog.voidCharge, p_reason: reason }).then(refresh).then(() => toast('Charge voided'))} />
-      )}
-      {dialog && typeof dialog === 'object' && 'voidCheckIn' in dialog && (
-        <ReasonSheet title="Remove check-in" confirmLabel="Remove check-in" onClose={close}
-          warning="The check-in is kept in history marked as removed."
-          onConfirm={(reason) => rpc('void_check_in', { p_gym: gym.id, p_event: dialog.voidCheckIn, p_reason: reason }).then(refresh).then(() => toast('Check-in removed'))} />
       )}
     </div>
   );

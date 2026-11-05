@@ -1,5 +1,5 @@
 import {
-  BarChart3, ClipboardList, Home, LogOut, Menu, Receipt, ScanLine, Settings, Sparkles, Users, Wallet,
+  BarChart3, ClipboardList, Home, LogOut, Menu, Receipt, Settings, Sparkles, Users, Wallet,
 } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
 import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState, type ComponentType } from 'react';
@@ -20,7 +20,6 @@ type NavItem = { to: string; label: string; icon: ComponentType<{ size?: number;
 
 const NAV: NavItem[] = [
   { to: '', label: 'Home', icon: Home, perm: 'reports.operational' },
-  { to: 'check-in', label: 'Check in', icon: ScanLine, perm: 'attendance.checkin' },
   { to: 'members', label: 'Members', icon: Users, perm: 'members.read' },
   { to: 'payments', label: 'Payments', icon: Wallet, perm: 'payments.read' },
   { to: 'plans', label: 'Plans', icon: ClipboardList, perm: 'plans.read' },

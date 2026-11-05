@@ -1,10 +1,9 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { ScanLine } from 'lucide-react';
 import { useRef, useState } from 'react';
 import { useNavigate } from 'react-router';
 import { useGym } from '../../app/gym';
 import { Field, Notice, Segmented, Sheet, useToast } from '../../components/ui';
-import { addDays, formatDate, formatTime, todayInGym } from '../../lib/dates';
+import { addDays, formatDate, todayInGym } from '../../lib/dates';
 import { errorMessage } from '../../lib/errors';
 import { formatINR, paiseToInput, parseINR } from '../../lib/money';
 import { setTransition } from '../../lib/motion';
@@ -35,7 +34,6 @@ function useRefreshMember(memberId: string) {
     qc.invalidateQueries({ queryKey: ['members', gym.id] }),
     qc.invalidateQueries({ queryKey: ['dashboard', gym.id] }),
     qc.invalidateQueries({ queryKey: ['payments', gym.id] }),
-    qc.invalidateQueries({ queryKey: ['checkins', gym.id] }),
   ]);
 }
 
@@ -201,54 +199,6 @@ export function PaymentSheet({ member, onClose }: { member: MemberOverview; onCl
         </button>
       </form>
     </Sheet>
-  );
-}
-
-/* ---------- Check in ---------- */
-export function CheckInButton({ member, compact = false }: { member: MemberOverview; compact?: boolean }) {
-  const { gym, can } = useGym();
-  const refresh = useRefreshMember(member.id);
-  const toast = useToast();
-  const [override, setOverride] = useState(false);
-  const [reason, setReason] = useState('');
-  const blocked = !['active', 'grace'].includes(member.membership_status);
-
-  const once = useOnce();
-  const checkIn = useMutation({
-    mutationFn: (overrideReason: string | null) =>
-      rpc<{ checked_in_at: string }>('check_in', { p_gym: gym.id, p_member: member.id, p_override_reason: overrideReason }),
-    onSuccess: async (e) => {
-      await refresh();
-      toast(`${member.full_name} checked in at ${formatTime(e.checked_in_at, gym.timezone)}`);
-      setOverride(false);
-      setReason('');
-    },
-    onError: (e) => toast(errorMessage(e), 'bad'),
-  });
-
-  if (blocked && !can('attendance.override')) {
-    return <button className={`btn ${compact ? 'small' : ''}`} disabled title="Membership is not active">Not active</button>;
-  }
-  return (
-    <>
-      <button className={`btn ${blocked ? '' : 'primary'} ${compact ? 'small' : ''}`} disabled={checkIn.isPending}
-        onClick={() => (blocked ? setOverride(true) : once((o) => checkIn.mutate(null, o)))}>
-        {checkIn.isPending ? <span className="spinner" /> : <><ScanLine size={compact ? 16 : 18} /> {blocked ? 'Override' : 'Check in'}</>}
-      </button>
-      {override && (
-        <Sheet title="Check in with override" onClose={() => setOverride(false)}>
-          <form className="stack lg" onSubmit={(e) => { e.preventDefault(); if (reason.trim()) once((o) => checkIn.mutate(reason, o)); }}>
-            <Notice tone="warn">
-              Membership is {member.membership_status === 'none' ? 'not set up' : member.membership_status}. Your reason is logged.
-            </Notice>
-            <Field label="Reason">
-              <input className="input" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="e.g. paying tomorrow" />
-            </Field>
-            <button className="btn primary block" disabled={!reason.trim() || checkIn.isPending}>Check in anyway</button>
-          </form>
-        </Sheet>
-      )}
-    </>
   );
 }
 

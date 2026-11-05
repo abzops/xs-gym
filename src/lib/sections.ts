@@ -62,7 +62,7 @@ export const pageModules = {
   settings: () => import('../features/settings/SettingsPage'),
 };
 
-type Section = '' | 'check-in' | 'members' | 'payments' | 'plans' | 'expenses' | 'reports' | 'settings';
+type Section = '' | 'members' | 'payments' | 'plans' | 'expenses' | 'reports' | 'settings';
 
 /** Warms code and data for one section. Cheap when already fresh (staleTime). */
 export function prefetchSection(qc: QueryClient, gym: Gym, section: string) {

@@ -43,9 +43,9 @@ function DailyReport() {
 
   function exportCSV() {
     downloadCSV(`xs-gym-daily-${from}-to-${to}.csv`,
-      ['Date', 'Collected', 'Reversed', 'Net', 'Cash', 'UPI', 'Card/bank/other', 'Expenses', 'Check-ins', 'New members'],
+      ['Date', 'Collected', 'Reversed', 'Net', 'Cash', 'UPI', 'Card/bank/other', 'Expenses', 'New members'],
       rows.map((r) => [r.day, csvAmount(r.collections_paise), csvAmount(r.reversals_paise), csvAmount(r.collections_paise - r.reversals_paise),
-        csvAmount(r.cash_paise), csvAmount(r.upi_paise), csvAmount(r.other_paise), csvAmount(r.expenses_paise), r.checkins, r.new_members]));
+        csvAmount(r.cash_paise), csvAmount(r.upi_paise), csvAmount(r.other_paise), csvAmount(r.expenses_paise), r.new_members]));
   }
 
   return (
@@ -64,12 +64,12 @@ function DailyReport() {
             <div className="tile"><span className="label">Expenses</span><span className="value">{formatINR(sum('expenses_paise'))}</span></div>
             <div className="tile"><span className="label">Collected − expenses</span>
               <span className="value">{formatINR(sum('collections_paise') - sum('reversals_paise') - sum('expenses_paise'))}</span></div>
-            <div className="tile"><span className="label">Check-ins</span><span className="value">{sum('checkins')}</span><span className="sub">{sum('new_members')} new members</span></div>
+            <div className="tile"><span className="label">New members</span><span className="value">{sum('new_members')}</span></div>
           </div>
           <div className="card flush table-wrap">
             <table className="data">
               <thead><tr><th>Date</th><th className="r">Collected</th><th className="r">Reversed</th><th className="r">Cash</th><th className="r">UPI</th>
-                <th className="r">Other</th><th className="r">Expenses</th><th className="r">Visits</th></tr></thead>
+                <th className="r">Other</th><th className="r">Expenses</th></tr></thead>
               <tbody>
                 {rows.map((r) => (
                   <tr key={r.day}>
@@ -80,13 +80,12 @@ function DailyReport() {
                     <td className="r num">{formatINR(r.upi_paise)}</td>
                     <td className="r num">{formatINR(r.other_paise)}</td>
                     <td className="r num">{formatINR(r.expenses_paise)}</td>
-                    <td className="r num">{r.checkins}</td>
                   </tr>
                 ))}
               </tbody>
               <tfoot><tr><td>Total</td><td className="r num">{formatINR(sum('collections_paise'))}</td><td className="r num">{formatINR(sum('reversals_paise'))}</td>
                 <td className="r num">{formatINR(sum('cash_paise'))}</td><td className="r num">{formatINR(sum('upi_paise'))}</td><td className="r num">{formatINR(sum('other_paise'))}</td>
-                <td className="r num">{formatINR(sum('expenses_paise'))}</td><td className="r num">{sum('checkins')}</td></tr></tfoot>
+                <td className="r num">{formatINR(sum('expenses_paise'))}</td></tr></tfoot>
             </table>
           </div>
         </>

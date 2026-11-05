@@ -13,9 +13,8 @@ import {
 import { AuthProvider, useAuth } from './app/auth';
 import { GymProvider, useGym, useGymBySlug, useMyGyms } from './app/gym';
 import { Shell } from './app/Shell';
-import { Empty, Notice, ToastProvider } from './components/ui';
+import { Empty, Loading, Notice, ToastProvider } from './components/ui';
 import { LoginPage, SetNewPassword, SetupGym } from './features/auth/AuthPages';
-import { CheckInPage } from './features/checkin/CheckInPage';
 import { Dashboard } from './features/dashboard/Dashboard';
 import { MemberDetail } from './features/members/MemberDetail';
 import { NewMemberPage } from './features/members/MemberForm';
@@ -97,13 +96,14 @@ function GymLayout() {
 function Allow({ perm, children }: { perm: string; children: ReactNode }) {
   const { can } = useGym();
   if (!can(perm)) return <Empty title="No access">Ask the gym owner for access.</Empty>;
-  return <Suspense fallback={null}>{children}</Suspense>;
+  // A skeleton, never a blank screen, while a page's code downloads.
+  return <Suspense fallback={<Loading rows={5} />}>{children}</Suspense>;
 }
 
 function GymHome() {
   const { can } = useGym();
   if (can('reports.operational')) return <Dashboard />;
-  return <Navigate to="check-in" replace />;
+  return <Navigate to="members" replace />;
 }
 
 const router = createBrowserRouter(
@@ -115,7 +115,8 @@ const router = createBrowserRouter(
         <Route path="/setup" element={<SetupGym />} />
         <Route path="/g/:slug" element={<GymLayout />}>
           <Route index element={<GymHome />} />
-          <Route path="check-in" element={<Allow perm="attendance.checkin"><CheckInPage /></Allow>} />
+          {/* Check-in was removed from the web app; old links land on Home. */}
+          <Route path="check-in" element={<Navigate to=".." relative="path" replace />} />
           <Route path="members" element={<Allow perm="members.read"><MembersPage /></Allow>} />
           <Route path="members/import" element={<Allow perm="members.export"><ImportPage /></Allow>} />
           <Route path="members/new" element={<Allow perm="members.write"><NewMemberPage /></Allow>} />

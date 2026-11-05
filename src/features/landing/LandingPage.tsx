@@ -1,4 +1,4 @@
-import { Check, ChevronDown, Laptop, Minus, ScanLine, Smartphone, Tablet } from 'lucide-react';
+import { Check, ChevronDown, Laptop, Minus, Smartphone, Tablet, Wallet } from 'lucide-react';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link } from 'react-router';
 import { Logo } from '../../components/ui';
@@ -117,7 +117,7 @@ function LiveDesk() {
           <span className="ph-lead num">{formatINR(shownCollected)}</span>
           <span className="ph-cap">Collected today</span>
           <div className="ph-figs">
-            <span><b className="num">{shownCheckins}</b>Check-ins</span>
+            <span><b className="num">{shownCheckins}</b>Payments</span>
             <span><b className="num">128</b>Active</span>
             <span><b className="num">2</b>Expire today</span>
           </div>
@@ -143,8 +143,8 @@ function LiveDesk() {
 
 const STEPS = [
   { title: 'Type three letters', body: 'Name, last digits of the phone, or member number.', ui: <MiniSearch /> },
-  { title: 'See their status', body: 'Active, in grace, expired — and any dues — before you let them in.', ui: <MiniStatus /> },
-  { title: 'Tap once', body: 'Checked in on the server clock. Expired plans need a manager, with a reason.', ui: <MiniDone /> },
+  { title: 'See their status', body: 'Active, in grace, expired — and any dues — at a glance.', ui: <MiniStatus /> },
+  { title: 'Take the payment', body: 'Cash or UPI in two taps. The receipt is ready to share on WhatsApp.', ui: <MiniDone /> },
 ];
 
 function MiniSearch() {
@@ -154,7 +154,7 @@ function MiniStatus() {
   return <div className="mini"><div className="mini-hit"><b>Anjali Menon</b><small>Till 19 Nov 2026</small><span className="tag ok">Active</span></div><div className="mini-hit"><b>Arjun Das</b><small>₹500 due</small><span className="tag bad">Expired</span></div></div>;
 }
 function MiniDone() {
-  return <div className="mini"><div className="mini-btn"><ScanLine size={14} /> Check in</div><div className="mini-toast"><Check size={14} /> Anjali Menon checked in at 6:41 am</div></div>;
+  return <div className="mini"><div className="mini-btn"><Wallet size={14} /> Record ₹1,500 UPI</div><div className="mini-toast"><Check size={14} /> ₹1,500 UPI from Anjali Menon recorded</div></div>;
 }
 
 const LEDGER = [
@@ -187,7 +187,7 @@ function Ledger() {
 
 const ROLES = ['Owner', 'Manager', 'Reception', 'Trainer'] as const;
 const MATRIX: [string, boolean[]][] = [
-  ['Check members in', [true, true, true, true]],
+  ['Look up members and their status', [true, true, true, true]],
   ['Add and edit members', [true, true, true, false]],
   ['Sell plans and record payments', [true, true, true, false]],
   ['Give discounts, reverse payments', [true, true, false, false]],
@@ -198,7 +198,7 @@ const MATRIX: [string, boolean[]][] = [
 const FEATURES = [
   ['Members', 'Search, profiles, archive and restore, CSV import with a preview.'],
   ['Plans and renewals', 'Day or month plans; renewals continue from the last end date.'],
-  ['Check-in', 'One tap at the desk, grace days, manager overrides with a reason.'],
+  ['XS AI', 'Ask or tell it, in English or Malayalam: dues, collections, payments, renewals.'],
   ['Payments', 'Cash, UPI, card or bank. Partial payments, credit and reversals.'],
   ['Receipts', 'Itemised, printable, and shareable to WhatsApp in one tap.'],
   ['Dues', 'Who owes what, computed from charges and payments — never typed in.'],
@@ -267,7 +267,7 @@ export function LandingPage() {
               <span className="line" style={{ ['--d' as string]: '260ms' }}>accurately.</span>
             </h1>
             <p className="rise" style={{ ['--d' as string]: '380ms' }}>
-              Members, renewals, check-ins and every rupee collected — on the phone, tablet or laptop you already have.
+              Members, renewals, payments and every rupee collected — on the phone, tablet or laptop you already have.
             </p>
             <div className="row rise" style={{ ['--d' as string]: '480ms' }}>
               <Link className="btn primary on-dark lg" to="/login?mode=signup">Start 30-day free trial</Link>
@@ -346,7 +346,7 @@ export function LandingPage() {
           <div className="devices">
             {[
               { icon: Smartphone, t: 'Phone', d: 'A real app feel: tab bar, swipe-down sheets, add to home screen.' },
-              { icon: Tablet, t: 'Tablet', d: 'The front-desk screen. Big targets, a slim rail, fast check-in.' },
+              { icon: Tablet, t: 'Tablet', d: 'The front-desk screen. Big targets, a slim rail, fast renewals.' },
               { icon: Laptop, t: 'Laptop', d: 'Reports, dues lists and CSV exports at the owner’s desk.' },
             ].map((d, i) => (
               <Reveal key={d.t} className="device-card" delay={i * 110}>

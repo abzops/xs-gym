@@ -1,7 +1,7 @@
 import { queryOptions, useQuery } from '@tanstack/react-query';
 import { addDays, todayInGym } from '../../lib/dates';
 import { supabase } from '../../lib/supabase';
-import type { Attendance, Charge, MemberOverview, Membership, Payment, Plan } from '../../lib/types';
+import type { Charge, MemberOverview, Membership, Payment, Plan } from '../../lib/types';
 
 export type MemberFilter = 'all' | 'active' | 'expiring' | 'expired' | 'dues' | 'archived';
 
@@ -56,8 +56,6 @@ export function useMemberHistory(gymId: string, memberId: string, canSeeMoney: b
     queryFn: async () => {
       const memberships = supabase.from('member_memberships').select('*').eq('gym_id', gymId).eq('member_id', memberId)
         .order('start_date', { ascending: false }).limit(24);
-      const attendance = supabase.from('attendance_events').select('*').eq('gym_id', gymId).eq('member_id', memberId)
-        .order('checked_in_at', { ascending: false }).limit(20);
       const payments = canSeeMoney
         ? supabase.from('payments').select('*, payment_reversals(id, reason, reversed_at)').eq('gym_id', gymId).eq('member_id', memberId)
             .order('received_at', { ascending: false }).limit(50)
@@ -65,11 +63,10 @@ export function useMemberHistory(gymId: string, memberId: string, canSeeMoney: b
       const charges = canSeeMoney
         ? supabase.from('charges').select('*').eq('gym_id', gymId).eq('member_id', memberId).order('created_at', { ascending: false }).limit(50)
         : null;
-      const [m, a, p, c] = await Promise.all([memberships, attendance, payments, charges]);
-      for (const r of [m, a, p, c]) if (r?.error) throw r.error;
+      const [m, p, c] = await Promise.all([memberships, payments, charges]);
+      for (const r of [m, p, c]) if (r?.error) throw r.error;
       return {
         memberships: (m.data ?? []) as Membership[],
-        attendance: (a.data ?? []) as Attendance[],
         payments: (p?.data ?? []) as Payment[],
         charges: (c?.data ?? []) as Charge[],
       };

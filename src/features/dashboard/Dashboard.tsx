@@ -1,13 +1,13 @@
 import { useQuery } from '@tanstack/react-query';
-import { CalendarClock, ChevronRight, IndianRupee, Plus, Receipt, ScanLine, Search, UserCheck, Users } from 'lucide-react';
+import { BarChart3, CalendarClock, ChevronRight, IndianRupee, Plus, Receipt, Search, UserPlus, Users } from 'lucide-react';
 import { Link } from 'react-router';
 import { useGym } from '../../app/gym';
 import { Empty, Loading, Notice, PushLink, initials } from '../../components/ui';
-import { formatTime } from '../../lib/dates';
+import { addDays, formatDate, todayInGym } from '../../lib/dates';
 import { errorMessage } from '../../lib/errors';
 import { formatINR } from '../../lib/money';
 import { rpc, supabase } from '../../lib/supabase';
-import type { Attendance } from '../../lib/types';
+import type { MemberOverview } from '../../lib/types';
 import './dashboard.css';
 
 type Summary = {
@@ -34,14 +34,18 @@ export function Dashboard() {
     queryFn: () => rpc<Summary>('dashboard_summary', { p_gym: gym.id }),
     refetchInterval: 60_000,
   });
-  const recent = useQuery({
-    queryKey: ['checkins', gym.id, 'recent'],
+  // Members whose plan ends in the next week: the list a front desk acts on.
+  const expiring = useQuery({
+    queryKey: ['members', gym.id, 'expiring-soon'],
+    enabled: can('members.read'),
     queryFn: async () => {
-      const { data, error } = await supabase.from('attendance_events')
-        .select('id, checked_in_at, member_id, voided_at, members(full_name, member_no)')
-        .eq('gym_id', gym.id).is('voided_at', null).order('checked_in_at', { ascending: false }).limit(6);
+      const today = todayInGym(gym.timezone);
+      const { data, error } = await supabase.from('member_overview')
+        .select('id, full_name, member_no, valid_until, due_paise')
+        .eq('gym_id', gym.id).eq('status', 'active').gte('valid_until', today).lte('valid_until', addDays(today, 6))
+        .order('valid_until').limit(6);
       if (error) throw error;
-      return data as unknown as Attendance[];
+      return data as Pick<MemberOverview, 'id' | 'full_name' | 'member_no' | 'valid_until' | 'due_paise'>[];
     },
   });
 
@@ -62,10 +66,10 @@ export function Dashboard() {
       </header>
 
       <nav className="quick" aria-label="Quick actions">
-        {can('attendance.checkin') && <Link className="q primary" to={`${base}/check-in`}><span className="q-ico"><ScanLine size={22} /></span><span>Check in</span></Link>}
-        {can('members.write') && <Link className="q" to={`${base}/members/new`}><span className="q-ico"><Plus size={22} /></span><span>Add member</span></Link>}
+        {can('members.write') && <Link className="q primary" to={`${base}/members/new`}><span className="q-ico"><Plus size={22} /></span><span>Add member</span></Link>}
         {can('members.read') && <Link className="q" to={`${base}/members`}><span className="q-ico"><Search size={21} /></span><span>Find</span></Link>}
         {can('expenses.record') && <Link className="q" to={`${base}/expenses?new=1`}><span className="q-ico"><Receipt size={21} /></span><span>Expense</span></Link>}
+        {can('reports.financial') && <Link className="q" to={`${base}/reports`}><span className="q-ico"><BarChart3 size={21} /></span><span>Reports</span></Link>}
       </nav>
 
       {f ? (
@@ -84,22 +88,22 @@ export function Dashboard() {
           </span>
         </PushLink>
       ) : (
-        <PushLink className="hero-card" to={`${base}/check-in`}>
-          <span className="hc-top"><span>Check-ins today</span><ChevronRight size={18} /></span>
-          <span className="hc-value num">{s.checkins_today}</span>
+        <PushLink className="hero-card" to={`${base}/members?filter=active`}>
+          <span className="hc-top"><span>Active members</span><ChevronRight size={18} /></span>
+          <span className="hc-value num">{s.active_members}</span>
         </PushLink>
       )}
 
       <section className="stats" aria-label="Today at a glance">
-        <PushLink className="stat" to={`${base}/check-in`}>
-          <span className="st-label"><UserCheck size={16} />Check-ins</span>
-          <span className="st-value num">{s.checkins_today}</span>
-          <span className="st-sub">today</span>
+        <PushLink className="stat" to={`${base}/members`}>
+          <span className="st-label"><UserPlus size={16} />New members</span>
+          <span className="st-value num">{s.new_members_month}</span>
+          <span className="st-sub">this month</span>
         </PushLink>
         <PushLink className="stat" to={`${base}/members?filter=active`}>
           <span className="st-label"><Users size={16} />Active</span>
           <span className="st-value num">{s.active_members}</span>
-          <span className="st-sub">{s.new_members_month} new this month</span>
+          <span className="st-sub">{s.in_grace > 0 ? `${s.in_grace} in grace period` : 'with a running plan'}</span>
         </PushLink>
         <PushLink className="stat" to={`${base}/members?filter=expiring`}>
           <span className="st-label"><CalendarClock size={16} className={s.expiring_7_days > 0 ? 'tone-warn' : undefined} />Expiring</span>
@@ -136,17 +140,17 @@ export function Dashboard() {
 
       {can('members.read') && (
         <section className="recent">
-          <h2>Latest check-ins</h2>
-          {recent.data && recent.data.length === 0 ? (
-            <div className="ios-list"><Empty title="No check-ins yet" /></div>
+          <h2>Expiring soon</h2>
+          {expiring.data && expiring.data.length === 0 ? (
+            <div className="ios-list"><Empty title="No plans end this week" /></div>
           ) : (
             <ul className="ios-list people">
-              {recent.data?.map((a) => (
-                <li key={a.id}>
-                  <PushLink to={`${base}/members/${a.member_id}`}>
-                    <span className="avatar" aria-hidden>{initials(a.members?.full_name ?? '?')}</span>
-                    <span className="who"><b>{a.members?.full_name}</b><small>{a.members?.member_no}</small></span>
-                    <span className="when num">{formatTime(a.checked_in_at, gym.timezone)}</span>
+              {expiring.data?.map((m) => (
+                <li key={m.id}>
+                  <PushLink to={`${base}/members/${m.id}`}>
+                    <span className="avatar" aria-hidden>{initials(m.full_name)}</span>
+                    <span className="who"><b>{m.full_name}</b><small>{m.member_no}{m.due_paise > 0 ? ` · ${formatINR(m.due_paise)} due` : ''}</small></span>
+                    <span className="when num">{m.valid_until ? formatDate(m.valid_until) : ''}</span>
                   </PushLink>
                 </li>
               ))}
