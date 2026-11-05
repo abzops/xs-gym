@@ -37,6 +37,32 @@ Usage may be charged by multiple providers. Grok API billing is separate
 from a Grok web subscription. If every model fails, the UI shows which providers
 were tried, without exposing their API keys.
 
+## Microphone permissions in the installed app
+
+XS AI's microphone button opens a short in-app permission explanation on the
+first use in a page session. Tapping **Allow microphone** calls
+`navigator.mediaDevices.getUserMedia({ audio: true })` so iOS/the browser can
+show its native consent prompt. The temporary media tracks are stopped
+immediately; XS AI then attempts to start speech recognition.
+
+If permission is denied, the app presents an in-app **Try again** option and a
+**Use keyboard instead** fallback (which focuses the message field and allows
+iOS keyboard dictation where available). It does not automatically navigate to
+browser settings. Users can switch to typing even while a native permission
+prompt is unresolved. A previous *permanent* denial cannot be overridden by any
+web app; iOS/browser controls whether it will prompt again.
+
+Microphone permission and the Web Speech API's separate recognition service
+are not the same thing. Recognition can fail even when the microphone is
+allowed, especially in installed iOS Home Screen web apps. That failure has
+its own explanation and direct Retry/keyboard fallback; it must never be
+mislabelled as a microphone permission denial.
+
+Tests: `src/features/ai/voice.test.ts` validates real permission-request logic
+with simulated devices. `tests/ui/ai.mjs` covers phone/laptop light/dark
+permission grant, denial, retry, recognition-service errors, and input focus.
+Those UI tests use browser mocks; a final installed iPhone test is required.
+
 ## What it can do
 
 The exact question **Who has dues?** reads the current gym's outstanding balances
