@@ -2,19 +2,55 @@ import { AlertTriangle, CheckCircle2, Info, X } from 'lucide-react';
 import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import { Link, type LinkProps } from 'react-router';
 import { setTransition } from '../lib/motion';
+import { project, rubberband, Spring, SPRING, VelocityTracker } from '../lib/spring';
 import type { MembershipStatus } from '../lib/types';
 
-/* ---------- Sheet: bottom sheet on phones, centred dialog on wider screens ----------
-   Swipe down to dismiss (distance or velocity), Escape or backdrop to close.
-   Closing plays a short exit before unmounting. */
+/* ---------- Sheet ----------
+   Phones: an iOS-style bottom sheet driven by springs. It tracks the finger
+   1:1 from wherever it is grabbed (even mid-animation), rubber-bands when
+   pulled up, and on release hands the finger's velocity to the spring,
+   projecting the flick to decide between settling and dismissing.
+   Wider screens and reduced motion: a centred dialog with a short fade. */
 export function Sheet({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
   const ref = useRef<HTMLDivElement>(null);
+  const backdrop = useRef<HTMLDivElement>(null);
   const [closing, setClosing] = useState(false);
-  const drag = useRef<{ y: number; t: number; dy: number } | null>(null);
-  const close = useCallback(() => {
-    setClosing(true);
-    setTimeout(onClose, 200);
+  const [physical] = useState(() =>
+    window.matchMedia('(max-width: 719px)').matches && !window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+  const spring = useRef<Spring | null>(null);
+  const tracker = useRef(new VelocityTracker());
+  const drag = useRef<{ start: number; base: number; moved: boolean } | null>(null);
+  const done = useRef(false);
+  const height = () => ref.current?.offsetHeight || 600;
+
+  const finish = useCallback(() => {
+    if (done.current) return;
+    done.current = true;
+    onClose();
   }, [onClose]);
+
+  const close = useCallback((velocity = 0) => {
+    if (physical && spring.current) {
+      spring.current.to(height(), SPRING.sheet, { velocity, onRest: finish });
+    } else {
+      setClosing(true);
+      setTimeout(finish, 180);
+    }
+  }, [physical, finish]);
+
+  // Spring in from below before the first paint.
+  useLayoutEffect(() => {
+    if (!physical || !ref.current) return;
+    const el = ref.current;
+    const h = height();
+    spring.current = new Spring(h, (y) => {
+      el.style.transform = `translate3d(0, ${y}px, 0)`;
+      if (backdrop.current) backdrop.current.style.opacity = String(Math.max(0, Math.min(1, 1 - y / h)));
+    });
+    spring.current.set(h);
+    spring.current.to(0, SPRING.smooth);
+    return () => spring.current?.stop();
+  }, [physical]);
 
   useEffect(() => {
     const prev = document.activeElement as HTMLElement | null;
@@ -31,42 +67,42 @@ export function Sheet({ title, onClose, children }: { title: string; onClose: ()
   }, [close]);
 
   const onPointerDown = (e: ReactPointerEvent) => {
-    if (e.pointerType === 'mouse' || (e.target as HTMLElement).closest('button') || (ref.current && ref.current.scrollTop > 0)) return;
-    drag.current = { y: e.clientY, t: performance.now(), dy: 0 };
+    if (!physical || !spring.current || e.pointerType === 'mouse' || (e.target as HTMLElement).closest('button')) return;
+    spring.current.stop(); // grab it mid-flight
+    drag.current = { start: e.clientY, base: spring.current.value, moved: false };
+    tracker.current.reset();
+    tracker.current.add(e.clientY);
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
   };
   const onPointerMove = (e: ReactPointerEvent) => {
     const d = drag.current;
-    if (!d || !ref.current) return;
-    const dy = e.clientY - d.y;
-    d.dy = dy;
-    // Resist upward drags; follow downward drags.
-    const y = dy < 0 ? dy / 6 : dy;
-    ref.current.style.transition = 'none';
-    ref.current.style.transform = `translateY(${y}px)`;
+    if (!d || !spring.current) return;
+    const dy = e.clientY - d.start;
+    if (!d.moved && Math.abs(dy) < 6) return; // small hysteresis before committing
+    d.moved = true;
+    tracker.current.add(e.clientY);
+    const y = d.base + dy;
+    spring.current.set(y < 0 ? -rubberband(-y, height()) : y);
   };
   const onPointerUp = () => {
     const d = drag.current;
     drag.current = null;
-    if (!d || !ref.current) return;
-    const velocity = d.dy / Math.max(1, performance.now() - d.t);
-    ref.current.style.transition = '';
-    if (d.dy > 120 || (d.dy > 24 && velocity > 0.11)) {
-      ref.current.style.transform = 'translateY(100%)';
-      setTimeout(onClose, 200);
-    } else {
-      ref.current.style.transform = '';
-    }
+    if (!d || !spring.current) return;
+    const v = d.moved ? tracker.current.velocity() : 0;
+    const resting = spring.current.value + project(v);
+    if (resting > height() * 0.45) close(v);
+    else spring.current.to(0, Math.abs(v) > 300 ? SPRING.flick : SPRING.smooth, { velocity: v });
   };
 
   return (
-    <div className={`overlay ${closing ? 'closing' : ''}`} onMouseDown={(e) => e.target === e.currentTarget && close()}>
+    <div className={`overlay ${physical ? 'physical' : ''} ${closing ? 'closing' : ''}`}>
+      <div className="backdrop" ref={backdrop} onClick={() => close()} aria-hidden />
       <div className="sheet" role="dialog" aria-modal="true" aria-label={title} ref={ref}>
         <div className="sheet-grab" onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp}>
           <span className="handle" aria-hidden />
           <div className="sheet-head">
             <h2>{title}</h2>
-            <button className="btn ghost icon-btn" onClick={close} aria-label="Close" data-close>
+            <button className="btn ghost icon-btn" onClick={() => close()} aria-label="Close" data-close>
               <X size={20} />
             </button>
           </div>
