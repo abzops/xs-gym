@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { requestLlmWithFailover, type LlmProvider } from '../../supabase/functions/xs-ai/agent';
 
 const providers: LlmProvider[] = [
-  { name: 'NVIDIA NIM', apiKey: 'test-nvidia', baseUrl: 'https://integrate.api.nvidia.com/v1', model: 'mistralai/mistral-nemotron' },
+  { name: 'NVIDIA NIM', apiKey: 'test-nvidia', baseUrl: 'https://integrate.api.nvidia.com/v1', model: 'openai/gpt-oss-20b' },
   { name: 'xAI Grok', apiKey: 'test-xai', baseUrl: 'https://api.x.ai/v1', model: 'grok-4.3' },
 ];
 const convo = [{ role: 'system', content: 'You are a gym assistant.' }, { role: 'user', content: 'Who has dues?' }];
@@ -10,6 +10,25 @@ const tools = [{ type: 'function', function: { name: 'get_overview', description
 const ok = (message: unknown) => new Response(JSON.stringify({ choices: [{ message }] }), { status: 200, headers: { 'content-type': 'application/json' } });
 
 describe('XS AI inference failover', () => {
+  it('tries another NVIDIA model on 410 before Grok', async () => {
+    const backup = { ...providers[0], name: 'NVIDIA NIM backup', model: 'nvidia/nemotron-3.5-lightning-30b-a3b' };
+    let tries = 0;
+    const fetcher = vi.fn(async () => ++tries === 1 ? new Response('gone', { status: 410 }) : ok({ role: 'assistant', content: 'Success.' }));
+    const out = await requestLlmWithFailover([providers[0], backup, providers[1]], convo, tools, fetcher as typeof fetch);
+    expect(out.content).toBe('Success.');
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    expect(JSON.parse(String(fetcher.mock.calls[1][1]?.body)).model).toBe(backup.model);
+  });
+
+  it('skips NVIDIA sibling models for a 403 key permission error', async () => {
+    const backup = { ...providers[0], name: 'NVIDIA backup', model: 'z-ai/glm-5.3-flash' };
+    const fetcher = vi.fn(async (url: RequestInfo | URL) => String(url).includes('nvidia.com')
+      ? new Response('forbidden', { status: 403 }) : ok({ role: 'assistant', content: 'Grok responded.' }));
+    const out = await requestLlmWithFailover([providers[0], backup, providers[1]], convo, tools, fetcher as typeof fetch);
+    expect(out.content).toBe('Grok responded.');
+    expect(fetcher).toHaveBeenCalledTimes(2);
+  });
+
   it('tries Grok after NVIDIA returns 403, without changing conversation or tools', async () => {
     let attempts = 0;
     const fetcher = vi.fn(async (_url: RequestInfo | URL, _init?: RequestInit) =>
