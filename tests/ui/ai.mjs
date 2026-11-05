@@ -194,6 +194,7 @@ for (const [name, viewport, mobile] of [['phone', { width: 390, height: 844 }, t
     check(`${name} ${scheme}: separate iOS speech-engine failure with keyboard option`,
       await speechError.getByRole('button', { name: 'കീബോർഡ് ഉപയോഗിക്കുക' }).isVisible());
     await tap(speechError.getByRole('button', { name: 'കീബോർഡ് ഉപയോഗിക്കുക' }));
+    await page.waitForTimeout(80); // allow focus to land after the overlay unmounts
     check(`${name} ${scheme}: keyboard fallback focuses the message input`,
       await retryDialog.getByRole('textbox', { name: 'Message XS AI' }).isFocused());
     await ctx.close();
