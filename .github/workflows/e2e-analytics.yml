@@ -1,0 +1,50 @@
+name: Full XS Gym end-to-end (isolated)
+
+on:
+  push:
+    branches: [analytics-onboarding, main]
+    paths:
+      - 'src/**'
+      - 'supabase/migrations/**'
+      - 'supabase/functions/xs-ai/**'
+      - 'tests/e2e/**'
+      - 'tests/ai/**'
+      - '.github/workflows/e2e-analytics.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  e2e:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        device: [phone, tablet, laptop]
+    env:
+      PG_RUN_AS: runner
+      E2E_OUT: ${{ github.workspace }}/tests/e2e/out
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Install Chromium and Python Playwright
+        run: |
+          python3 -m venv /tmp/xs-e2e-python
+          /tmp/xs-e2e-python/bin/pip install --disable-pip-version-check playwright
+          /tmp/xs-e2e-python/bin/python -m playwright install --with-deps chromium
+      - name: Run complete ${{ matrix.device }} flow on real PostgreSQL migrations
+        run: |
+          export PATH="/tmp/xs-e2e-python/bin:$PATH"
+          bash tests/e2e/run.sh "${{ matrix.device }}"
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: xs-e2e-debug-${{ matrix.device }}
+          path: tests/e2e/out/
+          retention-days: 3
