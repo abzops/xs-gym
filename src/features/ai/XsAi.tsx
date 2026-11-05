@@ -19,10 +19,15 @@ type MicDialog = 'intro' | 'denied' | 'unavailable' | 'service' | 'setup' | 'clo
 // Asked once per app load; until known, recording is tried first.
 // Kept as a plain value so a tap can decide synchronously (iOS only lets the
 // microphone start inside the tap itself).
-let sttKnown: boolean | null = null;
+let sttKnown: Record<Lang, boolean> | null = null;
 let sttChecking: Promise<void> | null = null;
 const checkStt = () => (sttChecking ??= supabase.functions.invoke('xs-ai', { method: 'GET' })
-  .then(({ data }) => { if (typeof data?.stt === 'boolean') sttKnown = data.stt; }).catch(() => { sttChecking = null; }));
+  .then(({ data }) => {
+    const support = data?.stt_languages;
+    if (typeof support?.en === 'boolean' && typeof support?.ml === 'boolean')
+      sttKnown = { en: support.en, ml: support.ml };
+    else if (typeof data?.stt === 'boolean') sttKnown = { en: data.stt, ml: data.stt };
+  }).catch(() => { sttChecking = null; }));
 
 const LANG_KEY = 'xs-ai-lang';
 const HINTS: Record<Lang, string[]> = {
@@ -149,9 +154,14 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
       if (error) {
         let msg = errorMessage(error); let status = 0;
         try { const ctx = (error as { context?: Response }).context; status = ctx?.status ?? 0; const body = await ctx?.json(); if (body?.error) msg = body.error; } catch { /* not JSON */ }
-        if (status === 503 && /speech API key|speech key/.test(msg)) sttKnown = false;
+        if (status === 503 && /speech API key|speech key/.test(msg)) {
+          sttKnown = {
+            en: lang === 'en' ? false : (sttKnown?.en ?? true),
+            ml: lang === 'ml' ? false : (sttKnown?.ml ?? true),
+          };
+        }
         if (status === 503 || status === 429 || status === 502) {
-          setState('idle'); setMicDialog(sttKnown === false ? 'setup' : 'cloud'); return;
+          setState('idle'); setMicDialog(sttKnown?.[lang] === false ? 'setup' : 'cloud'); return;
         }
         throw new Error(msg);
       }
@@ -216,7 +226,7 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
     if (requestBusy.current || listeningBusy.current || micCheckingRef.current) return;
     // Decide without awaiting anything: iOS only lets the microphone and audio
     // start inside the tap itself.
-    if (sttKnown !== false && canRecord()) return beginRecording();
+    if (sttKnown?.[lang] !== false && canRecord()) return beginRecording();
     if (canListen() && !isIosStandalone()) return beginListening();
     setMicDialog(canRecord() ? 'setup' : 'unavailable');
   }
