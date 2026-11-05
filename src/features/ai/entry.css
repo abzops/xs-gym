@@ -1,0 +1,18 @@
+/* XS AI entry points: glowing orb in the phone header, item in the sidebar.
+   Loaded with the shell; the panel's own styles load on first open. */
+@keyframes xsai-spin { to { transform: rotate(1turn); } }
+/* Entry points */
+.xsai-entry { display: grid; place-items: center; width: 34px; height: 34px; margin-left: auto; border: 0; border-radius: 50%; cursor: pointer; flex: none;
+  color: var(--on-primary); background: radial-gradient(circle at 35% 30%, color-mix(in srgb, var(--primary) 70%, #fff) 0%, var(--primary) 65%);
+  box-shadow: var(--elev-btn), 0 0 0 0 rgb(10 132 255 / 0); position: relative; isolation: isolate; }
+.xsai-entry::after { content: ""; position: absolute; inset: -3px; z-index: -1; border-radius: 50%; opacity: 0.55; filter: blur(5px);
+  background: conic-gradient(from 0deg, #34C759, #0A84FF, #BF5AF2, #FF375F, #FF9F0A, #34C759); animation: xsai-spin 6s linear infinite; }
+.xsai-entry:active { transform: scale(0.92); }
+.sidebar .xsai-side .xsai-mark { display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; position: relative; isolation: isolate;
+  background: radial-gradient(circle at 35% 30%, #fff 0%, #D9D9DE 70%); color: #171719; }
+.sidebar .xsai-side .xsai-mark::after { content: ""; position: absolute; inset: -2px; z-index: -1; border-radius: 50%; filter: blur(3px); opacity: 0.8;
+  background: conic-gradient(from 0deg, #34C759, #0A84FF, #BF5AF2, #FF375F, #FF9F0A, #34C759); animation: xsai-spin 6s linear infinite; }
+
+@media (prefers-reduced-motion: reduce) {
+  .xsai-entry::after, .sidebar .xsai-side .xsai-mark::after { animation: none !important; }
+}

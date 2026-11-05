@@ -1,8 +1,8 @@
 import {
-  BarChart3, ClipboardList, Home, LogOut, Menu, Receipt, ScanLine, Settings, Users, Wallet,
+  BarChart3, ClipboardList, Home, LogOut, Menu, Receipt, ScanLine, Settings, Sparkles, Users, Wallet,
 } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
-import { useEffect, useLayoutEffect, useRef, useState, type ComponentType } from 'react';
+import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState, type ComponentType } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router';
 import { AppearanceButton, AppearanceControl } from '../components/Appearance';
 import { Logo, Notice, Sheet } from '../components/ui';
@@ -11,7 +11,10 @@ import { setTransition } from '../lib/motion';
 import { pageModules, prefetchSection } from '../lib/sections';
 import { supabase } from '../lib/supabase';
 import { ROLE_LABEL } from '../lib/types';
+import '../features/ai/entry.css';
 import { useGym } from './gym';
+
+const XsAiPanel = lazy(() => import('../features/ai/XsAi').then((m) => ({ default: m.XsAiPanel })));
 
 type NavItem = { to: string; label: string; icon: ComponentType<{ size?: number; strokeWidth?: number }>; perm: string };
 
@@ -33,6 +36,7 @@ const markOnDark = `${import.meta.env.BASE_URL}brand/badge-white.svg`;
 export function Shell() {
   const { gym, role, can, canWrite, subscription } = useGym();
   const [more, setMore] = useState(false);
+  const [ai, setAi] = useState(false);
   const location = useLocation();
   const items = NAV.filter((n) => can(n.perm));
   const primary = items.slice(0, 4);
@@ -96,6 +100,9 @@ export function Shell() {
           </NavLink>
         ))}
         <div className="grow" />
+        <button className="signout xsai-side" onClick={() => setAi(true)} title="XS AI" onPointerEnter={() => void import('../features/ai/XsAi')}>
+          <span className="xsai-mark" aria-hidden><Sparkles size={13} strokeWidth={2.4} /></span> <span className="nav-label">XS AI</span>
+        </button>
         <AppearanceButton className="signout" />
         <button className="signout" onClick={() => supabase.auth.signOut()} title="Sign out">
           <LogOut size={20} strokeWidth={1.9} /> <span className="nav-label">Sign out</span>
@@ -107,6 +114,9 @@ export function Shell() {
           <img className="brand-mark only-light" src={mark} alt="" width={26} height={26} />
           <img className="brand-mark only-dark" src={markOnDark} alt="" width={26} height={26} />
           <span className="gym">{gym.name}</span>
+          <button className="xsai-entry" onClick={() => setAi(true)} aria-label="XS AI" onPointerDown={() => void import('../features/ai/XsAi')}>
+            <Sparkles size={17} strokeWidth={2.2} />
+          </button>
         </header>
         <main className="main">
           {!canWrite && (
@@ -130,6 +140,8 @@ export function Shell() {
           <Menu size={23} strokeWidth={1.8} /> <span>More</span>
         </button>
       </nav>
+
+      {ai && <Suspense fallback={null}><XsAiPanel onClose={() => setAi(false)} /></Suspense>}
 
       {more && (
         <Sheet title="More" onClose={() => setMore(false)}>
