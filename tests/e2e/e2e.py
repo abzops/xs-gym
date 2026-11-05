@@ -58,7 +58,7 @@ with sync_playwright() as p:
     page = ctx.new_page()
     console_errors, page_errors = [], []
     page.on('console', lambda m: console_errors.append(m.text) if m.type == 'error' and 'status of 404' not in m.text else None)
-    page.on('pageerror', lambda e: page_errors.append(str(e)))
+    page.on('pageerror', lambda e: page_errors.append(f'{str(e)} (during: {results[-1][0] if results else "start"} → next step)'))
     def tap(loc):
         loc.tap() if touch else loc.click()
     def toast(text, timeout=8000):
