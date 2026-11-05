@@ -164,3 +164,16 @@
 ### 2026-11-05 — Session 1
 
 - Phase 0: inspected supplied files (greenfield), recovered SVG masters, wrote audit, plan, design docs and ADRs.
+
+### 2026-11-05 — XS AI voice, speed, check-in removal
+- Voice works in the installed iPhone app: the app records the microphone itself (Web Audio, end-of-speech detection,
+  16 kHz WAV) and the `xs-ai` function transcribes it (Groq Whisper, else Gemini). One tap, in-app Allow prompt,
+  in-app help on denial with Try again / keyboard. Web Speech remains a fallback where it works.
+- Speed: providers fastest first (Groq → Gemini → NVIDIA → xAI), hedged requests (backup after 5 s, 30 s cap),
+  timeouts skip a provider's sibling models, members/plans by name (one model call per command), direct
+  confirmation after successful changes.
+- Check-in removed from the web app (nav, page, dashboard, member page, reports, landing, AI tools). Database
+  history kept; dashboard shows New members and Expiring soon instead. Pages show a skeleton while loading.
+- Edge Function `xs-ai` v15 deployed. OWNER ACTION: add `GROQ_API_KEY` (free) in Supabase secrets — voice and fast
+  replies need it; NVIDIA timed out and the xAI key returned 403 in the logs.
+- Tests: e2e phone/tablet/laptop 37/37 each, agent 19 checks, voice UI 52 checks, all UI suites.

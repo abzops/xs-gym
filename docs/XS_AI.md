@@ -7,63 +7,39 @@ reads the gym's data and makes changes for the signed-in user.
 
 | Part | Where | Notes |
 |---|---|---|
-| Listening and speaking | Browser (Web Speech API) | Free. Chrome, Edge, Android and iOS Safari 14.5+ support voice; Firefox users type. Malayalam speech output needs a Malayalam voice on the device; otherwise replies are shown as text. |
-| Thinking | Supabase Edge Function `xs-ai` | Inference failover: NVIDIA NIM → xAI Grok → optional OpenAI-compatible provider (Gemini, etc.). |
+| Listening | The app records the microphone itself (Web Audio), detects the end of speech, sends 16 kHz WAV to the `xs-ai` function for **speech-to-text** | Works in installed iPhone home-screen apps, where the browser's own speech recognition is blocked. Speech-to-text: Groq Whisper (`GROQ_API_KEY`), else Gemini (`GEMINI_API_KEY` / `LLM_API_KEY`). Without a speech key, browsers that have built-in recognition (Chrome, Android, Safari in a tab) use it; the installed iPhone app explains in-app that voice is not set up and offers the keyboard. |
+| Speaking | Browser speech synthesis | Free. Malayalam needs a Malayalam voice on the device; otherwise replies are shown as text. |
+| Thinking | Supabase Edge Function `xs-ai` | Providers fastest first: Groq → Gemini → NVIDIA NIM → xAI Grok. **Hedged**: if one has not answered in 5 s a different provider starts in parallel and the first answer wins; a timeout or key error skips that provider's other models; the user never waits more than 30 s. |
 | Data | Supabase, **as the signed-in user** | Every query and change uses the user's own access token, so row-level security and the command functions' permission checks apply exactly as in the app. The service role key is never used. |
 
-Code: `supabase/functions/xs-ai/agent.ts` (agent, tools, limits), `index.ts` (HTTP wrapper),
-`src/features/ai/` (panel, voice).
+Speed: tools take members and plans **by name** ("Rahul", "XS-0012", phone digits, "Monthly"),
+so a command like "Rahul paid 1500 by UPI" needs **one** model call; when every change in a step
+succeeds the confirmation is written directly, without another model call.
+
+Code: `supabase/functions/xs-ai/agent.ts` (agent, tools, failover), `stt.ts` (speech-to-text),
+`index.ts` (HTTP), `src/features/ai/` (panel, recorder, voice).
 
 ## Setup (owner)
 
-1. Supabase Dashboard → project `xs-gym` → **Edge Functions → Secrets**.
-2. Add `NVIDIA_API_KEY` for NVIDIA NIM. Candidates: `openai/gpt-oss-20b`, `nvidia/nemotron-3.5-lightning-30b-a3b`,
-   then `z-ai/glm-5.3-flash`; `NVIDIA_MODEL` overrides first choice.
-3. Add `XAI_API_KEY` for xAI Grok. The existing secret name `Grok` is also supported
-   (as is `GROK_API_KEY`), so no re-entry of the key is needed. Default model:
-   `grok-4.3` at `https://api.x.ai/v1`; optional override: `XAI_MODEL`.
-4. Optional third fallback: `LLM_API_KEY`, `LLM_BASE_URL` and `LLM_MODEL`.
-   The defaults are the Gemini-compatible endpoint and `gemini-2.5-flash`.
+Supabase Dashboard → project `xs-gym` → **Edge Functions → Secrets**. Keys stay server-side only.
 
-Keys must remain **server-side Supabase secrets**, never in GitHub, Vite variables or
-the browser. The authenticated `GET /functions/v1/xs-ai` endpoint reports configured
-providers/models without exposing credentials.
+| Secret | Gives | Notes |
+|---|---|---|
+| `GROQ_API_KEY` | **Voice (speech-to-text) and the fastest replies** | Free at console.groq.com. Recommended first key. `GROQ_MODEL` optional. |
+| `GEMINI_API_KEY` (or `LLM_API_KEY`) | Voice fallback and replies | Google AI Studio key. `GEMINI_MODEL` optional. If `LLM_BASE_URL` is set, `LLM_API_KEY` is used for that OpenAI-compatible service instead. |
+| `NVIDIA_API_KEY` | Replies | Free endpoints were timing out (25 s) in testing; kept as a fallback. |
+| `XAI_API_KEY` / `GROK_API_KEY` / `Grok` | Replies | Returned 403 (no model access on the key/team); needs API credits. `XAI_MODEL` optional. |
 
-The function tries the NVIDIA candidates first (410/404 means try another model),
- then Grok and the optional provider. Key-level 401/402/403 or rate-limit 429
- errors skip sibling models on that provider; network/5xx/invalid responses also fail over. **Only the inference call is retried**; completed gym writes are not
-replayed. Their results remain in the conversation passed to the next model.
-Usage may be charged by multiple providers. Grok API billing is separate
-from a Grok web subscription. If every model fails, the UI shows which providers
-were tried, without exposing their API keys.
+`GET /functions/v1/xs-ai` reports which providers and whether speech-to-text are configured,
+without exposing keys. Provider failures are written to the function log for the owner;
+users only see a plain message.
 
-## Microphone permissions in the installed app
+## Microphone
 
-XS AI's microphone button opens a short in-app permission explanation on the
-first use in a page session. Tapping **Allow microphone** calls
-`navigator.mediaDevices.getUserMedia({ audio: true })` so iOS/the browser can
-show its native consent prompt. The temporary media tracks are stopped
-immediately; XS AI then attempts to start speech recognition.
-
-If permission is denied, the app presents an in-app **Try again** option and a
-**Use keyboard instead** fallback (which focuses the message field and allows
-iOS keyboard dictation where available). It does not automatically navigate to
-browser settings. Users can switch to typing even while a native permission
-prompt is unresolved. A previous *permanent* denial cannot be overridden by any
-web app; iOS/browser controls whether it will prompt again.
-
-Microphone permission and the Web Speech API's separate recognition service
-are not the same thing. Recognition can fail even when the microphone is
-allowed, especially in installed iOS Home Screen web apps. That failure has
-its own explanation and direct Retry/keyboard fallback; it must never be
-mislabelled as a microphone permission denial.
-
-Tests: `src/features/ai/voice.test.ts` validates real permission-request logic
-with simulated devices. `tests/ui/ai.mjs` covers phone/laptop light/dark
-permission grant, denial, retry, recognition-service errors, and input focus.
-A dedicated GitHub Actions workflow (`.github/workflows/voice-ui.yml`) runs
-these mocked Chromium UI checks after relevant changes; 64/64 checks passed in
-run 42067348450. A final installed iPhone test is still required.
+One tap on the orb starts recording; the first time, the phone shows its own Allow prompt
+inside the app. If access is denied, an in-app panel offers **Try again** and **Use keyboard
+instead**; it never sends the user to Settings. A permanent denial can only be undone by the
+user in iOS settings; the keyboard (including its dictation key) always works.
 
 ## What it can do
 
@@ -72,8 +48,8 @@ via the signed-in user's permission checks, without requiring an AI provider.
 The response lists up to 25 active members with dues.
 
 Read: today's overview, member search and details, plans, payments by day, reports for a date range, expenses by month.
-Change: check in (with override reason when needed), record payment, sell/renew plan (with discount reason and admission fee),
-add member, record expense, reverse payment, remove check-in, archive/restore member, open any screen.
+Change: record payment, sell/renew plan (with discount reason and admission fee), add member, record expense,
+reverse payment, archive/restore member, open any screen. (Check-in was removed from the web app.)
 
 Each role only gets the tools its permissions allow (reception has no reversals or financial reports).
 
