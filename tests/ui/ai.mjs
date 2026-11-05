@@ -79,15 +79,32 @@ for (const [name, viewport, mobile] of [['phone', { width: 390, height: 844 }, t
     const spoken = await page.evaluate(() => window.__spoken);
     check(`${name} ${scheme}: voice → transcript sent with gym and language`, listening === 1 && sent[0]?.messages.at(-1).content === 'Rahul paid 1500 by UPI' && sent[0].gym_id === gym.id && sent[0].lang === 'en');
     check(`${name} ${scheme}: reply shown and spoken in en-IN`, (await dialog.innerText()).includes('Recorded ₹1,500') && spoken[0]?.lang === 'en-IN');
-    await tap(dialog.getByRole('button', { name: 'Undo' }));
+    // Two clicks before React can rerender must trigger only one reversal.
+    await page.evaluate(() => {
+      const undo = document.querySelector('.xsai-action .btn');
+      undo?.click(); undo?.click();
+    });
     await page.waitForTimeout(500);
-    check(`${name} ${scheme}: Undo calls reverse_payment`, rpcs[0]?.p_payment === 'p-1' && (await dialog.locator('.xsai-action.undone').count()) === 1);
+    check(`${name} ${scheme}: Undo executes once under a double tap`,
+      rpcs.length === 1 && rpcs[0]?.p_payment === 'p-1' && (await dialog.locator('.xsai-action.undone').count()) === 1);
 
     // Typing, follow-up keeps the conversation.
     await dialog.getByRole('textbox', { name: 'Message XS AI' }).fill('How much did we collect today?');
     await dialog.getByRole('textbox', { name: 'Message XS AI' }).press('Enter');
     await dialog.getByText('You collected ₹18,500').waitFor({ timeout: 6000 });
     check(`${name} ${scheme}: typed follow-up carries history`, sent[1]?.messages.length === 3);
+
+    // Two sends in the same event loop must never duplicate a financial write.
+    await page.waitForTimeout(400); // let the simulated speaker finish
+    await dialog.getByRole('textbox', { name: 'Message XS AI' }).fill('Rahul paid 1500 by UPI');
+    const beforeDoubleSend = sent.length;
+    await page.evaluate(() => {
+      const send = document.querySelector('.xsai-type button');
+      send?.click(); send?.click();
+    });
+    await dialog.locator('.xsai-action').nth(1).waitFor({ timeout: 6000 });
+    await page.waitForTimeout(650);
+    check(`${name} ${scheme}: rapid double send creates one request`, sent.length === beforeDoubleSend + 1);
 
     // Malayalam: recognition in ml-IN; no Malayalam voice → text-only note.
     await tap(dialog.getByRole('group', { name: 'Language' }).getByRole('button', { name: 'മലയാളം' }));
@@ -100,6 +117,16 @@ for (const [name, viewport, mobile] of [['phone', { width: 390, height: 844 }, t
     await page.screenshot({ path: `${outDir}/ai-${name}-${scheme}-malayalam.png` });
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth);
     check(`${name} ${scheme}: no overflow, no errors`, !overflow && errors.length === 0, errors.join(' | '));
+
+    // Close while the fake microphone has partial text. The dismissal motion
+    // must not let the remaining recognition event submit a payment.
+    const beforeClose = sent.length;
+    await page.evaluate(() => { window.__say = 'Rahul paid 1500 by UPI'; });
+    await tap(dialog.getByRole('button', { name: 'Talk to XS AI' }));
+    await page.waitForTimeout(235);
+    await tap(dialog.getByRole('button', { name: 'Close' }));
+    await page.waitForTimeout(850);
+    check(`${name} ${scheme}: close while listening does not send`, sent.length === beforeClose);
     await ctx.close();
   }
 }

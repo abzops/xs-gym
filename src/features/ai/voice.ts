@@ -63,17 +63,37 @@ export function voiceFor(lang: Lang): SpeechSynthesisVoice | null {
     ?? (lang === 'en' ? list[0] ?? null : null);
 }
 
-/** Speaks text; resolves when finished. Returns false when no suitable voice exists. */
+// Some browsers never fire onend after speechSynthesis.cancel(). Always settle
+// the pending promise, so XS AI cannot remain stuck in its speaking state.
+let finishSpeech: (() => void) | null = null;
+
+/** Speaks text; resolves after completion, cancellation, or a stalled voice. */
 export function speak(text: string, lang: Lang): Promise<boolean> {
   const voice = voiceFor(lang);
   if (!voice) return Promise.resolve(false);
-  window.speechSynthesis.cancel();
+  stopSpeaking();
   return new Promise((resolve) => {
     const u = new SpeechSynthesisUtterance(text.replace(/[*_#`]/g, ''));
     u.voice = voice; u.lang = voice.lang; u.rate = lang === 'ml' ? 0.95 : 1.02; u.pitch = 1;
-    u.onend = () => resolve(true); u.onerror = () => resolve(true);
-    window.speechSynthesis.speak(u);
+    let settled = false;
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      window.clearTimeout(watchdog);
+      if (finishSpeech === finish) finishSpeech = null;
+      resolve(true);
+    };
+    const watchdog = window.setTimeout(() => {
+      window.speechSynthesis.cancel();
+      finish();
+    }, Math.min(90_000, Math.max(12_000, text.length * 150)));
+    finishSpeech = finish;
+    u.onend = finish; u.onerror = finish;
+    try { window.speechSynthesis.speak(u); } catch { finish(); }
   });
 }
 
-export const stopSpeaking = () => { if (canSpeak()) window.speechSynthesis.cancel(); };
+export const stopSpeaking = () => {
+  if (canSpeak()) window.speechSynthesis.cancel();
+  finishSpeech?.();
+};

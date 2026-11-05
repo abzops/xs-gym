@@ -62,6 +62,14 @@
 
 ## 6. Session log
 
+### 2026-11-05 — Session 2 (voice reliability)
+
+- Prevented rapid double submissions of XS AI commands and Undo actions with synchronous guards.
+- XS AI stops listening as soon as sheet dismissal begins; partial speech cannot submit a command after Close.
+- Cancelling voice output always settles its promise (with a stalled-speech watchdog), preventing a stuck UI.
+- Added phone/laptop, light/dark regression checks for duplicate sends, Undo and dismissal mid-speech.
+- Supabase project `knuanihnxtxtyrgvsumq` is not available through the linked account in this session; no backend changes were made.
+
 ### 2026-11-05 — Session 1 (continued)
 
 - Owner asked to build end to end; recommended options applied and recorded as "Assumed" in `docs/OWNER_DECISIONS.md`.

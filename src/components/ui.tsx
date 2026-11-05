@@ -12,7 +12,7 @@ import type { MembershipStatus } from '../lib/types';
    pulled up, and on release hands the finger's velocity to the spring,
    projecting the flick to decide between settling and dismissing.
    Wider screens and reduced motion: a centred dialog with a short fade. */
-export function Sheet({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
+export function Sheet({ title, onClose, onClosing, children }: { title: string; onClose: () => void; onClosing?: () => void; children: ReactNode }) {
   const ref = useRef<HTMLDivElement>(null);
   const backdrop = useRef<HTMLDivElement>(null);
   const [closing, setClosing] = useState(false);
@@ -22,6 +22,7 @@ export function Sheet({ title, onClose, children }: { title: string; onClose: ()
   const tracker = useRef(new VelocityTracker());
   const drag = useRef<{ start: number; base: number; moved: boolean } | null>(null);
   const done = useRef(false);
+  const closeRequested = useRef(false);
   const height = () => ref.current?.offsetHeight || 600;
 
   const finish = useCallback(() => {
@@ -31,13 +32,16 @@ export function Sheet({ title, onClose, children }: { title: string; onClose: ()
   }, [onClose]);
 
   const close = useCallback((velocity = 0) => {
+    if (closeRequested.current) return;
+    closeRequested.current = true;
+    onClosing?.(); // Stop microphones and pending input before the exit animation.
     if (physical && spring.current) {
       spring.current.to(height(), SPRING.sheet, { velocity, onRest: finish });
     } else {
       setClosing(true);
       setTimeout(finish, 180);
     }
-  }, [physical, finish]);
+  }, [physical, finish, onClosing]);
 
   // Spring in from below before the first paint.
   useLayoutEffect(() => {

@@ -1,6 +1,6 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { ArrowUp, Check, Mic, RotateCcw, Square, X } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router';
 import { useGym } from '../../app/gym';
 import { Segmented, Sheet, useToast } from '../../components/ui';
@@ -32,17 +32,29 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
   const [text, setText] = useState('');
   const [mute, setMute] = useState(false);
   const stopRef = useRef<() => void>(() => {});
+  const closingRef = useRef(false);
+  const requestBusy = useRef(false);
+  const listeningBusy = useRef(false);
+  const undoBusy = useRef(new Set<string>());
   const scroller = useRef<HTMLDivElement>(null);
   const turnsRef = useRef(turns); turnsRef.current = turns;
   const voiceOk = canListen();
 
   useEffect(() => { try { localStorage.setItem(LANG_KEY, lang); } catch { /* storage blocked */ } }, [lang]);
   useEffect(() => { scroller.current?.scrollTo({ top: scroller.current.scrollHeight, behavior: 'smooth' }); }, [turns, live, state]);
-  useEffect(() => () => { stopRef.current(); stopSpeaking(); }, []);
+  const stopInteraction = useCallback(() => {
+    closingRef.current = true;
+    stopRef.current();
+    stopSpeaking();
+  }, []);
+  useEffect(() => () => { stopInteraction(); }, [stopInteraction]);
 
+  // One request at a time: rapid taps must not record the same payment twice.
   async function ask(content: string) {
     const q = content.trim();
-    if (!q || state === 'thinking') return;
+    if (!q || requestBusy.current || listeningBusy.current || closingRef.current) return;
+    requestBusy.current = true;
+    stopSpeaking();
     const history = [...turnsRef.current, { role: 'user' as const, content: q }];
     setTurns(history); setLive(''); setText(''); setState('thinking');
     try {
@@ -54,54 +66,77 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
         try { const body = await (error as { context?: Response }).context?.json(); if (body?.error) msg = body.error; } catch { /* not JSON */ }
         throw new Error(msg);
       }
-      const reply = String(data.reply ?? '');
-      setTurns((t) => [...t, { role: 'assistant', content: reply, actions: data.actions }]);
-      for (const key of data.changed ?? []) void qc.invalidateQueries({ queryKey: [key, gym.id] });
-      if (typeof data.navigate === 'string') navigate(`/g/${gym.slug}${data.navigate ? `/${data.navigate}` : ''}`);
+      const reply = String(data?.reply ?? '');
+      // A write may already have succeeded when dismissed. Refresh the app,
+      // but never speak or navigate from a closed conversation.
+      for (const key of data?.changed ?? []) void qc.invalidateQueries({ queryKey: [key, gym.id] });
+      if (closingRef.current) return;
+      setTurns((t) => [...t, { role: 'assistant', content: reply, actions: data?.actions }]);
+      if (typeof data?.navigate === 'string') navigate(`/g/${gym.slug}${data.navigate ? `/${data.navigate}` : ''}`);
       if (!mute && reply) {
         setState('speaking');
-        await speak(reply, lang); // no Malayalam voice → the status line says replies are text
+        await speak(reply, lang);
       }
     } catch (e) {
-      setTurns((t) => [...t, { role: 'assistant', content: e instanceof Error ? e.message : String(e), tone: 'bad' }]);
+      if (!closingRef.current) setTurns((t) => [...t, { role: 'assistant', content: e instanceof Error ? e.message : String(e), tone: 'bad' }]);
     } finally {
-      setState('idle');
+      requestBusy.current = false;
+      if (!closingRef.current) setState('idle');
     }
   }
 
   async function talk() {
+    if (closingRef.current) return;
     if (state === 'listening') { stopRef.current(); return; }
+    if (state === 'speaking') { stopSpeaking(); return; }
+    if (requestBusy.current || listeningBusy.current) return;
+    listeningBusy.current = true;
     stopSpeaking();
     setState('listening'); setLive('');
     try {
       const l = listen(lang, setLive);
       stopRef.current = l.stop;
       const heard = await l.done;
+      listeningBusy.current = false;
+      stopRef.current = () => {};
+      // Dismissing mid-utterance must never trigger an unintended write.
+      if (closingRef.current) return;
       setState('idle');
       if (heard) await ask(heard);
     } catch (e) {
-      setState('idle');
-      toast(e instanceof Error ? e.message : String(e), 'bad');
+      if (!closingRef.current) {
+        setState('idle');
+        toast(e instanceof Error ? e.message : String(e), 'bad');
+      }
+    } finally {
+      listeningBusy.current = false;
+      stopRef.current = () => {};
     }
   }
 
   async function undo(turn: number, i: number) {
-    const a = turns[turn].actions?.[i];
-    if (!a?.undo || a.undone) return;
+    const a = turns[turn]?.actions?.[i];
+    const id = `${turn}:${i}`;
+    if (closingRef.current || !a?.undo || a.undone || undoBusy.current.has(id)) return;
+    undoBusy.current.add(id);
     try {
       await rpc(a.undo.rpc, a.undo.args);
-      setTurns((ts) => ts.map((t, ti) => ti !== turn ? t : { ...t, actions: t.actions?.map((x, xi) => xi === i ? { ...x, undone: true } : x) }));
+      if (!closingRef.current) setTurns((ts) => ts.map((t, ti) => ti !== turn ? t : { ...t, actions: t.actions?.map((x, xi) => xi === i ? { ...x, undone: true } : x) }));
       await Promise.all(['dashboard', 'payments', 'members', 'member', 'expenses', 'checkins'].map((k) => qc.invalidateQueries({ queryKey: [k, gym.id] })));
-      toast('Undone');
-    } catch (e) { toast(errorMessage(e), 'bad'); }
+      if (!closingRef.current) toast('Undone');
+    } catch (e) {
+      if (!closingRef.current) toast(errorMessage(e), 'bad');
+    } finally {
+      undoBusy.current.delete(id);
+    }
   }
 
   const status = state === 'listening' ? (lang === 'ml' ? 'കേൾക്കുന്നു…' : 'Listening…')
     : state === 'thinking' ? (lang === 'ml' ? 'ആലോചിക്കുന്നു…' : 'Thinking…')
-    : state === 'speaking' ? '' : voiceOk ? (lang === 'ml' ? 'സംസാരിക്കാൻ ടാപ്പ് ചെയ്യൂ' : 'Tap to talk') : 'Type below';
+    : state === 'speaking' ? (lang === 'ml' ? 'സംസാരിക്കുന്നു…' : 'Speaking…') : voiceOk ? (lang === 'ml' ? 'സംസാരിക്കാൻ ടാപ്പ് ചെയ്യൂ' : 'Tap to talk') : 'Type below';
 
   return (
-    <Sheet title="XS AI" onClose={() => { stopRef.current(); stopSpeaking(); onClose(); }}>
+    <Sheet title="XS AI" onClosing={stopInteraction} onClose={() => { stopInteraction(); onClose(); }}>
       <div className="xsai">
         <div className="xsai-bar">
           <Segmented label="Language" value={lang} onChange={setLang} options={[{ value: 'en', label: 'English' }, { value: 'ml', label: 'മലയാളം' }]} />
@@ -138,15 +173,15 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
         <div className="xsai-controls">
           {voiceOk && (
             <button type="button" className={`xsai-orb ${state}`} onClick={talk} disabled={state === 'thinking'}
-              aria-label={state === 'listening' ? 'Stop listening' : 'Talk to XS AI'}>
+              aria-label={state === 'listening' ? 'Stop listening' : state === 'speaking' ? 'Stop speaking' : 'Talk to XS AI'}>
               <span className="xsai-orb-glow" aria-hidden />
-              {state === 'listening' ? <Square size={22} fill="currentColor" /> : <Mic size={26} />}
+              {state === 'listening' || state === 'speaking' ? <Square size={22} fill="currentColor" /> : <Mic size={26} />}
             </button>
           )}
           <p className="xsai-status" aria-live="polite">{status}{lang === 'ml' && !mute && !voiceFor('ml') ? ' · replies shown as text on this device' : ''}</p>
           <form className="xsai-type" onSubmit={(e) => { e.preventDefault(); void ask(text); }}>
             <input className="input" value={text} onChange={(e) => setText(e.target.value)} placeholder={lang === 'ml' ? 'ടൈപ്പ് ചെയ്യൂ…' : 'Type a message…'} aria-label="Message XS AI" enterKeyHint="send" />
-            <button className="btn primary icon-btn" disabled={!text.trim() || state === 'thinking'} aria-label="Send"><ArrowUp size={20} /></button>
+            <button className="btn primary icon-btn" disabled={!text.trim() || state !== 'idle'} aria-label="Send"><ArrowUp size={20} /></button>
           </form>
         </div>
       </div>
