@@ -5,11 +5,11 @@ name: Test and deploy
 
 on:
   push:
-    branches: [main]
+    branches: [main, analytics-onboarding]
   workflow_dispatch:
 
 concurrency:
-  group: pages
+  group: pages-${{ github.ref }}
   cancel-in-progress: true
 
 env:
@@ -57,6 +57,7 @@ jobs:
         run: bash tests/db/run.sh
 
   deploy:
+    if: github.ref == 'refs/heads/main'
     needs: [app, database]
     runs-on: ubuntu-24.04
     permissions:
@@ -82,6 +83,7 @@ jobs:
   # Also publishes through GitHub's Pages deployment, so the site updates
   # whether Settings → Pages → Source is "gh-pages branch" or "GitHub Actions".
   deploy-actions:
+    if: github.ref == 'refs/heads/main'
     needs: [app, database]
     runs-on: ubuntu-24.04
     continue-on-error: true
