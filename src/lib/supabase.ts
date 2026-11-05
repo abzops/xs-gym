@@ -8,7 +8,11 @@ if (!url || !key) {
 }
 
 export const supabase = createClient(url, key, {
-  auth: { flowType: 'pkce', persistSession: true, autoRefreshToken: true, detectSessionInUrl: true },
+  // Implicit flow: email links (sign-up confirmation, password recovery — including
+  // ones sent from the Supabase dashboard) work on any device, not only the
+  // browser that requested them. Tokens arrive in the URL fragment, which is
+  // never sent to a server, and the client removes it from the address bar.
+  auth: { flowType: 'implicit', persistSession: true, autoRefreshToken: true, detectSessionInUrl: true },
 });
 
 /** Calls a database command function and throws on error. */
