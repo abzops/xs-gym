@@ -136,9 +136,36 @@ for (const [vpName, w, h] of viewports) {
   const vt = await page.evaluate(() => document.documentElement.dataset.vt);
   await page.getByRole('button', { name: 'Payment' }).tap();
   const sheetOpen = await page.getByRole('dialog', { name: 'Record payment' }).isVisible();
-  await page.keyboard.press('Escape');
-  await page.waitForTimeout(350);
+  // Real touch gestures through Chrome's touch input.
+  const cdp = await ctx.newCDPSession(page);
+  const touch = async (type, x, y) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: type === 'touchEnd' ? [] : [{ x, y }] });
+  const sheetY = () => page.evaluate(() => { const m = getComputedStyle(document.querySelector('.sheet')).transform; return m === 'none' ? 0 : new DOMMatrix(m).m42; });
+  await page.waitForTimeout(700);
+  const grab = await page.locator('.sheet .handle').boundingBox();
+  const gx = grab.x + grab.width / 2, gy = grab.y + 2;
+  // 1. Pull up: rubber-bands (moves far less than the finger)
+  await touch('touchStart', gx, gy);
+  for (let i = 1; i <= 10; i++) { await touch('touchMove', gx, gy - i * 20); await page.waitForTimeout(16); }
+  const pulledUp = await sheetY();
+  await touch('touchEnd');
+  await page.waitForTimeout(900);
+  const settledAfterUp = Math.abs(await sheetY()) < 1;
+  // 2. Short slow drag down: springs back
+  await touch('touchStart', gx, gy);
+  for (let i = 1; i <= 6; i++) { await touch('touchMove', gx, gy + i * 10); await page.waitForTimeout(60); }
+  await page.waitForTimeout(200);
+  await touch('touchEnd');
+  await page.waitForTimeout(900);
+  const springBack = (await page.getByRole('dialog').count()) === 1 && Math.abs(await sheetY()) < 1;
+  // 3. Quick flick down: dismisses
+  await touch('touchStart', gx, gy);
+  for (let i = 1; i <= 4; i++) { await touch('touchMove', gx, gy + i * 30); await page.waitForTimeout(12); }
+  await touch('touchEnd');
+  await page.waitForTimeout(1000);
   const sheetClosed = (await page.getByRole('dialog').count()) === 0;
+  const rubber = pulledUp < 0 && pulledUp > -200;
+  console.log(`     gestures    pull-up moved ${pulledUp.toFixed(0)}px for a 200px drag (rubber-band ${rubber}), settled=${settledAfterUp}, slow drag springs back=${springBack}, flick dismisses=${sheetClosed}`);
+  if (!rubber || !settledAfterUp || !springBack) failures++;
   await page.getByRole('link', { name: 'Members' }).first().tap();
   await page.waitForURL(/\/members$/);
   const ok = vt === 'push' && sheetOpen && sheetClosed && errors.length === 0;
