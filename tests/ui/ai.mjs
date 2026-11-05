@@ -14,8 +14,33 @@ const check = (name, ok, detail = '') => { if (!ok) failures++; console.log(`${o
 // A fake microphone that "hears" window.__say, and a speaker that records what it said.
 const fakeSpeech = () => {
   window.__spoken = [];
+  window.__micRequests = 0;
+  window.__micStopped = 0;
+  window.__micPermission = 'granted';
+  window.__speechError = null;
+  // Installed iOS-style microphone permission: getUserMedia opens the native
+  // prompt if needed; tests simulate its grant and denial without real audio.
+  Object.defineProperty(navigator, 'mediaDevices', {
+    configurable: true,
+    value: {
+      getUserMedia: async () => {
+        window.__micRequests++;
+        if (window.__micPermission === 'denied') {
+          const e = new Error('Not allowed');
+          e.name = 'NotAllowedError';
+          throw e;
+        }
+        return { getTracks: () => [{ stop() { window.__micStopped++; } }] };
+      },
+    },
+  });
   class FakeRecognition {
-    start() { this.lang_used = this.lang; window.__recLang = this.lang; setTimeout(() => {
+    start() { this.lang_used = this.lang; window.__recLang = this.lang;
+      if (window.__speechError) {
+        queueMicrotask(() => { this.onerror?.({ error: window.__speechError }); this.onend?.(); });
+        return;
+      }
+      setTimeout(() => {
       const t = window.__say ?? '';
       this.onresult?.({ results: [Object.assign([{ transcript: t.slice(0, 8) }], { isFinal: false })] });
       setTimeout(() => { this.onresult?.({ results: [Object.assign([{ transcript: t }], { isFinal: true })] }); this.onend?.(); }, 250);
@@ -67,10 +92,17 @@ for (const [name, viewport, mobile] of [['phone', { width: 390, height: 844 }, t
     await page.waitForTimeout(400);
     await page.screenshot({ path: `${outDir}/ai-${name}-${scheme}-empty.png` });
 
-    // Voice: tap the orb, the fake mic hears a payment.
+    // First tap explains access; Allow triggers the native getUserMedia flow.
     await page.evaluate(() => { window.__say = 'Rahul paid 1500 by UPI'; });
     await tap(dialog.getByRole('button', { name: 'Talk to XS AI' }));
+    const primer = dialog.getByRole('dialog', { name: 'Enable microphone' });
+    await primer.waitFor();
+    check(`${name} ${scheme}: voice permission panel appears inside XS AI`, await primer.isVisible());
+    await tap(primer.getByRole('button', { name: 'Allow microphone' }));
     await page.waitForTimeout(350);
+    const permission = await page.evaluate(() => [window.__micRequests, window.__micStopped]);
+    check(`${name} ${scheme}: permission requested once and mic stream released`,
+      permission[0] === 1 && permission[1] === 1);
     const listening = await dialog.locator('.xsai-orb.listening').count();
     await page.screenshot({ path: `${outDir}/ai-${name}-${scheme}-listening.png` });
     await dialog.locator('.xsai-action').first().waitFor({ timeout: 6000 });
@@ -127,6 +159,41 @@ for (const [name, viewport, mobile] of [['phone', { width: 390, height: 844 }, t
     await tap(dialog.getByRole('button', { name: 'Close' }));
     await page.waitForTimeout(850);
     check(`${name} ${scheme}: close while listening does not send`, sent.length === beforeClose);
+
+    // New page / PWA launch: denied OS permission should show in-app recovery,
+    // not an unhelpful red banner telling users to find browser settings.
+    await page.reload({ waitUntil: 'networkidle' });
+    const repeatEntry = mobile ? page.locator('.topbar .xsai-entry') : page.locator('.sidebar .xsai-side');
+    await tap(repeatEntry);
+    const retryDialog = page.getByRole('dialog', { name: 'XS AI' });
+    await retryDialog.waitFor();
+    await page.evaluate(() => { window.__micPermission = 'denied'; window.__say = 'How much did we collect today?'; });
+    const beforeDenied = sent.length;
+    await tap(retryDialog.getByRole('button', { name: 'Talk to XS AI' }));
+    await tap(retryDialog.getByRole('button', { name: 'Allow microphone' }));
+    const denied = retryDialog.getByRole('dialog', { name: 'Microphone permission needed' });
+    await denied.waitFor();
+    check(`${name} ${scheme}: permission denial shows recoverable dialog without submitting`,
+      await denied.isVisible() && sent.length === beforeDenied);
+
+    // User fixes permission: the Retry button requests access and starts voice.
+    await page.evaluate(() => { window.__micPermission = 'granted'; });
+    await tap(denied.getByRole('button', { name: 'Try again' }));
+    await retryDialog.getByText('You collected ₹18,500').waitFor({ timeout: 6000 });
+    check(`${name} ${scheme}: retry grants permission and starts listening`,
+      await page.evaluate(() => window.__micRequests === 2 && window.__micStopped === 1));
+
+    // A speech-engine denial is not misreported as microphone permission.
+    await page.waitForTimeout(500);
+    await page.evaluate(() => { window.__speechError = 'service-not-allowed'; });
+    await tap(retryDialog.getByRole('button', { name: 'Talk to XS AI' }));
+    const speechError = retryDialog.getByRole('dialog', { name: 'Speech recognition unavailable' });
+    await speechError.waitFor();
+    check(`${name} ${scheme}: separate iOS speech-engine failure with keyboard option`,
+      await speechError.getByRole('button', { name: 'Use keyboard instead' }).isVisible());
+    await tap(speechError.getByRole('button', { name: 'Use keyboard instead' }));
+    check(`${name} ${scheme}: keyboard fallback focuses the message input`,
+      await retryDialog.getByRole('textbox', { name: 'Message XS AI' }).isFocused());
     await ctx.close();
   }
 }
