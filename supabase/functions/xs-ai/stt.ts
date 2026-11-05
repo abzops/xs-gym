@@ -31,7 +31,7 @@ async function withTimeout<T>(ms: number, run: (signal: AbortSignal) => Promise<
 async function groq(audio: Uint8Array, lang: 'en' | 'ml', key: string, f: typeof fetch): Promise<string> {
   for (const model of ['whisper-large-v3-turbo', 'whisper-large-v3']) {
     const form = new FormData();
-    form.append('file', new Blob([audio], { type: 'audio/wav' }), 'speech.wav');
+    form.append('file', new Blob([new Uint8Array(audio)], { type: 'audio/wav' }), 'speech.wav');
     form.append('model', model);
     form.append('language', lang);
     form.append('response_format', 'json');
