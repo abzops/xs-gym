@@ -62,6 +62,21 @@
 
 ## 6. Session log
 
+### 2026-11-05 — Session 5 (iOS PWA microphone permission)
+
+- Diagnosed installed iOS XS AI microphone banner: the client called
+  `SpeechRecognition.start()` directly, and incorrectly treated both
+  `not-allowed` and `service-not-allowed` as microphone OS denial.
+- Added an in-app, mobile-responsive microphone onboarding dialog. The
+  user-triggered Allow button calls `getUserMedia` to invoke native permission,
+  releases the temporary capture tracks, and automatically tries recognition.
+- Denied microphone, unavailable hardware, and speech-service errors have
+  distinct recovery states with an in-app Retry and keyboard/dictation fallback.
+  A permanent iOS denial cannot be bypassed by browser code.
+- Added regression tests for permissions and for phone/laptop UX in light/dark;
+  real installed-iPhone confirmation is still required. No Supabase backend
+  functions or database permissions were changed.
+
 ### 2026-11-05 — Session 4 (repair NVIDIA model retirement)
 
 - Confirmed from production logs at 15:54Z: the former NVIDIA model returned 410 and xAI Grok returned 403.
