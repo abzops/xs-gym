@@ -1,5 +1,6 @@
 import { AlertTriangle, CheckCircle2, Info, X } from 'lucide-react';
 import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { Link, type LinkProps } from 'react-router';
 import { setTransition } from '../lib/motion';
 import { project, rubberband, Spring, SPRING, VelocityTracker } from '../lib/spring';
@@ -94,7 +95,9 @@ export function Sheet({ title, onClose, children }: { title: string; onClose: ()
     else spring.current.to(0, Math.abs(v) > 300 ? SPRING.flick : SPRING.smooth, { velocity: v });
   };
 
-  return (
+  // Portal: sheets must sit above the tab bar, outside the page's
+  // view-transition stacking context.
+  return createPortal(
     <div className={`overlay ${physical ? 'physical' : ''} ${closing ? 'closing' : ''}`}>
       <div className="backdrop" ref={backdrop} onClick={() => close()} aria-hidden />
       <div className="sheet" role="dialog" aria-modal="true" aria-label={title} ref={ref}>
@@ -110,7 +113,7 @@ export function Sheet({ title, onClose, children }: { title: string; onClose: ()
         {children}
       </div>
     </div>
-  );
+  , document.body);
 }
 
 /** Smoothly expands or collapses its content (used for optional form fields). */
