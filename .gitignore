@@ -45,3 +45,5 @@ npm-debug.log*
 .idea/
 .vscode/*
 !.vscode/extensions.json
+tests/e2e/out/
+tests/e2e/calls.jsonl
