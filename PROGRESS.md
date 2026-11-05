@@ -108,6 +108,11 @@
 - `tests/ui/perf.mjs` (shared fixtures in `tests/ui/mock.mjs`): 4× CPU + fast 4G phone profile. Latest:
   LCP 1.3–1.5 s, CLS ≤ 0.035, TBT ≤ 234 ms, worst tap-to-paint 72 ms; hover, theme switch, typing and scroll
   all hold 60 fps (p95 16.7–16.8 ms, no frames over 33 ms). First-load JS still ~193 KB gzip (budget 170).
+- End-to-end suite (`tests/e2e/`): phone, tablet, laptop × 39 real-user steps on a local copy of the backend
+  (live schema verified identical). 117/117 pass. Found and fixed: sheets hidden under the phone tab bar
+  (Save unreachable), fast double-tap ran a payment/sale success twice, import preview marked existing
+  members' phones as Ready, plan Unit switch mislabelled for screen readers.
+- Open decision: voiding a paid membership charge turns the payment into credit but leaves the membership active.
 
 ### 2026-11-05 — Session 1
 
