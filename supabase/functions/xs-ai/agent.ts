@@ -76,7 +76,6 @@ const addDays = (d: string, n: number) => { const t = new Date(`${d}T00:00:00Z`)
 const memberRow = (m: Json) => ({
   id: m.id, member_no: m.member_no, name: m.full_name, phone: m.phone, status: m.status, plan: m.plan_name ?? null,
   valid_until: m.valid_until ?? null, membership: m.membership_status, due: rupees(m.due_paise), credit: rupees(m.credit_paise),
-  last_visit: m.last_check_in_at ?? null,
 });
 
 /**
@@ -191,6 +190,20 @@ const TOOLS: Tool[] = [
         net: rupees(sum('collections_paise') - sum('reversals_paise') - sum('expenses_paise')), new_members: sum('new_members'), days: rows.length } };
     } },
 
+  { name: 'get_analytics', perm: 'reports.financial', write: false,
+    description: 'Business analytics by month: revenue, expenses, profit, active/joined/lost members, renewals, sales by plan, payment methods, expense categories, dues by age, collection rate, renewal rate, enquiries.',
+    parameters: { type: 'object', properties: { months: { type: 'number', description: '1-24 months back including this one; default 6' } } },
+    run: async (a, c) => {
+      const n = Math.min(24, Math.max(1, Math.round(Number(a.months) || 6)));
+      const x = (await c.rpc('gym_analytics', { p_gym: c.gym.id, p_months: n })) as Json;
+      const money = (o: Json) => Object.fromEntries(Object.entries(o).map(([k, v]) => [k.replace(/_paise$/, ''), /_paise$|^d\d/.test(k) ? rupees(v) : v]));
+      return { result: {
+        months: (x.months as Json[]).map((m) => ({ ...money(m), profit: rupees(Number(m.revenue_paise) - Number(m.expenses_paise)) })),
+        by_plan: (x.by_plan as Json[]).map(money), by_method: (x.by_method as Json[]).map(money), expense_by_category: (x.expense_by_category as Json[]).map(money),
+        dues_by_age: money(x.dues_aging as Json), billed_in_period: rupees((x.collection as Json).billed_paise), outstanding_of_billed: rupees((x.collection as Json).outstanding_paise),
+        renewal_last_90_days: x.renewal, members: x.members, revenue_last_30_days: rupees(x.last_30_revenue_paise), enquiries: x.enquiries } };
+    } },
+
   { name: 'list_expenses', perm: 'expenses.read', write: false,
     description: 'Expenses in a month.',
     parameters: { type: 'object', properties: { month: { type: 'string', description: 'YYYY-MM; default this month' } } },
@@ -234,6 +247,20 @@ const TOOLS: Tool[] = [
       return { result: { member_id: m.id, member_no: m.member_no }, action: { summary: `${name} added as ${m.member_no}`, summaryMl: `${name} ചേർത്തു (${m.member_no})`, undo: { rpc: 'set_member_status', args: { p_gym: c.gym.id, p_member: m.id, p_status: 'archived', p_reason: 'Undone in XS AI' } } }, navigate: `members/${m.id}`, changed: ['members', 'dashboard'] };
     } },
 
+  { name: 'add_enquiry', perm: 'members.write', write: true,
+    description: 'Save an enquiry (a lead: someone who asked about joining). phone must have 10 digits.',
+    parameters: { type: 'object', properties: { full_name: { type: 'string' }, phone: { type: 'string' },
+      source: { type: 'string', enum: ['walk_in', 'phone', 'whatsapp', 'instagram', 'referral', 'website', 'other'] },
+      interest: { type: 'string', description: 'plan or goal they asked about' }, follow_up_date: { type: 'string', description: 'YYYY-MM-DD' }, note: { type: 'string' } }, required: ['full_name', 'phone'] },
+    run: async (a, c) => {
+      const name = str(a.full_name, 120); const digits = str(a.phone, 20).replace(/\D/g, '').replace(/^(91|0)(?=\d{10}$)/, '');
+      need(name.length >= 2, 'full_name is required'); need(digits.length === 10, 'phone must have 10 digits');
+      const args = { p_gym: c.gym.id, p_full_name: name, p_phone: `+91${digits}`, p_source: str(a.source) || 'walk_in', p_interest: str(a.interest, 120) || null,
+        p_notes: str(a.note, 500) || null, p_follow_up_date: isDate(a.follow_up_date) ? a.follow_up_date : null };
+      const e = (await c.rpc('save_enquiry', { ...args, p_enquiry: null, p_status: 'new' })) as Json;
+      return { result: { enquiry_id: e.id }, action: { summary: `Enquiry from ${name} saved`, summaryMl: `${name} എൻക്വയറി സേവ് ചെയ്തു`, undo: { rpc: 'save_enquiry', args: { ...args, p_enquiry: e.id, p_status: 'lost', p_notes: 'Undone in XS AI' } } }, navigate: 'enquiries', changed: ['enquiries', 'analytics'] };
+    } },
+
   { name: 'record_expense', perm: 'expenses.record', write: true,
     description: 'Record a gym expense. amount in rupees.',
     parameters: { type: 'object', properties: { category: { type: 'string', description: 'e.g. Electricity, Rent, Salaries, Maintenance' }, amount: { type: 'number' }, date: { type: 'string', description: 'YYYY-MM-DD, not in the future; default today' }, method: { type: 'string', enum: METHODS }, note: { type: 'string' } }, required: ['category', 'amount'] },
@@ -265,11 +292,11 @@ const TOOLS: Tool[] = [
 
   { name: 'open_screen', perm: '', write: false,
     description: 'Show a screen of the app to the user.',
-    parameters: { type: 'object', properties: { screen: { type: 'string', enum: ['home', 'members', 'payments', 'plans', 'expenses', 'reports', 'settings', 'member'] }, member_id: { type: 'string' } }, required: ['screen'] },
+    parameters: { type: 'object', properties: { screen: { type: 'string', enum: ['home', 'members', 'payments', 'plans', 'expenses', 'analytics', 'enquiries', 'settings', 'member'] }, member_id: { type: 'string' } }, required: ['screen'] },
     run: async (a) => {
       const s = str(a.screen);
       if (s === 'member') { need(isUuid(a.member_id), 'member_id required for member screen'); return { result: 'opened', navigate: `members/${a.member_id}` }; }
-      return { result: 'opened', navigate: s === 'home' ? '' : s };
+      return { result: 'opened', navigate: s === 'home' ? '' : s === 'reports' ? 'analytics' : s };
     } },
 ];
 

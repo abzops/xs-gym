@@ -5,7 +5,7 @@ export type MembershipStatus = 'active' | 'grace' | 'expired' | 'upcoming' | 'ca
 export type Gym = {
   id: string; name: string; slug: string; timezone: string; currency: 'INR';
   phone: string | null; email: string | null; address: string | null;
-  grace_days: number; status: 'active' | 'suspended'; created_at: string;
+  grace_days: number; status: 'active' | 'suspended'; created_at: string; onboarded_at: string | null;
 };
 
 export type StaffRow = {
@@ -64,3 +64,11 @@ export type Expense = {
 
 export const METHOD_LABEL: Record<Method, string> = { cash: 'Cash', upi: 'UPI', card: 'Card', bank: 'Bank transfer', other: 'Other' };
 export const ROLE_LABEL: Record<Role, string> = { owner: 'Owner', manager: 'Manager', reception: 'Reception', trainer: 'Trainer' };
+
+export type EnquiryStatus = 'new' | 'follow_up' | 'trial' | 'joined' | 'lost';
+export type EnquirySource = 'walk_in' | 'phone' | 'whatsapp' | 'instagram' | 'referral' | 'website' | 'other';
+export type Enquiry = {
+  id: string; gym_id: string; full_name: string; phone: string; source: EnquirySource; interest: string | null;
+  notes: string | null; status: EnquiryStatus; follow_up_date: string | null; member_id: string | null;
+  created_at: string; updated_at: string; closed_at: string | null;
+};

@@ -26,7 +26,7 @@ for (const [name, viewport, mobile, navSel] of [['laptop', { width: 1366, height
   const page = await ctx.newPage();
   await page.goto(`${baseUrl}g/${gym.slug}`, { waitUntil: 'networkidle' });
   await page.waitForTimeout(1500); // the user looks at the dashboard for a moment
-  const sections = mobile ? ['Members', 'Payments', 'Plans', 'Home'] : ['Members', 'Payments', 'Plans', 'Expenses', 'Reports', 'Settings', 'Home'];
+  const sections = mobile ? ['Members', 'Payments', 'Analytics', 'Home'] : ['Members', 'Payments', 'Analytics', 'Enquiries', 'Plans', 'Expenses', 'Settings', 'Home'];
   const rows = [];
   for (const round of ['first', 'again']) {
     for (const label of sections) {

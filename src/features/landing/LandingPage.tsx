@@ -191,7 +191,7 @@ const MATRIX: [string, boolean[]][] = [
   ['Add and edit members', [true, true, true, false]],
   ['Sell plans and record payments', [true, true, true, false]],
   ['Give discounts, reverse payments', [true, true, false, false]],
-  ['See collections and reports', [true, true, false, false]],
+  ['See collections and analytics', [true, true, false, false]],
   ['Manage staff and gym settings', [true, false, false, false]],
 ];
 

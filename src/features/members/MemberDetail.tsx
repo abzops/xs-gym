@@ -12,6 +12,7 @@ import { METHOD_LABEL } from '../../lib/types';
 import { PaymentSheet, ReasonSheet, SellPlanSheet } from './actions';
 import { useMember, useMemberHistory } from './api';
 import { MemberForm } from './MemberForm';
+import { WhatsAppButton, reminderFor } from '../../components/WhatsApp';
 
 type Dialog = null | 'sell' | 'pay' | 'edit' | { reverse: string } | { voidCharge: string } | 'archive';
 
@@ -76,6 +77,7 @@ export function MemberDetail() {
             {can('payments.record') && <button className="btn" onClick={() => setDialog('pay')}><Wallet size={18} /> Payment</button>}
             {can('members.write') && <button className="btn ghost" onClick={() => setDialog('edit')}><Pencil size={18} /> Edit</button>}
             <a className="btn ghost" href={`tel:${m.phone}`}><Phone size={18} /> Call</a>
+            <WhatsAppButton small={false} phone={m.phone} {...reminderFor(m, canMoney)} />
           </div>
         )}
         {archived && can('members.archive') && (

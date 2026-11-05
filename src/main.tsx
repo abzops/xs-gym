@@ -8,7 +8,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { lazy, StrictMode, Suspense, type ReactNode } from 'react';
 import { createRoot } from 'react-dom/client';
 import {
-  createBrowserRouter, createRoutesFromElements, Link, Navigate, Outlet, Route, RouterProvider, useParams,
+  createBrowserRouter, createRoutesFromElements, Link, Navigate, Outlet, Route, RouterProvider, useMatch, useParams,
 } from 'react-router';
 import { AuthProvider, useAuth } from './app/auth';
 import { GymProvider, useGym, useGymBySlug, useMyGyms } from './app/gym';
@@ -27,9 +27,11 @@ import { pageModules } from './lib/sections';
 const ExpensesPage = lazy(() => pageModules.expenses().then((m) => ({ default: m.ExpensesPage })));
 const PaymentsPage = lazy(() => pageModules.payments().then((m) => ({ default: m.PaymentsPage })));
 const PlansPage = lazy(() => pageModules.plans().then((m) => ({ default: m.PlansPage })));
-const ReportsPage = lazy(() => pageModules.reports().then((m) => ({ default: m.ReportsPage })));
+const AnalyticsPage = lazy(() => pageModules.analytics().then((m) => ({ default: m.AnalyticsPage })));
+const EnquiriesPage = lazy(() => pageModules.enquiries().then((m) => ({ default: m.EnquiriesPage })));
 const ReceiptPage = lazy(() => pageModules.receipt().then((m) => ({ default: m.ReceiptPage })));
 const ImportPage = lazy(() => pageModules.import().then((m) => ({ default: m.ImportPage })));
+const Onboarding = lazy(() => import('./features/onboarding/Onboarding').then((m) => ({ default: m.Onboarding })));
 const SettingsPage = lazy(() => pageModules.settings().then((m) => ({ default: m.SettingsPage })));
 
 // GitHub Pages cannot send frame-ancestors; refuse to render inside a frame.
@@ -84,12 +86,15 @@ function Home() {
 
 function GymLayout() {
   const { slug } = useParams();
+  const welcome = !!useMatch('/g/:slug/welcome');
   const ctx = useGymBySlug(slug);
   if (ctx.isPending) return <Splash />;
   if (ctx.error) return <div className="center-screen"><Notice tone="bad">{errorMessage(ctx.error)}</Notice></div>;
   if (!ctx.data) {
     return <div className="center-screen"><Empty title="Gym not found"><Link className="btn" to="/">Go home</Link></Empty></div>;
   }
+  // First-run setup is full screen, without the app's navigation.
+  if (welcome) return <GymProvider value={ctx.data}><Suspense fallback={<Splash />}><Onboarding /></Suspense></GymProvider>;
   return <GymProvider value={ctx.data}><Shell /></GymProvider>;
 }
 
@@ -101,7 +106,9 @@ function Allow({ perm, children }: { perm: string; children: ReactNode }) {
 }
 
 function GymHome() {
-  const { can } = useGym();
+  const { gym, can } = useGym();
+  // A new owner who has not finished setup lands in the setup wizard.
+  if (!gym.onboarded_at && can('gym.settings')) return <Navigate to="welcome" replace />;
   if (can('reports.operational')) return <Dashboard />;
   return <Navigate to="members" replace />;
 }
@@ -115,6 +122,7 @@ const router = createBrowserRouter(
         <Route path="/setup" element={<SetupGym />} />
         <Route path="/g/:slug" element={<GymLayout />}>
           <Route index element={<GymHome />} />
+          <Route path="welcome" element={null} />
           {/* Check-in was removed from the web app; old links land on Home. */}
           <Route path="check-in" element={<Navigate to=".." relative="path" replace />} />
           <Route path="members" element={<Allow perm="members.read"><MembersPage /></Allow>} />
@@ -125,7 +133,10 @@ const router = createBrowserRouter(
           <Route path="receipts/:paymentId" element={<Allow perm="payments.read"><ReceiptPage /></Allow>} />
           <Route path="plans" element={<Allow perm="plans.read"><PlansPage /></Allow>} />
           <Route path="expenses" element={<Allow perm="expenses.read"><ExpensesPage /></Allow>} />
-          <Route path="reports" element={<Allow perm="reports.financial"><ReportsPage /></Allow>} />
+          <Route path="analytics" element={<Allow perm="reports.financial"><AnalyticsPage /></Allow>} />
+          {/* Reports became Analytics. */}
+          <Route path="reports" element={<Navigate to="../analytics" relative="path" replace />} />
+          <Route path="enquiries" element={<Allow perm="members.read"><EnquiriesPage /></Allow>} />
           <Route path="settings" element={<Allow perm="staff.read"><SettingsPage /></Allow>} />
           <Route path="*" element={<Empty title="Page not found" />} />
         </Route>

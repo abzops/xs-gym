@@ -4,35 +4,20 @@ import { Download } from 'lucide-react';
 import { useState } from 'react';
 import { Link } from 'react-router';
 import { useGym } from '../../app/gym';
-import { Field, Loading, Notice, Segmented } from '../../components/ui';
+import { Field, Loading, Notice } from '../../components/ui';
 import { csvAmount, downloadCSV } from '../../lib/csv';
 import { addDays, formatDate, todayInGym } from '../../lib/dates';
 import { errorMessage } from '../../lib/errors';
 import { formatINR } from '../../lib/money';
 import { useMembers } from '../members/api';
+import { WhatsAppButton } from '../../components/WhatsApp';
 
 type Day = {
   day: string; collections_paise: number; reversals_paise: number; cash_paise: number; upi_paise: number;
-  other_paise: number; expenses_paise: number; checkins: number; new_members: number;
+  other_paise: number; expenses_paise: number; new_members: number;
 };
 
-type Tab = 'daily' | 'dues' | 'expiring';
-
-export function ReportsPage() {
-  const [tab, setTab] = useState<Tab>('daily');
-  return (
-    <div className="stack lg">
-      <div className="page-head"><h1>Reports</h1></div>
-      <Segmented label="Report" value={tab} onChange={setTab}
-        options={[{ value: 'daily', label: 'Daily summary' }, { value: 'dues', label: 'Dues' }, { value: 'expiring', label: 'Expiring' }]} />
-      {tab === 'daily' && <DailyReport />}
-      {tab === 'dues' && <MemberReport kind="dues" />}
-      {tab === 'expiring' && <MemberReport kind="expiring" />}
-    </div>
-  );
-}
-
-function DailyReport() {
+export function DailyReport() {
   const { gym } = useGym();
   const today = todayInGym(gym.timezone);
   const [from, setFrom] = useState(`${today.slice(0, 7)}-01`);
@@ -94,7 +79,7 @@ function DailyReport() {
   );
 }
 
-function MemberReport({ kind }: { kind: 'dues' | 'expiring' }) {
+export function MemberReport({ kind }: { kind: 'dues' | 'expiring' }) {
   const { gym, can } = useGym();
   const members = useMembers(gym.id, '', kind, gym.timezone);
   const base = `/g/${gym.slug}`;
@@ -116,7 +101,7 @@ function MemberReport({ kind }: { kind: 'dues' | 'expiring' }) {
       </div>
       <div className="card flush table-wrap">
         <table className="data">
-          <thead><tr><th>Member</th><th>Phone</th><th>Plan</th><th>Valid until</th><th className="r">Due</th></tr></thead>
+          <thead><tr><th>Member</th><th>Phone</th><th>Plan</th><th>Valid until</th><th className="r">Due</th><th><span className="sr-only">Remind</span></th></tr></thead>
           <tbody>
             {rows.map((m) => (
               <tr key={m.id}>
@@ -125,9 +110,11 @@ function MemberReport({ kind }: { kind: 'dues' | 'expiring' }) {
                 <td>{m.plan_name ?? '—'}</td>
                 <td>{formatDate(m.valid_until)}</td>
                 <td className="r num">{m.due_paise ? formatINR(m.due_paise) : '—'}</td>
+                <td className="r"><WhatsAppButton phone={m.phone} kind={kind === 'dues' ? 'dues' : 'renew'}
+                  facts={{ name: m.full_name, plan: m.plan_name, date: m.valid_until, amountPaise: m.due_paise }} label="Remind" /></td>
               </tr>
             ))}
-            {rows.length === 0 && <tr><td colSpan={5} className="muted">Nothing here.</td></tr>}
+            {rows.length === 0 && <tr><td colSpan={6} className="muted">Nothing here.</td></tr>}
           </tbody>
         </table>
       </div>

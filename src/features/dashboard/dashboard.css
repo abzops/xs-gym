@@ -107,3 +107,19 @@
 @media (prefers-reduced-motion: reduce) {
   .paybar i { transition: none; }
 }
+
+/* Getting started */
+.start-card { background: var(--paper); border-radius: var(--r-lg); padding: 16px 18px; display: grid; gap: 12px; }
+.start-head { display: flex; align-items: flex-start; gap: 8px; }
+.start-head > div { flex: 1; }
+.start-head h2 { font-size: var(--t-md); margin: 0; }
+.start-head p { margin: 2px 0 0; font-size: var(--t-sm); }
+.start-bar { height: 6px; border-radius: 99px; background: var(--paper-2); overflow: hidden; }
+.start-bar i { display: block; height: 100%; border-radius: 99px; background: var(--ok-vivid); transition: width 400ms var(--ease-out); }
+.start-card ul { list-style: none; margin: 0; padding: 0; display: grid; }
+.start-card li { display: flex; align-items: center; gap: 12px; min-height: 44px; }
+.start-card li + li { border-top: 1px solid var(--hair); }
+.start-card li a { flex: 1; display: flex; align-items: center; justify-content: space-between; color: inherit; text-decoration: none; font-weight: 600; min-height: 44px; }
+.start-card li.done span:last-child { color: var(--graphite); text-decoration: line-through; }
+.start-card .tick { width: 22px; height: 22px; border-radius: 50%; flex: none; display: grid; place-items: center; box-shadow: inset 0 0 0 1.5px var(--hair-strong); }
+.start-card li.done .tick { background: var(--ok-vivid); color: #fff; box-shadow: none; }

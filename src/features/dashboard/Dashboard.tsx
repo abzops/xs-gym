@@ -9,11 +9,11 @@ import { formatINR } from '../../lib/money';
 import { rpc, supabase } from '../../lib/supabase';
 import type { MemberOverview } from '../../lib/types';
 import './dashboard.css';
+import { GettingStarted } from './GettingStarted';
 
 type Summary = {
   today: string; timezone: string; active_members: number; in_grace: number; expiring_today: number;
   expiring_7_days: number; expiring_30_days: number; expired_last_30_days: number; new_members_month: number;
-  checkins_today: number;
   financial: null | {
     collections_today: number; collections_month: number; cash_today: number; upi_today: number; other_today: number;
     reversals_today: number; reversals_month: number; expenses_today: number; expenses_month: number;
@@ -65,11 +65,13 @@ export function Dashboard() {
         <h1>{greeting(gym.timezone)}</h1>
       </header>
 
+      <GettingStarted />
+
       <nav className="quick" aria-label="Quick actions">
         {can('members.write') && <Link className="q primary" to={`${base}/members/new`}><span className="q-ico"><Plus size={22} /></span><span>Add member</span></Link>}
         {can('members.read') && <Link className="q" to={`${base}/members`}><span className="q-ico"><Search size={21} /></span><span>Find</span></Link>}
         {can('expenses.record') && <Link className="q" to={`${base}/expenses?new=1`}><span className="q-ico"><Receipt size={21} /></span><span>Expense</span></Link>}
-        {can('reports.financial') && <Link className="q" to={`${base}/reports`}><span className="q-ico"><BarChart3 size={21} /></span><span>Reports</span></Link>}
+        {can('reports.financial') && <Link className="q" to={`${base}/analytics`}><span className="q-ico"><BarChart3 size={21} /></span><span>Analytics</span></Link>}
       </nav>
 
       {f ? (

@@ -74,13 +74,13 @@ begin
   if p_enquiry is null then
     insert into public.enquiries (gym_id, full_name, phone, source, interest, notes, status, follow_up_date,
                                   member_id, created_by, closed_at)
-    values (p_gym, btrim(p_full_name), btrim(p_phone), coalesce(p_source, 'walk_in'), nullif(btrim(p_interest), ''),
+    values (p_gym, btrim(p_full_name), private.normalize_phone(p_phone), coalesce(p_source, 'walk_in'), nullif(btrim(p_interest), ''),
             nullif(btrim(p_notes), ''), coalesce(p_status, 'new'), p_follow_up_date, p_member_id, auth.uid(),
             case when p_status in ('joined', 'lost') then now() end)
     returning * into v_e;
   else
     update public.enquiries
-       set full_name = btrim(p_full_name), phone = btrim(p_phone), source = coalesce(p_source, source),
+       set full_name = btrim(p_full_name), phone = private.normalize_phone(p_phone), source = coalesce(p_source, source),
            interest = nullif(btrim(p_interest), ''), notes = nullif(btrim(p_notes), ''),
            status = coalesce(p_status, status), follow_up_date = p_follow_up_date,
            member_id = coalesce(p_member_id, member_id),

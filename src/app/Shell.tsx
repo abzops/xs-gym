@@ -1,5 +1,5 @@
 import {
-  BarChart3, ClipboardList, Home, LogOut, Menu, Receipt, Settings, Sparkles, Users, Wallet,
+  BarChart3, ClipboardList, Home, Inbox, LogOut, Menu, Receipt, Settings, Sparkles, Users, Wallet,
 } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
 import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState, type ComponentType } from 'react';
@@ -22,9 +22,10 @@ const NAV: NavItem[] = [
   { to: '', label: 'Home', icon: Home, perm: 'reports.operational' },
   { to: 'members', label: 'Members', icon: Users, perm: 'members.read' },
   { to: 'payments', label: 'Payments', icon: Wallet, perm: 'payments.read' },
+  { to: 'analytics', label: 'Analytics', icon: BarChart3, perm: 'reports.financial' },
+  { to: 'enquiries', label: 'Enquiries', icon: Inbox, perm: 'members.read' },
   { to: 'plans', label: 'Plans', icon: ClipboardList, perm: 'plans.read' },
   { to: 'expenses', label: 'Expenses', icon: Receipt, perm: 'expenses.read' },
-  { to: 'reports', label: 'Reports', icon: BarChart3, perm: 'reports.financial' },
   { to: 'settings', label: 'Settings', icon: Settings, perm: 'staff.read' },
 ];
 

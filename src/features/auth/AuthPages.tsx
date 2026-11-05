@@ -188,7 +188,7 @@ export function SetupGym() {
     mutationFn: () => rpc<Gym>('create_gym', { p_name: name, p_phone: phone || null }),
     onSuccess: async (gym) => {
       await qc.invalidateQueries({ queryKey: ['my-gyms'] });
-      navigate(`/g/${gym.slug}/plans?welcome=1`, { replace: true });
+      navigate(`/g/${gym.slug}/welcome`, { replace: true });
     },
   });
   return (

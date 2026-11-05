@@ -17,7 +17,7 @@ const only = process.env.SIZES ? process.env.SIZES.split(',') : null;
 const viewports = only ? ALL_VIEWPORTS.filter(([n]) => only.includes(n)) : ALL_VIEWPORTS;
 const colorScheme = process.env.SCHEME === 'dark' ? 'dark' : 'light';
 const screens = [['dashboard', ''], ['members', '/members'], ['import', '/members/import'], ['member', `/members/${members[0].id}`],
-  ['payments', '/payments'], ['receipt', '/receipts/py1'], ['plans', '/plans'], ['expenses', '/expenses'], ['reports', '/reports'], ['settings', '/settings']];
+  ['payments', '/payments'], ['receipt', '/receipts/py1'], ['plans', '/plans'], ['expenses', '/expenses'], ['analytics', '/analytics'], ['enquiries', '/enquiries'], ['settings', '/settings']];
 
 const browser = await chromium.launch();
 let failures = 0;

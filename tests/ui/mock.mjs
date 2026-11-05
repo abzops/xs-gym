@@ -3,7 +3,7 @@
 export const REF = 'knuanihnxtxtyrgvsumq';
 const userId = '11111111-1111-4111-8111-111111111111';
 export const gym = { id: '22222222-2222-4222-8222-222222222222', name: 'Iron Temple Kozhikode', slug: 'iron-temple', timezone: 'Asia/Kolkata',
-  currency: 'INR', phone: null, email: null, address: null, grace_days: 3, status: 'active', created_at: '2026-11-01T00:00:00Z' };
+  currency: 'INR', phone: null, email: null, address: null, grace_days: 3, status: 'active', created_at: '2026-11-01T00:00:00Z', onboarded_at: '2026-11-01T00:10:00Z' };
 const perms = ['members.read','members.write','members.archive','members.export','plans.read','plans.manage','memberships.sell','memberships.cancel',
   'attendance.checkin','attendance.override','attendance.correct','payments.record','payments.read','payments.reverse','discounts.apply','charges.void',
   'expenses.record','expenses.read','expenses.reverse','reports.operational','reports.financial','staff.read','staff.manage','gym.settings','billing.manage','audit.read'];
@@ -16,15 +16,23 @@ const member = (i, over = {}) => ({
 export const members = [member(1, { due_paise: 50000 }), member(2), member(3, { membership_status: 'grace', valid_until: '2026-11-03', end_date: '2026-11-03' }),
   member(4, { membership_status: 'expired', valid_until: '2026-10-01' }), member(5, { plan_name: null, valid_until: null, membership_status: 'none' })];
 
+import { readFileSync } from 'node:fs';
+const analytics = JSON.parse(readFileSync(new URL('./analytics.fixture.json', import.meta.url), 'utf8'));
+export const enquiries = [
+  { id: 'q1', gym_id: gym.id, full_name: 'Rahul Menon', phone: '+919876500101', source: 'instagram', interest: 'Monthly', notes: null, status: 'new', follow_up_date: '2026-11-05', member_id: null, created_at: '2026-11-04T05:00:00Z', updated_at: '2026-11-04T05:00:00Z', closed_at: null },
+  { id: 'q2', gym_id: gym.id, full_name: 'Sneha Pillai', phone: '+919876500102', source: 'walk_in', interest: 'Weight loss', notes: 'Evenings only', status: 'trial', follow_up_date: '2026-11-08', member_id: null, created_at: '2026-11-03T05:00:00Z', updated_at: '2026-11-03T05:00:00Z', closed_at: null },
+  { id: 'q3', gym_id: gym.id, full_name: 'Arjun Das', phone: '+919876500103', source: 'referral', interest: null, notes: null, status: 'joined', follow_up_date: null, member_id: 'x', created_at: '2026-10-20T05:00:00Z', updated_at: '2026-10-22T05:00:00Z', closed_at: '2026-10-22T05:00:00Z' }];
 export function body(url) {
   const u = new URL(url);
   const p = u.pathname;
   if (p.includes('/rpc/dashboard_summary')) return { today: '2026-11-05', timezone: 'Asia/Kolkata', active_members: 128, in_grace: 6, expiring_today: 2,
-    expiring_7_days: 14, expiring_30_days: 41, expired_last_30_days: 9, new_members_month: 12, checkins_today: 47,
+    expiring_7_days: 14, expiring_30_days: 41, expired_last_30_days: 9, new_members_month: 12,
     financial: { collections_today: 1850000, collections_month: 21450000, cash_today: 1100000, upi_today: 750000, other_today: 0, reversals_today: 0,
       reversals_month: 100000, expenses_today: 50000, expenses_month: 4200000, dues_total: 2350000, members_with_dues: 17 } };
+  if (p.includes('/rpc/gym_analytics')) return analytics;
+  if (p.endsWith('/enquiries')) return enquiries;
   if (p.includes('/rpc/daily_report')) return Array.from({ length: 5 }, (_, i) => ({ day: `2026-11-0${5 - i}`, collections_paise: 1850000 - i * 100000,
-    reversals_paise: i === 2 ? 100000 : 0, cash_paise: 1000000, upi_paise: 750000 - i * 100000, other_paise: 100000, expenses_paise: 50000, checkins: 47 - i, new_members: 1 }));
+    reversals_paise: i === 2 ? 100000 : 0, cash_paise: 1000000, upi_paise: 750000 - i * 100000, other_paise: 100000, expenses_paise: 50000, new_members: 1 }));
   if (p.endsWith('/gym_staff')) return u.searchParams.has('gym_id')
     ? (u.searchParams.get('select') === 'role' ? { role: 'owner' } : [{ id: 's1', gym_id: gym.id, user_id: userId, role: 'owner', status: 'active', display_name: 'Jazeel', email: 'owner@example.com' },
         { id: 's2', gym_id: gym.id, user_id: 'x', role: 'reception', status: 'active', display_name: 'Desk', email: 'desk@example.com' }])

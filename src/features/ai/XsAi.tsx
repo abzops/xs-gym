@@ -225,7 +225,7 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
     try {
       await rpc(a.undo.rpc, a.undo.args);
       if (!closingRef.current) setTurns((ts) => ts.map((t, ti) => ti !== turn ? t : { ...t, actions: t.actions?.map((x, xi) => xi === i ? { ...x, undone: true } : x) }));
-      await Promise.all(['dashboard', 'payments', 'members', 'member', 'expenses', 'checkins'].map((k) => qc.invalidateQueries({ queryKey: [k, gym.id] })));
+      await Promise.all(['dashboard', 'payments', 'members', 'member', 'expenses', 'analytics', 'enquiries', 'daily-report'].map((k) => qc.invalidateQueries({ queryKey: [k, gym.id] })));
       if (!closingRef.current) toast('Undone');
     } catch (e) {
       if (!closingRef.current) toast(errorMessage(e), 'bad');
