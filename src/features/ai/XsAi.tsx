@@ -116,10 +116,9 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
       if (!closingRef.current) {
         setState('idle');
         if (e instanceof SpeechListenError) {
-          if (e.reason === 'denied' || e.reason === 'audio') {
-            micVerifiedForPage = false;
-            setMicDialog('denied');
-          } else if (e.reason === 'service' || e.reason === 'unsupported') {
+          // A successful getUserMedia grant proves microphone access, but
+          // Safari can separately block its speech-recognition service.
+          if (['denied', 'service', 'unsupported', 'audio'].includes(e.reason)) {
             setMicDialog('service');
           } else {
             toast(e.message, 'bad');
