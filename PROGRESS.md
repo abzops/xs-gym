@@ -40,7 +40,7 @@
 | Item | Where |
 |---|---|
 | Phase 0 audit, plan, design docs, ADRs, decisions register | `docs/` |
-| Supabase project created and 3 migrations applied; security advisor clean except expected definer-function notice | Supabase `xs-gym` |
+| Supabase project created; 4 migrations applied and aligned to live history, 17 tables; security advisor warnings documented | Supabase `xs-gym` |
 | Database tests: 67 checks (dates, tenancy, permissions, money, attendance, immutability, reports, expiry, anon) | `tests/db/` — pass locally and in CI |
 | Live smoke test on production DB in a rolled-back block: sell → pay → idempotent retry → check-in → dashboard → cross-tenant block | 0 rows left behind |
 | Unit tests: money (incl. 2,858-amount round trip), dates, CSV export injection, CSV import parsing | `src/lib/*.test.ts` — 39 pass |
@@ -64,6 +64,7 @@
 
 ### 2026-11-06 — Release: Analytics + Enquiries + onboarding + cloud voice
 
+- Aligned all four migration file version prefixes with Supabase's recorded versions (without schema changes) to avoid accidental duplicate future `db push` runs.
 - Applied `analytics_leads_onboarding` migration to production Supabase project
   `knuanihnxtxtyrgvsumq`; verified 4 applied migrations and 17 public tables.
   Existing production data was preserved: one gym, 77 members, 198 payments
@@ -222,4 +223,4 @@
   on member page, Dues/Expiring lists and Enquiries.
 - XS AI: `get_analytics`, `add_enquiry`; `open_screen` knows Analytics and Enquiries; `last_visit` removed.
 - Research and next features: `docs/ROADMAP.md` (freeze, GST invoices, automatic WhatsApp, UPI links, PT packages…).
-- Migration `20261106000100_analytics_leads_onboarding.sql`; DB tests extended (analytics, enquiries, onboarding, roles).
+- Migration `20261105215322_analytics_leads_onboarding.sql`; DB tests extended (analytics, enquiries, onboarding, roles).
