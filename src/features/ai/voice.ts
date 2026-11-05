@@ -19,6 +19,48 @@ const Ctor = (typeof window !== 'undefined'
     ?? (window as unknown as { webkitSpeechRecognition?: RecognitionCtor }).webkitSpeechRecognition
   : undefined);
 
+export type MicIssue = 'denied' | 'missing' | 'busy' | 'unsupported' | 'unknown';
+
+/** Differentiate OS microphone permission from Web Speech recognition failures. */
+export class MicrophoneAccessError extends Error {
+  constructor(public readonly reason: MicIssue, message: string) {
+    super(message);
+    this.name = 'MicrophoneAccessError';
+  }
+}
+
+export class SpeechListenError extends Error {
+  constructor(public readonly reason: 'denied' | 'service' | 'network' | 'audio' | 'unsupported' | 'unknown', message: string) {
+    super(message);
+    this.name = 'SpeechListenError';
+  }
+}
+
+/** A user-initiated call asks iOS / the browser to display its native Allow prompt. */
+export async function requestMicrophone(): Promise<void> {
+  if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
+    throw new MicrophoneAccessError('unsupported', 'Microphone access is not available in this app.');
+  }
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    // This is only a permission check. Recognition starts separately, and
+    // all tracks must be closed immediately (also after the sheet closes).
+    stream.getTracks().forEach((track) => track.stop());
+  } catch (error) {
+    const name = error instanceof Error ? error.name : '';
+    if (['NotAllowedError', 'PermissionDeniedError', 'SecurityError'].includes(name)) {
+      throw new MicrophoneAccessError('denied', 'Microphone permission was not granted.');
+    }
+    if (['NotFoundError', 'DevicesNotFoundError'].includes(name)) {
+      throw new MicrophoneAccessError('missing', 'No microphone was found on this device.');
+    }
+    if (['NotReadableError', 'TrackStartError', 'AbortError'].includes(name)) {
+      throw new MicrophoneAccessError('busy', 'The microphone is busy. Close other recordings and try again.');
+    }
+    throw new MicrophoneAccessError('unknown', 'Could not start the microphone. Please try again.');
+  }
+}
+
 export const canListen = () => !!Ctor;
 export const canSpeak = () => typeof window !== 'undefined' && 'speechSynthesis' in window;
 
@@ -35,13 +77,25 @@ export function listen(lang: Lang, onText: (text: string) => void): { done: Prom
     };
     r.onerror = (e) => {
       if (e.error === 'no-speech' || e.error === 'aborted') return;
-      reject(new Error(e.error === 'not-allowed' || e.error === 'service-not-allowed'
-        ? 'Microphone access is blocked. Allow it in the browser settings, or type instead.'
-        : e.error === 'network' ? 'Voice needs an internet connection.' : `Could not hear that (${e.error}).`));
+      if (e.error === 'not-allowed') {
+        reject(new SpeechListenError('denied', 'Speech recognition was not allowed by this device.'));
+      } else if (e.error === 'service-not-allowed') {
+        reject(new SpeechListenError('service', 'Speech recognition is unavailable in this app.'));
+      } else if (e.error === 'language-not-supported') {
+        reject(new SpeechListenError('unsupported', 'This voice recognition service does not support the selected language.'));
+      } else if (e.error === 'audio-capture') {
+        reject(new SpeechListenError('audio', 'Speech recognition could not open the microphone.'));
+      } else if (e.error === 'network') {
+        reject(new SpeechListenError('network', 'Voice recognition needs an internet connection.'));
+      } else {
+        reject(new SpeechListenError('unknown', `Voice recognition could not start (${e.error}).`));
+      }
     };
     r.onend = () => resolve(text);
+    try { r.start(); } catch {
+      reject(new SpeechListenError('denied', 'Speech recognition could not start on this device.'));
+    }
   });
-  r.start();
   return { done, stop: () => r.stop() };
 }
 
