@@ -11,7 +11,7 @@
 import { ApiError } from './agent.ts';
 
 export type SttEnv = { groqKey?: string; nvidiaKey?: string; xaiKey?: string; geminiKey?: string; geminiModel?: string; fetch?: typeof fetch };
-export const sttConfigured = (e: SttEnv) => !!(e.groqKey || e.nvidiaKey || e.xaiKey || e.geminiKey);
+export const sttConfigured = (e: SttEnv, lang: 'en' | 'ml' = 'en') => !!(e.groqKey || e.xaiKey || e.geminiKey || (lang === 'en' && e.nvidiaKey));
 
 const MAX_B64 = 4_000_000; // ≈ 2 minutes of 16 kHz mono 16-bit WAV
 const HINT = 'XS Gym. Members, plans, payments, UPI, cash, card, dues, renewal, expense, rupees, XS-0001.';
@@ -107,10 +107,10 @@ async function gemini(b64: string, lang: 'en' | 'ml', key: string, model: string
 /** Returns the transcript ('' when nothing was said). */
 export async function transcribe(body: { audio?: unknown; lang?: unknown }, env: SttEnv): Promise<string> {
   const f = env.fetch ?? fetch;
-  if (!sttConfigured(env)) throw new ApiError('Voice needs a speech API key. Add NVIDIA_API_KEY (English), GROQ_API_KEY, GEMINI_API_KEY or XAI_API_KEY to Supabase; you can type meanwhile.', 503);
+  const lang = body.lang === 'ml' ? 'ml' : 'en';
+  if (!sttConfigured(env, lang)) throw new ApiError('Voice needs a speech API key for this language. NVIDIA ASR supports English; Malayalam needs Groq, xAI or Gemini. You can type meanwhile.', 503);
   const b64 = typeof body.audio === 'string' ? body.audio : '';
   if (!b64 || b64.length > MAX_B64 || !/^[A-Za-z0-9+/]+=*$/.test(b64)) throw new ApiError('That recording could not be read. Please try again.', 400);
-  const lang = body.lang === 'ml' ? 'ml' : 'en';
   const failures: string[] = [];
   if (env.groqKey) {
     try { return await groq(decode(b64), lang, env.groqKey, f); } catch (e) { failures.push(String(e instanceof Error ? e.message : e)); }
