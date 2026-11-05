@@ -34,6 +34,22 @@ export default defineConfig(({ mode }) => {
   return {
     base: env.VITE_BASE_PATH || '/',
     plugins: [react(), ...(supabaseUrl ? [csp(supabaseUrl)] : [])],
-    build: { target: 'es2022', sourcemap: false },
+    build: {
+      target: 'es2022',
+      sourcemap: false,
+      // Long-lived vendor chunks: an app release does not make returning
+      // users download React or the Supabase client again.
+      rolldownOptions: {
+        output: {
+          advancedChunks: {
+            groups: [
+              { name: 'react', test: /node_modules[\\/](react|react-dom|scheduler|react-router)[\\/]/ },
+              { name: 'supabase', test: /node_modules[\\/]@supabase[\\/]/ },
+              { name: 'vendor', test: /node_modules[\\/]/ },
+            ],
+          },
+        },
+      },
+    },
   };
 });
