@@ -73,8 +73,10 @@
 - Denied microphone, unavailable hardware, and speech-service errors have
   distinct recovery states with an in-app Retry and keyboard/dictation fallback.
   A permanent iOS denial cannot be bypassed by browser code.
-- Added regression tests for permissions and for phone/laptop UX in light/dark;
-  real installed-iPhone confirmation is still required. No Supabase backend
+- Added regression tests for permissions and phone/laptop UX in light/dark.
+  GitHub Actions workflow `.github/workflows/voice-ui.yml` runs mocked Chromium
+  interactions; 64/64 checks passed on 05 Nov 2026 (run 42067348450).
+  Real installed-iPhone confirmation is still required. No Supabase backend
   functions or database permissions were changed.
 
 ### 2026-11-05 — Session 4 (repair NVIDIA model retirement)
