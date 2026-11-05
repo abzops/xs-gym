@@ -32,7 +32,7 @@
 /* Grouped inset list (iOS Settings) with floating labels */
 .ios-form { display: grid; gap: 16px; }
 .group { background: var(--paper); border-radius: 14px; overflow: hidden;
-  box-shadow: 0 0 0 0.5px color-mix(in srgb, var(--ink) 9%, transparent); }
+  box-shadow: var(--elev-1); background-image: var(--surface-sheen); }
 .g-row { position: relative; display: flex; align-items: center; min-height: 58px; margin-left: 16px; }
 .g-row::before { content: ""; position: absolute; left: 0; right: 0; top: 0; height: 0.5px; background: color-mix(in srgb, var(--ink) 14%, transparent); }
 .group > .g-row:first-child::before, .group > .collapse:first-child .g-row::before,
@@ -52,7 +52,8 @@
   background: none; color: var(--graphite); cursor: pointer; transition: background-color 150ms ease, transform 160ms var(--ease-out); }
 .g-eye:active { transform: scale(0.9); background: var(--paper-2); }
 .g-note { color: var(--graphite); font-size: var(--t-sm); margin: -6px 0 0 16px; }
-.group:focus-within { box-shadow: 0 0 0 0.5px color-mix(in srgb, var(--ink) 9%, transparent), 0 0 0 4px color-mix(in srgb, var(--focus) 10%, transparent); }
+
+.group:focus-within { box-shadow: var(--elev-1), 0 0 0 4px color-mix(in srgb, var(--focus) 10%, transparent); }
 .group { transition: box-shadow 200ms ease; }
 
 .btn.xl { min-height: 54px; font-size: var(--t-md); border-radius: 14px; }

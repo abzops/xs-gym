@@ -12,9 +12,8 @@
 .quick { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
 .q { display: grid; justify-items: center; gap: 8px; text-decoration: none; color: var(--ink); font-size: 0.8125rem; font-weight: 600; text-align: center; }
 .q-ico { display: grid; place-items: center; width: 60px; height: 60px; border-radius: 50%; background: var(--paper);
-  box-shadow: 0 0 0 0.5px color-mix(in srgb, var(--ink) 8%, transparent);
   transition: transform 160ms var(--ease-out), background-color 150ms ease; }
-.q.primary .q-ico { background: var(--primary); color: var(--on-primary); box-shadow: none; }
+.q.primary .q-ico { background: var(--primary); color: var(--on-primary); }
 .q:active .q-ico { transform: scale(0.92); }
 @media (hover: hover) and (pointer: fine) { .q:not(.primary):hover .q-ico { background: var(--paper-2); } }
 
@@ -37,7 +36,7 @@
 /* Stat tiles (Health-style) */
 .stats { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .stat { display: grid; gap: 2px; padding: 14px 16px 16px; border-radius: 18px; background: var(--paper); text-decoration: none; color: var(--ink);
-  box-shadow: 0 0 0 0.5px color-mix(in srgb, var(--ink) 6%, transparent); transition: transform 160ms var(--ease-out), background-color 150ms ease; }
+  transition: transform 160ms var(--ease-out), background-color 150ms ease; }
 .stat:active { transform: scale(0.97); }
 @media (hover: hover) and (pointer: fine) { .stat:hover { background: var(--paper-2); } }
 .st-label { display: flex; align-items: center; gap: 6px; color: var(--graphite); font-size: var(--t-sm); font-weight: 600; margin-bottom: 4px; }
@@ -46,8 +45,7 @@
 .st-sub { color: var(--graphite); font-size: var(--t-sm); }
 
 /* iOS inset grouped list */
-.ios-list { list-style: none; margin: 0; padding: 0; background: var(--paper); border-radius: 18px; overflow: hidden;
-  box-shadow: 0 0 0 0.5px color-mix(in srgb, var(--ink) 6%, transparent); }
+.ios-list { list-style: none; margin: 0; padding: 0; background: var(--paper); border-radius: 18px; overflow: hidden; }
 .ios-list li { position: relative; display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 50px; padding: 0 16px; }
 .ios-list li + li::before { content: ""; position: absolute; top: 0; left: 16px; right: 0; height: 0.5px; background: color-mix(in srgb, var(--ink) 14%, transparent); }
 .ios-list li b { font-weight: 600; }
@@ -81,8 +79,8 @@
   .quick { grid-area: quick; display: flex; flex-wrap: wrap; justify-content: flex-start; gap: 8px; }
   .q { white-space: nowrap; }
   .q { display: inline-flex; align-items: center; gap: 8px; height: 44px; padding: 0 18px 0 6px; border-radius: 999px; background: var(--paper);
-    box-shadow: 0 0 0 0.5px color-mix(in srgb, var(--ink) 8%, transparent); font-size: var(--t-base); }
-  .q-ico { width: 32px; height: 32px; background: transparent; box-shadow: none; }
+    font-size: var(--t-base); }
+  .q-ico { width: 32px; height: 32px; background: transparent; }
   .q.primary { background: var(--primary); color: var(--on-primary); }
   .q.primary .q-ico { background: transparent; }
   .hero-card { grid-area: hero; padding: 24px 26px; min-height: 100%; display: flex; flex-direction: column; }
@@ -103,7 +101,7 @@
   .q.primary:hover { background: color-mix(in srgb, var(--primary) 86%, var(--canvas)); }
 }
 
-[data-theme="dark"] .hero-card { background: #1C1C1E; box-shadow: inset 0 0.5px 0 rgb(255 255 255 / 10%); }
+/* Dark hero surface and all shadows: src/styles/elevation.css */
 @media (prefers-reduced-motion: reduce) {
   .paybar i { transition: none; }
 }
