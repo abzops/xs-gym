@@ -13,7 +13,7 @@ describe('XS AI inference failover', () => {
   it('tries another NVIDIA model on 410 before Grok', async () => {
     const backup = { ...providers[0], name: 'NVIDIA NIM backup', model: 'nvidia/nemotron-3.5-lightning-30b-a3b' };
     let tries = 0;
-    const fetcher = vi.fn(async () => ++tries === 1 ? new Response('gone', { status: 410 }) : ok({ role: 'assistant', content: 'Success.' }));
+    const fetcher = vi.fn(async (_url: RequestInfo | URL, _init?: RequestInit) => ++tries === 1 ? new Response('gone', { status: 410 }) : ok({ role: 'assistant', content: 'Success.' }));
     const out = await requestLlmWithFailover([providers[0], backup, providers[1]], convo, tools, fetcher as typeof fetch);
     expect(out.content).toBe('Success.');
     expect(fetcher).toHaveBeenCalledTimes(2);
