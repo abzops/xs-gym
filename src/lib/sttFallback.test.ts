@@ -7,6 +7,7 @@ const request = { audio: wav, lang: 'en' };
 describe('XS Gym recorded-voice speech-to-text', () => {
   it('recognizes the existing xAI Grok key as a configured provider', () => {
     expect(sttConfigured({ nvidiaKey: 'test' })).toBe(true);
+    expect(sttConfigured({ nvidiaKey: 'test' }, 'ml')).toBe(false);
     expect(sttConfigured({ xaiKey: 'test' })).toBe(true);
     expect(sttConfigured({ groqKey: 'test' })).toBe(true);
     expect(sttConfigured({ geminiKey: 'test' })).toBe(true);
@@ -34,6 +35,14 @@ describe('XS Gym recorded-voice speech-to-text', () => {
     const answer = await transcribe(request, { nvidiaKey: 'invalid', xaiKey: 'xai', fetch: fetcher as typeof fetch });
     expect(answer).toBe('Hello from xAI');
     expect(fetcher).toHaveBeenCalledTimes(2);
+  });
+
+  it('refuses Malayalam-only NVIDIA configuration before making a network request', async () => {
+    const fetcher = vi.fn(async () => new Response('{}', { status: 200 }));
+    await expect(transcribe({ audio: wav, lang: 'ml' },
+      { nvidiaKey: 'english-only', fetch: fetcher as typeof fetch }))
+      .rejects.toThrow('Malayalam needs Groq, xAI or Gemini');
+    expect(fetcher).not.toHaveBeenCalled();
   });
 
   it('never sends Malayalam recordings to an English-only NVIDIA ASR model', async () => {
