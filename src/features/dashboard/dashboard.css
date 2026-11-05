@@ -1,0 +1,111 @@
+/* Dashboard — iOS-grade summary screen.
+   Phone: greeting, round quick actions, hero card, 2×2 stats, grouped lists.
+   ≥1000px: two columns — hero + month on the left, stats + check-ins right. */
+
+.dash { display: grid; gap: 22px; padding-top: 6px; }
+.dash h2 { font-size: 1.25rem; font-weight: 600; letter-spacing: -0.02em; margin: 0 0 10px 4px; }
+
+.dash-head p { color: var(--graphite); font-size: var(--t-sm); font-weight: 600; margin-left: 2px; }
+.dash-head h1 { font-size: 2.125rem; line-height: 1.1; letter-spacing: -0.035em; font-weight: 600; margin-top: 2px; }
+
+/* Round quick actions (Wallet-style) */
+.quick { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.q { display: grid; justify-items: center; gap: 8px; text-decoration: none; color: var(--ink); font-size: 0.8125rem; font-weight: 600; text-align: center; }
+.q-ico { display: grid; place-items: center; width: 60px; height: 60px; border-radius: 50%; background: var(--paper);
+  box-shadow: 0 0 0 0.5px color-mix(in srgb, var(--ink) 8%, transparent);
+  transition: transform 160ms var(--ease-out), background-color 150ms ease; }
+.q.primary .q-ico { background: var(--primary); color: var(--on-primary); box-shadow: none; }
+.q:active .q-ico { transform: scale(0.92); }
+@media (hover: hover) and (pointer: fine) { .q:not(.primary):hover .q-ico { background: var(--paper-2); } }
+
+/* Hero card */
+.hero-card { display: grid; gap: 6px; padding: 20px; border-radius: 22px; background: var(--carbon); color: #F6F6F4; text-decoration: none;
+  transition: transform 180ms var(--ease-out); }
+.hero-card:active { transform: scale(0.985); }
+.hc-top { display: flex; align-items: center; justify-content: space-between; color: #B7B7BD; font-size: var(--t-sm); font-weight: 600; }
+.hc-value { font-size: 3rem; font-weight: 600; letter-spacing: -0.05em; line-height: 1.05; margin: 2px 0 10px; }
+.paybar { display: flex; height: 8px; border-radius: 999px; overflow: hidden; background: #2C2C30; gap: 2px; }
+.paybar i { display: block; height: 100%; transition: width 700ms var(--ease-drawer); }
+.s-cash { background: #F6F6F4; }
+.s-upi { background: #8E8E95; }
+.s-other { background: #4A4A50; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 18px; margin-top: 10px; color: #B7B7BD; font-size: var(--t-sm); }
+.legend span { display: inline-flex; align-items: center; gap: 7px; }
+.legend i { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+.legend b { color: #F6F6F4; font-weight: 600; }
+
+/* Stat tiles (Health-style) */
+.stats { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.stat { display: grid; gap: 2px; padding: 14px 16px 16px; border-radius: 18px; background: var(--paper); text-decoration: none; color: var(--ink);
+  box-shadow: 0 0 0 0.5px color-mix(in srgb, var(--ink) 6%, transparent); transition: transform 160ms var(--ease-out), background-color 150ms ease; }
+.stat:active { transform: scale(0.97); }
+@media (hover: hover) and (pointer: fine) { .stat:hover { background: var(--paper-2); } }
+.st-label { display: flex; align-items: center; gap: 6px; color: var(--graphite); font-size: var(--t-sm); font-weight: 600; margin-bottom: 4px; }
+.st-value { font-size: 1.875rem; font-weight: 600; letter-spacing: -0.04em; line-height: 1.1; }
+.st-value.due { color: var(--bad); }
+.st-sub { color: var(--graphite); font-size: var(--t-sm); }
+
+/* iOS inset grouped list */
+.ios-list { list-style: none; margin: 0; padding: 0; background: var(--paper); border-radius: 18px; overflow: hidden;
+  box-shadow: 0 0 0 0.5px color-mix(in srgb, var(--ink) 6%, transparent); }
+.ios-list li { position: relative; display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 50px; padding: 0 16px; }
+.ios-list li + li::before { content: ""; position: absolute; top: 0; left: 16px; right: 0; height: 0.5px; background: color-mix(in srgb, var(--ink) 14%, transparent); }
+.ios-list li b { font-weight: 600; }
+.ios-list li .neg { color: var(--graphite); }
+.ios-list li.total b { font-size: 1.125rem; }
+.ios-list li > a { display: flex; align-items: center; gap: 12px; flex: 1; min-height: 50px; color: inherit; text-decoration: none; }
+.ios-list li > a > span:first-child:not(.avatar) { flex: 1; }
+.ios-list li > a svg { color: var(--graphite); }
+.ios-list li > a:active { background: var(--paper-2); margin: 0 -16px; padding: 0 16px; }
+.people li { padding: 0; }
+.people li + li::before { left: 68px; }
+.people li > a { padding: 8px 16px; min-height: 60px; }
+.people .avatar { width: 38px; height: 38px; }
+.people .who { flex: 1; display: grid; min-width: 0; }
+.people .who b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.people .who small { color: var(--graphite); font-size: var(--t-sm); }
+.people .when { color: var(--graphite); font-size: var(--t-sm); }
+
+/* Tablet portrait: room for bigger type, stats in a row of four */
+@media (min-width: 720px) {
+  .dash { gap: 26px; }
+  .stats { grid-template-columns: repeat(4, 1fr); }
+  .quick { grid-template-columns: repeat(4, 96px); justify-content: start; gap: 12px; }
+}
+
+/* Laptop / iPad landscape: two columns, quick actions as pills beside the greeting */
+@media (min-width: 1000px) {
+  .dash { grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); grid-template-areas:
+      "head head" "quick quick" "hero stats" "month recent"; align-items: start; column-gap: 24px; row-gap: 24px; }
+  .dash-head { grid-area: head; align-self: end; }
+  .quick { grid-area: quick; display: flex; flex-wrap: wrap; justify-content: flex-start; gap: 8px; }
+  .q { white-space: nowrap; }
+  .q { display: inline-flex; align-items: center; gap: 8px; height: 44px; padding: 0 18px 0 6px; border-radius: 999px; background: var(--paper);
+    box-shadow: 0 0 0 0.5px color-mix(in srgb, var(--ink) 8%, transparent); font-size: var(--t-base); }
+  .q-ico { width: 32px; height: 32px; background: transparent; box-shadow: none; }
+  .q.primary { background: var(--primary); color: var(--on-primary); }
+  .q.primary .q-ico { background: transparent; }
+  .hero-card { grid-area: hero; padding: 24px 26px; min-height: 100%; display: flex; flex-direction: column; }
+  .hero-card .paybar { margin-top: auto; }
+  .hc-value { font-size: 3.5rem; }
+  .stats { grid-area: stats; grid-template-columns: 1fr 1fr; }
+  .month { grid-area: month; }
+  .recent { grid-area: recent; }
+  .dash-head h1 { font-size: 2.5rem; }
+}
+/* Wide screens: actions sit beside the greeting */
+@media (min-width: 1400px) {
+  .dash { grid-template-areas: "head quick" "hero stats" "month recent"; }
+  .quick { justify-content: flex-end; align-self: end; }
+}
+@media (min-width: 1000px) and (hover: hover) and (pointer: fine) {
+  .q:not(.primary):hover { background: var(--paper-2); }
+  .q.primary:hover { background: color-mix(in srgb, var(--primary) 86%, var(--canvas)); }
+}
+
+@media (prefers-color-scheme: dark) {
+  .hero-card { background: #1C1C1E; box-shadow: inset 0 0.5px 0 rgb(255 255 255 / 10%); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .paybar i { transition: none; }
+}

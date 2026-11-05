@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { Plus, Receipt, ScanLine, Users } from 'lucide-react';
+import { CalendarClock, ChevronRight, IndianRupee, Plus, Receipt, ScanLine, Search, UserCheck, Users } from 'lucide-react';
 import { Link } from 'react-router';
 import { useGym } from '../../app/gym';
 import { Empty, Loading, Notice, PushLink, initials } from '../../components/ui';
@@ -8,6 +8,7 @@ import { errorMessage } from '../../lib/errors';
 import { formatINR } from '../../lib/money';
 import { rpc, supabase } from '../../lib/supabase';
 import type { Attendance } from '../../lib/types';
+import './dashboard.css';
 
 type Summary = {
   today: string; timezone: string; active_members: number; in_grace: number; expiring_today: number;
@@ -19,6 +20,11 @@ type Summary = {
     dues_total: number; members_with_dues: number;
   };
 };
+
+function greeting(timeZone: string) {
+  const h = Number(new Intl.DateTimeFormat('en-GB', { hour: 'numeric', hour12: false, timeZone }).format(new Date()));
+  return h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening';
+}
 
 export function Dashboard() {
   const { gym, can } = useGym();
@@ -33,7 +39,7 @@ export function Dashboard() {
     queryFn: async () => {
       const { data, error } = await supabase.from('attendance_events')
         .select('id, checked_in_at, member_id, voided_at, members(full_name, member_no)')
-        .eq('gym_id', gym.id).is('voided_at', null).order('checked_in_at', { ascending: false }).limit(8);
+        .eq('gym_id', gym.id).is('voided_at', null).order('checked_in_at', { ascending: false }).limit(6);
       if (error) throw error;
       return data as unknown as Attendance[];
     },
@@ -45,92 +51,102 @@ export function Dashboard() {
   const f = s.financial;
   const day = new Intl.DateTimeFormat('en-IN', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' })
     .format(new Date(`${s.today}T12:00:00Z`));
+  const total = f ? f.cash_today + f.upi_today + f.other_today : 0;
+  const pct = (n: number) => (total ? `${(n / total) * 100}%` : '0%');
 
   return (
-    <div className="stack xl">
-      <section className="today" aria-label="Today">
-        <div className="stack">
-          <div className="when"><h1>{day}</h1></div>
-        </div>
-        <div className="figures">
-          {f ? (
-            <Link className="figure lead" to={`${base}/payments`}>
-              <span className="value">{formatINR(f.collections_today)}</span>
-              <span>Collected today</span>
-            </Link>
-          ) : (
-            <Link className="figure lead" to={`${base}/check-in`}>
-              <span className="value">{s.checkins_today}</span><span>Check-ins today</span>
-            </Link>
-          )}
-          {f && (
-            <Link className="figure" to={`${base}/check-in`}>
-              <span className="value">{s.checkins_today}</span><span>Check-ins</span>
-            </Link>
-          )}
-          <Link className="figure" to={`${base}/members?filter=active`}>
-            <span className="value">{s.active_members}</span><span>Active members</span>
-          </Link>
-          <Link className="figure" to={`${base}/members?filter=expiring`}>
-            <span className="value">{s.expiring_today}</span><span>Expire today</span>
-          </Link>
-        </div>
-        <div className="actions">
-          {can('attendance.checkin') && <Link className="btn primary" to={`${base}/check-in`}><ScanLine size={18} /> Check in</Link>}
-          {can('members.write') && <Link className="btn" to={`${base}/members/new`}><Plus size={18} /> Add member</Link>}
-          {can('members.read') && <Link className="btn" to={`${base}/members`}><Users size={18} /> Find member</Link>}
-          {can('expenses.record') && <Link className="btn" to={`${base}/expenses?new=1`}><Receipt size={18} /> Add expense</Link>}
-        </div>
+    <div className="dash">
+      <header className="dash-head">
+        <p>{day}</p>
+        <h1>{greeting(gym.timezone)}</h1>
+      </header>
+
+      <nav className="quick" aria-label="Quick actions">
+        {can('attendance.checkin') && <Link className="q primary" to={`${base}/check-in`}><span className="q-ico"><ScanLine size={22} /></span><span>Check in</span></Link>}
+        {can('members.write') && <Link className="q" to={`${base}/members/new`}><span className="q-ico"><Plus size={22} /></span><span>Add member</span></Link>}
+        {can('members.read') && <Link className="q" to={`${base}/members`}><span className="q-ico"><Search size={21} /></span><span>Find</span></Link>}
+        {can('expenses.record') && <Link className="q" to={`${base}/expenses?new=1`}><span className="q-ico"><Receipt size={21} /></span><span>Expense</span></Link>}
+      </nav>
+
+      {f ? (
+        <PushLink className="hero-card" to={`${base}/payments`}>
+          <span className="hc-top"><span>Collected today</span><ChevronRight size={18} /></span>
+          <span className="hc-value num">{formatINR(f.collections_today)}</span>
+          <span className="paybar" aria-hidden>
+            <i className="s-cash" style={{ width: pct(f.cash_today) }} />
+            <i className="s-upi" style={{ width: pct(f.upi_today) }} />
+            <i className="s-other" style={{ width: pct(f.other_today) }} />
+          </span>
+          <span className="legend">
+            <span><i className="s-cash" />Cash <b className="num">{formatINR(f.cash_today)}</b></span>
+            <span><i className="s-upi" />UPI <b className="num">{formatINR(f.upi_today)}</b></span>
+            {f.other_today > 0 && <span><i className="s-other" />Other <b className="num">{formatINR(f.other_today)}</b></span>}
+          </span>
+        </PushLink>
+      ) : (
+        <PushLink className="hero-card" to={`${base}/check-in`}>
+          <span className="hc-top"><span>Check-ins today</span><ChevronRight size={18} /></span>
+          <span className="hc-value num">{s.checkins_today}</span>
+        </PushLink>
+      )}
+
+      <section className="stats" aria-label="Today at a glance">
+        <PushLink className="stat" to={`${base}/check-in`}>
+          <span className="st-label"><UserCheck size={16} />Check-ins</span>
+          <span className="st-value num">{s.checkins_today}</span>
+          <span className="st-sub">today</span>
+        </PushLink>
+        <PushLink className="stat" to={`${base}/members?filter=active`}>
+          <span className="st-label"><Users size={16} />Active</span>
+          <span className="st-value num">{s.active_members}</span>
+          <span className="st-sub">{s.new_members_month} new this month</span>
+        </PushLink>
+        <PushLink className="stat" to={`${base}/members?filter=expiring`}>
+          <span className="st-label"><CalendarClock size={16} />Expiring</span>
+          <span className="st-value num">{s.expiring_7_days}</span>
+          <span className="st-sub">{s.expiring_today} today</span>
+        </PushLink>
+        {f ? (
+          <PushLink className="stat" to={`${base}/members?filter=dues`}>
+            <span className="st-label"><IndianRupee size={16} />Dues</span>
+            <span className={`st-value num ${f.dues_total > 0 ? 'due' : ''}`}>{formatINR(f.dues_total)}</span>
+            <span className="st-sub">{f.members_with_dues} members</span>
+          </PushLink>
+        ) : (
+          <PushLink className="stat" to={`${base}/members?filter=expired`}>
+            <span className="st-label"><CalendarClock size={16} />Expired</span>
+            <span className="st-value num">{s.expired_last_30_days}</span>
+            <span className="st-sub">last 30 days</span>
+          </PushLink>
+        )}
       </section>
 
-      <section className="stack">
-        <h2>Needs attention</h2>
-        <div className="tiles">
-          <Link className="tile" to={`${base}/members?filter=expiring`}>
-            <span className="label">Expiring in 7 days</span>
-            <span className="value">{s.expiring_7_days}</span>
-          </Link>
-          <Link className="tile" to={`${base}/members?filter=expired`}>
-            <span className="label">Recently expired</span>
-            <span className="value">{s.expired_last_30_days}</span>
-          </Link>
-          {f ? (
-            <Link className="tile" to={`${base}/members?filter=dues`}>
-              <span className="label">Outstanding dues</span>
-              <span className="value" style={{ color: f.dues_total > 0 ? 'var(--bad)' : undefined }}>{formatINR(f.dues_total)}</span>
-              <span className="sub">{f.members_with_dues} member{f.members_with_dues === 1 ? '' : 's'}</span>
-            </Link>
-          ) : (
-            <div className="tile"><span className="label">New this month</span><span className="value">{s.new_members_month}</span></div>
-          )}
-          {f ? (
-            <Link className="tile" to={`${base}/reports`}>
-              <span className="label">This month, net</span>
-              <span className="value">{formatINR(f.collections_month - f.reversals_month)}</span>
-            </Link>
-          ) : (
-            <div className="tile"><span className="label">In grace period</span><span className="value">{s.in_grace}</span></div>
-          )}
-        </div>
-        {f && f.reversals_today > 0 && <Notice tone="warn">{formatINR(f.reversals_today)} was reversed today. "Collected today" counts payments before reversals.</Notice>}
-      </section>
+      {f && (
+        <section className="month">
+          <h2>This month</h2>
+          <ul className="ios-list">
+            <li><span>Collected</span><b className="num">{formatINR(f.collections_month)}</b></li>
+            {f.reversals_month > 0 && <li><span>Reversed</span><b className="num neg">−{formatINR(f.reversals_month)}</b></li>}
+            <li><span>Expenses</span><b className="num neg">−{formatINR(f.expenses_month)}</b></li>
+            <li className="total"><span>Net</span><b className="num">{formatINR(f.collections_month - f.reversals_month - f.expenses_month)}</b></li>
+            <li><Link to={`${base}/members?filter=expired`}><span>Recently expired</span><b className="num">{s.expired_last_30_days}</b><ChevronRight size={16} /></Link></li>
+          </ul>
+        </section>
+      )}
 
       {can('members.read') && (
-        <section className="card flush">
-          <div className="card-head">
-            <h2>Latest check-ins</h2>
-          </div>
-          {recent.data && recent.data.length === 0 ? <Empty title="No check-ins yet" /> : (
-            <ul className="list">
+        <section className="recent">
+          <h2>Latest check-ins</h2>
+          {recent.data && recent.data.length === 0 ? (
+            <div className="ios-list"><Empty title="No check-ins yet" /></div>
+          ) : (
+            <ul className="ios-list people">
               {recent.data?.map((a) => (
                 <li key={a.id}>
-                  <PushLink className="item" to={`${base}/members/${a.member_id}`}>
+                  <PushLink to={`${base}/members/${a.member_id}`}>
                     <span className="avatar" aria-hidden>{initials(a.members?.full_name ?? '?')}</span>
-                    <span className="main-col">
-                      <span className="title">{a.members?.full_name}</span>
-                      <span className="meta"><span className="mono">{a.members?.member_no}</span></span>
-                    </span>
-                    <span className="mono muted">{formatTime(a.checked_in_at, gym.timezone)}</span>
+                    <span className="who"><b>{a.members?.full_name}</b><small>{a.members?.member_no}</small></span>
+                    <span className="when num">{formatTime(a.checked_in_at, gym.timezone)}</span>
                   </PushLink>
                 </li>
               ))}
