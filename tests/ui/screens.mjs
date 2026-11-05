@@ -68,7 +68,12 @@ const exp = Math.floor(Date.now() / 1000) + 3600;
 const session = { access_token: fakeJwt({ sub: userId, exp, role: 'authenticated' }), refresh_token: 'r', token_type: 'bearer', expires_in: 3600, expires_at: exp,
   user: { id: userId, email: 'owner@example.com', aud: 'authenticated', role: 'authenticated', app_metadata: {}, user_metadata: {}, created_at: '2026-11-01T00:00:00Z' } };
 
-const viewports = [['phone', 390, 844], ['tablet', 768, 1024], ['ipad', 820, 1180], ['tablet-land', 1024, 768], ['ipad-land', 1180, 820], ['laptop', 1366, 768]];
+const ALL_VIEWPORTS = [['phone', 390, 844], ['phone-max', 440, 956], ['tablet', 768, 1024], ['ipad', 820, 1180], ['ipad-pro', 1032, 1376],
+  ['tablet-land', 1024, 768], ['ipad-land', 1180, 820], ['laptop', 1366, 768], ['desktop', 1536, 864]];
+// Optional filters: SIZES=phone-max,ipad-pro  SCHEME=dark
+const only = process.env.SIZES ? process.env.SIZES.split(',') : null;
+const viewports = only ? ALL_VIEWPORTS.filter(([n]) => only.includes(n)) : ALL_VIEWPORTS;
+const colorScheme = process.env.SCHEME === 'dark' ? 'dark' : 'light';
 const screens = [['dashboard', ''], ['members', '/members'], ['import', '/members/import'], ['member', `/members/${members[0].id}`], ['checkin', '/check-in'],
   ['payments', '/payments'], ['receipt', '/receipts/py1'], ['plans', '/plans'], ['expenses', '/expenses'], ['reports', '/reports'], ['settings', '/settings']];
 
@@ -76,7 +81,7 @@ const browser = await chromium.launch();
 let failures = 0;
 for (const [vpName, w, h] of viewports) {
   for (const [name, path, needle] of [['landing', '', 'Start free trial'], ['login', 'login', 'Sign in']]) {
-    const page = await browser.newPage({ viewport: { width: w, height: h } });
+    const page = await browser.newPage({ viewport: { width: w, height: h }, colorScheme });
     const errors = [];
     page.on('console', (m) => m.type() === 'error' && errors.push(m.text()));
     page.on('pageerror', (e) => errors.push(e.message));
@@ -85,12 +90,12 @@ for (const [vpName, w, h] of viewports) {
     const ok = !overflow && errors.length === 0 && (await page.getByRole('link', { name: needle }).or(page.getByRole('button', { name: needle })).count()) > 0;
     if (!ok) failures++;
     console.log(`${ok ? 'ok  ' : 'FAIL'} ${vpName.padEnd(11)} ${name.padEnd(9)}${overflow ? ' OVERFLOW' : ''}${errors.length ? ' errors=' + errors.join(' | ') : ''}`);
-    await page.screenshot({ path: `${outDir}/${vpName}-${name}.png`, fullPage: true });
+    await page.screenshot({ path: `${outDir}/${colorScheme === 'dark' ? 'dark-' : ''}${vpName}-${name}.png`, fullPage: true });
     await page.close();
   }
 }
 for (const [vpName, w, h] of viewports) {
-  const ctx = await browser.newContext({ viewport: { width: w, height: h } });
+  const ctx = await browser.newContext({ viewport: { width: w, height: h }, colorScheme });
   await ctx.addInitScript(([key, value]) => localStorage.setItem(key, value), [`sb-${REF}-auth-token`, JSON.stringify(session)]);
   await ctx.route(`https://${REF}.supabase.co/**`, (route) => {
     const accept = route.request().headers()['accept'] ?? '';
@@ -112,7 +117,7 @@ for (const [vpName, w, h] of viewports) {
     const ok = !r.overflow && errors.length === 0 && r.h1.length > 0;
     if (!ok) failures++;
     console.log(`${ok ? 'ok  ' : 'FAIL'} ${vpName.padEnd(11)} ${name.padEnd(9)} h1="${r.h1}"${r.overflow ? ' OVERFLOW' : ''}${errors.length ? ' errors=' + errors.slice(0, 2).join(' | ') : ''}`);
-    await page.screenshot({ path: `${outDir}/${vpName}-${name}.png`, fullPage: true });
+    await page.screenshot({ path: `${outDir}/${colorScheme === 'dark' ? 'dark-' : ''}${vpName}-${name}.png`, fullPage: true });
     await page.close();
   }
   await ctx.close();
