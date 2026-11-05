@@ -79,6 +79,11 @@
   (< 720 px), Carbon icon rail (720–1099 px, fixes tablet), sidebar (≥ 1100 px), round icon actions on
   phone headers, non-essential copy removed. UI checks now cover 6 sizes incl. iPad + a phone flow.
 - Known: first-load JS is ~185 KB gzip (budget 170 KB) after the data router; trim in a later pass.
+- Landing page for signed-out visitors at `/` (signed-in users go straight to their gym); `/login?mode=signup` opens sign-up.
+- Scrollbars hidden on touch devices and in the installed app; normal on laptops.
+- UI suite: 79 checks — landing, sign-in and 11 app screens at 6 sizes (phone, tablet, iPad, both landscapes, laptop) + phone flow.
+- Demo scripts in `scripts/demo/` (seed a full demo gym; reset a login). Seed tested on local PG16.
+- Password reset of an existing account via SQL was blocked by a safety check; owner resets via Supabase → Authentication → Users.
 
 ### 2026-11-05 — Session 1
 
