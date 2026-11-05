@@ -1,6 +1,6 @@
 // XS AI panel: entry points, voice (simulated microphone and speaker), typing,
 // action cards with Undo, Malayalam mode, light/dark. The agent endpoint is
-// mocked; the agent itself is tested in tests/ai/agent.test.mjs.
+// mocked; the agent itself is tested in tests/ai/agent.check.mjs.
 //   node tests/ui/ai.mjs <playwright-module-path> <base-url> <out-dir>
 import { createRequire } from 'node:module';
 import { REF, body, gym, session } from './mock.mjs';
