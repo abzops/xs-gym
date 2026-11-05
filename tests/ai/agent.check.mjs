@@ -135,6 +135,16 @@ const otherGym = sql(`select g.id from gyms g join gym_staff s on s.gym_id = g.i
   check('sell and check-in through the AI', out.actions.length === 2 && out.actions.every((a) => a.ok), out.actions.map((a) => a.summary).join(' | '));
 }
 
+// 7. Read-only dues works even when every LLM provider is unavailable.
+{
+  const out = await runAgent(
+    { gym_id: gym, messages: [{ role: 'user', content: 'Who has dues?' }] },
+    { ...env(owner), providers: [] },
+  );
+  check('dues answer without an AI provider',
+    (out.reply.includes('Members with outstanding dues:') || out.reply.includes('No active members have outstanding dues.'))
+    && out.actions.length === 0);
+}
 llm.close();
 console.log(failures ? `${failures} AI FAILURES` : 'AI AGENT OK');
 process.exit(failures ? 1 : 0);
