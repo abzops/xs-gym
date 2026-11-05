@@ -1,7 +1,7 @@
 import {
   BarChart3, ClipboardList, Home, LogOut, Menu, Receipt, ScanLine, Settings, Users, Wallet,
 } from 'lucide-react';
-import { useState, type ComponentType } from 'react';
+import { useLayoutEffect, useRef, useState, type ComponentType } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router';
 import { Logo, Notice, Sheet } from '../components/ui';
 import { daysBetween, todayInGym } from '../lib/dates';
@@ -42,6 +42,24 @@ export function Shell() {
     : null;
   const tab = () => setTransition('tab');
 
+  // Liquid Glass tab bar: an indicator glides to the active tab.
+  const tabbar = useRef<HTMLElement>(null);
+  const indicator = useRef<HTMLSpanElement>(null);
+  useLayoutEffect(() => {
+    const place = () => {
+      const active = tabbar.current?.querySelector<HTMLElement>('a.active, button.active');
+      const ind = indicator.current;
+      if (!ind) return;
+      if (!active) { ind.style.opacity = '0'; return; }
+      ind.style.opacity = '1';
+      ind.style.width = `${active.offsetWidth}px`;
+      ind.style.transform = `translateX(${active.offsetLeft}px)`;
+    };
+    place();
+    window.addEventListener('resize', place);
+    return () => window.removeEventListener('resize', place);
+  }, [location.pathname, more]);
+
   return (
     <div className="shell">
       {/* Laptop and tablet landscape: full sidebar. Tablet portrait: icon rail. */}
@@ -80,13 +98,14 @@ export function Shell() {
       </div>
 
       {/* Phone: iOS-style tab bar */}
-      <nav className="tabbar" aria-label="Main">
+      <nav className="tabbar" aria-label="Main" ref={tabbar}>
+        <span className="tab-indicator" ref={indicator} aria-hidden />
         {primary.map((n) => (
           <NavLink key={n.label} to={link(n)} end={!n.to} viewTransition onClick={tab}>
             <n.icon size={23} strokeWidth={1.8} /> <span>{n.label}</span>
           </NavLink>
         ))}
-        <button onClick={() => setMore(true)} className={onOverflowRoute ? 'active' : ''} aria-haspopup="dialog">
+        <button onClick={() => setMore(true)} className={onOverflowRoute || more ? 'active' : ''} aria-haspopup="dialog">
           <Menu size={23} strokeWidth={1.8} /> <span>More</span>
         </button>
       </nav>
