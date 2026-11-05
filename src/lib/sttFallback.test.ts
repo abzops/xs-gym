@@ -6,10 +6,44 @@ const request = { audio: wav, lang: 'en' };
 
 describe('XS Gym recorded-voice speech-to-text', () => {
   it('recognizes the existing xAI Grok key as a configured provider', () => {
+    expect(sttConfigured({ nvidiaKey: 'test' })).toBe(true);
     expect(sttConfigured({ xaiKey: 'test' })).toBe(true);
     expect(sttConfigured({ groqKey: 'test' })).toBe(true);
     expect(sttConfigured({ geminiKey: 'test' })).toBe(true);
     expect(sttConfigured({})).toBe(false);
+  });
+
+  it('uses NVIDIA Riva only for English when the NVIDIA key is available', async () => {
+    const fetcher = vi.fn(async (_url: RequestInfo | URL, _init?: RequestInit) =>
+      new Response(JSON.stringify({ text: 'Rahul paid 1500 by UPI' }), { status: 200 }));
+    const answer = await transcribe(request, { nvidiaKey: 'nvapi-test', xaiKey: 'backup', fetch: fetcher as typeof fetch });
+    expect(answer).toBe('Rahul paid 1500 by UPI');
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    const [url, init] = fetcher.mock.calls[0];
+    expect(String(url)).toContain('invocation.api.nvcf.nvidia.com');
+    expect(init?.headers).toMatchObject({ authorization: 'Bearer nvapi-test' });
+    const form = init?.body as FormData;
+    expect(form.get('language')).toBe('en-US');
+    expect(form.get('file')).toBeInstanceOf(Blob);
+  });
+
+  it('switches to xAI when NVIDIA English ASR rejects the request', async () => {
+    const fetcher = vi.fn(async (url: RequestInfo | URL, _init?: RequestInit) =>
+      String(url).includes('nvcf.nvidia.com') ? new Response('unavailable', { status: 403 })
+        : new Response(JSON.stringify({ text: 'Hello from xAI' }), { status: 200 }));
+    const answer = await transcribe(request, { nvidiaKey: 'invalid', xaiKey: 'xai', fetch: fetcher as typeof fetch });
+    expect(answer).toBe('Hello from xAI');
+    expect(fetcher).toHaveBeenCalledTimes(2);
+  });
+
+  it('never sends Malayalam recordings to an English-only NVIDIA ASR model', async () => {
+    const fetcher = vi.fn(async (_url: RequestInfo | URL, _init?: RequestInit) =>
+      new Response(JSON.stringify({ text: 'മലയാളം' }), { status: 200 }));
+    const answer = await transcribe({ audio: wav, lang: 'ml' },
+      { nvidiaKey: 'nvidia', xaiKey: 'xai', fetch: fetcher as typeof fetch });
+    expect(answer).toBe('മലയാളം');
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(String(fetcher.mock.calls[0][0])).toContain('api.x.ai');
   });
 
   it('uses the official xAI STT endpoint, keeping the key off the frontend', async () => {
