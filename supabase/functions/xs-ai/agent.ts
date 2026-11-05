@@ -20,6 +20,7 @@ export type Action = { tool: string; ok: boolean; summary: string; undo?: { rpc:
 export type AgentResponse = { reply: string; actions: Action[]; navigate?: string; changed: string[] };
 export type LlmProvider = {
   name: string; baseUrl: string; apiKey: string; model: string;
+  group?: string; // Shared key and quota across candidates.
 };
 export type AgentEnv = {
   supabaseUrl: string; anonKey: string; userToken: string;
@@ -276,7 +277,9 @@ export async function requestLlmWithFailover(
     'XS AI is not configured. Add NVIDIA_API_KEY or XAI_API_KEY in Supabase Edge Function Secrets.', 503,
   );
   const failures: string[] = [];
+  const blockedGroups = new Set<string>();
   for (const provider of providers) {
+    if (provider.group && blockedGroups.has(provider.group)) continue;
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 25_000);
     try {
@@ -290,7 +293,15 @@ export async function requestLlmWithFailover(
         signal: controller.signal,
       });
       if (!response.ok) {
-        failures.push(`${provider.name} (${response.status})`);
+        const hints: Record<number, string> = {
+          401: 'invalid key', 402: 'insufficient API credits',
+          403: 'key or team lacks model permission',
+          404: 'model not found', 410: 'model retired/unavailable',
+          429: 'provider rate limit',
+        };
+        failures.push(`${provider.name} (${response.status})${hints[response.status] ? ` — ${hints[response.status]}` : ''}`);
+        // A key-level denial or shared rate limit will affect sibling models.
+        if (provider.group && [401, 402, 403, 429].includes(response.status)) blockedGroups.add(provider.group);
         console.warn('XS AI provider returned an error', provider.name, response.status);
         continue;
       }
