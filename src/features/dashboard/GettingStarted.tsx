@@ -2,7 +2,7 @@
 // data; the card goes away when everything is done or the owner hides it.
 import { useQuery } from '@tanstack/react-query';
 import { Check, ChevronRight, X } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link } from 'react-router';
 import { useGym } from '../../app/gym';
 import { daysBetween, todayInGym } from '../../lib/dates';
@@ -19,6 +19,7 @@ const count = async (table: string, gymId: string, extra?: (q: any) => any) => {
 export function GettingStarted() {
   const { gym, can } = useGym();
   const key = `xs-start-hidden-${gym.id}`;
+  // Hidden by the owner, or finished before: never render, so nothing jumps on load.
   const [hidden, setHidden] = useState(() => { try { return localStorage.getItem(key) === '1'; } catch { return false; } });
   const young = daysBetween(gym.created_at.slice(0, 10), todayInGym(gym.timezone)) <= 45;
   const show = can('gym.settings') && young && !hidden;
@@ -37,22 +38,25 @@ export function GettingStarted() {
       return { plans, members, sold, paid, staff };
     },
   });
-  if (!show || !q.data) return null;
+  const hide = () => { setHidden(true); try { localStorage.setItem(key, '1'); } catch { /* private mode */ } };
+  const all = q.data && q.data.plans > 0 && q.data.members > 0 && q.data.sold > 0 && q.data.paid > 0 && q.data.staff > 1;
+  useEffect(() => { if (all) { try { localStorage.setItem(key, '1'); } catch { /* private mode */ } } }, [all, key]);
+  if (!show || all || q.isError) return null;
+  // While counts load, the card is drawn at full size so the page does not shift.
+  const d = q.data ?? { plans: 0, members: 0, sold: 0, paid: 0, staff: 0 };
   const base = `/g/${gym.slug}`;
   const steps = [
-    { done: q.data.plans > 0, label: 'Add the plans you sell', to: `${base}/plans` },
-    { done: q.data.members > 0, label: 'Add or import your members', to: `${base}/members/import` },
-    { done: q.data.sold > 0, label: 'Sell a membership', to: `${base}/members` },
-    { done: q.data.paid > 0, label: 'Record a payment', to: `${base}/payments` },
-    { done: q.data.staff > 1, label: 'Invite your team', to: `${base}/settings` },
+    { done: d.plans > 0, label: 'Add the plans you sell', to: `${base}/plans` },
+    { done: d.members > 0, label: 'Add or import your members', to: `${base}/members/import` },
+    { done: d.sold > 0, label: 'Sell a membership', to: `${base}/members` },
+    { done: d.paid > 0, label: 'Record a payment', to: `${base}/payments` },
+    { done: d.staff > 1, label: 'Invite your team', to: `${base}/settings` },
   ];
   const done = steps.filter((s) => s.done).length;
-  if (done === steps.length) return null;
-  const hide = () => { setHidden(true); try { localStorage.setItem(key, '1'); } catch { /* private mode */ } };
   return (
     <section className="start-card" aria-label="Getting started">
       <div className="start-head">
-        <div><h2>Getting started</h2><p className="muted">{done} of {steps.length} done</p></div>
+        <div><h2>Getting started</h2><p className="muted">{q.data ? `${done} of ${steps.length} done` : 'Checking…'}</p></div>
         <button type="button" className="btn small ghost" onClick={hide} aria-label="Hide getting started"><X size={16} /></button>
       </div>
       <span className="start-bar" aria-hidden><i style={{ width: `${(done / steps.length) * 100}%` }} /></span>

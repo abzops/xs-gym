@@ -131,6 +131,15 @@ const otherGym = sql(`select g.id from gyms g join gym_staff s on s.gym_id = g.i
   check('overview, plans and report tools return data', reads[0].active_members > 0 && reads[1].length > 0 && /^₹/.test(reads[2].collected));
   check('check-in tools are gone', !lastBody.tools.some((t) => /check_in/.test(t.function.name)));
 
+  script = (body) => toolMsgs(body).length === 0
+    ? { role: 'assistant', content: '', tool_calls: [call('get_analytics', { months: 3 }), call('add_enquiry', { full_name: 'Voice Lead', phone: '98111 22233', source: 'instagram' })] }
+    : say('Done.');
+  const eq = await runAgent({ gym_id: gym, messages: [{ role: 'user', content: 'analytics and a lead' }] }, env(owner));
+  const an = toolMsgs(lastBody)[0];
+  check('analytics tool returns months in rupees', an.months?.length === 3 && /^₹/.test(an.months[2].revenue) && /^₹/.test(an.months[2].profit), JSON.stringify(an.months?.[2]));
+  check('enquiry saved by voice with undo', eq.actions[0]?.ok && eq.actions[0].undo?.rpc === 'save_enquiry'
+    && sql(`select phone || '|' || source from enquiries where gym_id = '${gym}' and full_name = 'Voice Lead'`) === '+919811122233|instagram', eq.actions[0]?.summary);
+
   const planName = sql(`select name from membership_plans where gym_id = '${gym}' and status = 'active' order by price_paise limit 1`);
   let llmCalls = 0;
   script = () => { llmCalls++; return { role: 'assistant', content: '', tool_calls: [call('sell_plan', { member: member[2], plan: planName.toLowerCase() }), call('record_payment', { member: member[1], amount: 500, method: 'cash' })] }; };
