@@ -462,6 +462,8 @@ table.data tfoot td { font-weight: 600; border-top: 1px solid var(--hair-strong)
 
 /* ---------- Toast ---------- */
 .toasts { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(62px + 22px + env(safe-area-inset-bottom)); z-index: 60; display: grid; gap: 8px; width: min(92vw, 420px); }
+/* While a sheet is open, notifications drop in from the top so they never cover its controls. */
+body:has(.overlay) .toasts { top: calc(12px + env(safe-area-inset-top)); bottom: auto; }
 @media (min-width: 720px) { .toasts { bottom: 28px; } }
 .toast { animation: toast-in 360ms var(--ease-drawer) both; display: flex; gap: 10px; align-items: center; padding: 13px 16px; border-radius: var(--r-lg); background: var(--carbon); color: var(--porcelain); font-weight: 600; font-size: var(--t-sm); }
 .toast.bad { background: var(--bad); color: #fff; }
