@@ -42,6 +42,7 @@ const sttEnv = (): SttEnv => ({
   geminiKey: env('GEMINI_API_KEY') ?? (env('LLM_BASE_URL') ? undefined : env('LLM_API_KEY')),
   geminiModel: env('GEMINI_STT_MODEL'),
   xaiKey: env('XAI_API_KEY') ?? env('GROK_API_KEY') ?? env('Grok'),
+  nvidiaKey: env('NVIDIA_API_KEY'),
 });
 
 Deno.serve(async (req) => {
