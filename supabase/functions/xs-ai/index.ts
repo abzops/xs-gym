@@ -59,7 +59,9 @@ Deno.serve(async (req) => {
   try {
     const providers = configuredProviders();
     if (req.method === 'GET') return json(200, {
-      configured: providers.length > 0, stt: sttConfigured(sttEnv()),
+      configured: providers.length > 0,
+      stt: sttConfigured(sttEnv()),
+      stt_languages: { en: sttConfigured(sttEnv(), 'en'), ml: sttConfigured(sttEnv(), 'ml') },
       providers: providers.map((p) => ({ name: p.name })),
     });
     if (req.method !== 'POST') return json(405, { error: 'GET or POST only' });
