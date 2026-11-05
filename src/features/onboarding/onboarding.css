@@ -57,3 +57,5 @@
 .onb-tips { display: grid; gap: 10px; }
 .onb-tips > div { display: flex; gap: 12px; align-items: flex-start; padding: 14px 16px; border-radius: var(--r-lg); background: var(--paper); font-size: var(--t-sm); }
 .onb-tips svg { flex: none; margin-top: 1px; }
+.onb-summary li.todo { color: var(--graphite); }
+.onb-summary .todo-dot { width: 16px; height: 16px; flex: none; border-radius: 50%; box-shadow: inset 0 0 0 1.5px var(--hair-strong); }

@@ -218,16 +218,16 @@ function TeamStep({ onNext }: { onNext: (n: number) => void }) {
 }
 
 function DoneStep({ made, onGo }: { made: { plans: number; member: string; team: number }; onGo: (to?: string) => void }) {
-  const lines = [
-    made.plans ? `${made.plans} plan${made.plans > 1 ? 's' : ''} ready to sell` : 'Plans: add them any time from Plans',
-    made.member ? `${made.member} is your first member` : 'Members: add or import from Members',
-    made.team ? `${made.team} staff added` : 'Team: add staff from Settings',
+  const lines: [boolean, string][] = [
+    [!!made.plans, made.plans ? `${made.plans} plan${made.plans > 1 ? 's' : ''} ready to sell` : 'Plans: add them any time from Plans'],
+    [!!made.member, made.member ? `${made.member} is your first member` : 'Members: add or import from Members'],
+    [!!made.team, made.team ? `${made.team} staff added` : 'Team: add staff from Settings'],
   ];
   return (
     <div className="stack lg">
       <div className="onb-done-mark" aria-hidden><Check size={40} strokeWidth={2.5} /></div>
       <Head title="You're all set" sub={`Your 30-day free trial is running. Here is what's ready:`} />
-      <ul className="card onb-summary">{lines.map((l) => <li key={l}><Check size={16} aria-hidden /> {l}</li>)}</ul>
+      <ul className="card onb-summary">{lines.map(([ok, l]) => <li key={l} className={ok ? '' : 'todo'}>{ok ? <Check size={16} aria-hidden /> : <span className="todo-dot" aria-hidden />} {l}</li>)}</ul>
       <div className="onb-tips">
         <div><Sparkles size={18} aria-hidden /><span><b>Ask XS AI</b> — “Renew Anjali on Monthly” or “Who has dues?” in English or Malayalam.</span></div>
         <div><Download size={18} aria-hidden /><span><b>Install the app</b> — in Safari tap Share → Add to Home Screen; in Chrome tap Install.</span></div>
