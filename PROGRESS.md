@@ -93,6 +93,9 @@
   Dark mode now uses iOS system greys (#000 / #1C1C1E / #2C2C2E); no white focus box on mouse click; thin
   scrollbar on laptops; full sidebar from 1000 px. UI suite adds iPhone 16 Pro Max (440) and iPad Pro 13 (1032),
   with `SIZES=` and `SCHEME=dark` filters.
+- Appearance switch (Auto / Light / Dark): sidebar button cycles it, phone "More" sheet and Settings have a
+  segmented control. Saved per browser (`xs-theme`), applied before first paint by `public/theme.js`; CSS keys
+  dark mode off `<html data-theme>` instead of the media query. UI check covers switching and reload.
 
 ### 2026-11-05 — Session 1
 
