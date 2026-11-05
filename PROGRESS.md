@@ -113,6 +113,10 @@
   (Save unreachable), fast double-tap ran a payment/sale success twice, import preview marked existing
   members' phones as Ready, plan Unit switch mislabelled for screen readers.
 - Open decision: voiding a paid membership charge turns the payment into credit but leaves the membership active.
+- Section switching made instant: page code preloads on idle, each section's first query is shared
+  (`src/lib/sections.ts`) and prefetched on idle and on hover/touch; tab/sidebar switches no longer run a view
+  transition (push/pop still do). Tap-to-content 13–40 ms in page; 110–180 ms end to end with CDN/API delays
+  (was 290–370 ms on first visit). `tests/ui/switching.mjs` guards it. Cancelled phone transitions are silenced.
 
 ### 2026-11-05 — Session 1
 
