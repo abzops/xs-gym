@@ -158,8 +158,8 @@ with sync_playwright() as p:
         tap(page.get_by_role('button', name='Continue'))
         expect(page.get_by_role('heading', name='What do you sell?')).to_be_visible(timeout=8000)
         for name in ['Quarterly', 'Half-yearly', 'Yearly']:
-            page.locator('.onb-plans li', has_text=name).locator('input[type=checkbox]').uncheck()
-        page.locator('.onb-plans li', has_text='Day pass').locator('input[type=checkbox]').check()
+            page.get_by_role('checkbox', name=re.compile(f'^{name} ')).uncheck()
+        page.get_by_role('checkbox', name=re.compile('^Day pass ')).check()
         page.get_by_label('Monthly price').fill('abc')
         if page.get_by_role('button', name=re.compile('Add 2 plans')).is_enabled(): note('BUG', 'setup allows a non-numeric plan price')
         page.get_by_label('Monthly price').fill('1000')
