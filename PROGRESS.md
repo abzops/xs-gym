@@ -96,6 +96,9 @@
 - Appearance switch (Auto / Light / Dark): sidebar button cycles it, phone "More" sheet and Settings have a
   segmented control. Saved per browser (`xs-theme`), applied before first paint by `public/theme.js`; CSS keys
   dark mode off `<html data-theme>` instead of the media query. UI check covers switching and reload.
+- Elevation system (`src/styles/elevation.css`): layered shadow tokens `--elev-1/2/3`, hero, button and chip
+  levels. Dark mode uses top highlights, faint rings and a subtle sheen instead of invisible shadows. Tappable
+  cards lift 2 px on hover (pointer devices only, off with reduced motion); flat in high contrast and print.
 
 ### 2026-11-05 — Session 1
 
