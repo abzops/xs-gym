@@ -6,22 +6,28 @@ import { useGym } from '../../app/gym';
 import { Segmented, Sheet, useToast } from '../../components/ui';
 import { errorMessage } from '../../lib/errors';
 import { rpc, supabase } from '../../lib/supabase';
-import { canListen, listen, MicrophoneAccessError, requestMicrophone, speak, SpeechListenError, stopSpeaking, voiceFor, type Lang } from './voice';
+import { canRecord, isIosStandalone, RecorderError, startRecording } from './recorder';
+import { canListen, listen, speak, SpeechListenError, stopSpeaking, voiceFor, type Lang } from './voice';
 import './ai.css';
 
 type Action = { tool: string; ok: boolean; summary: string; undo?: { rpc: string; args: Record<string, unknown> }; undone?: boolean };
 type Turn = { role: 'user' | 'assistant'; content: string; actions?: Action[]; tone?: 'bad' };
 type State = 'idle' | 'listening' | 'thinking' | 'speaking';
-type MicDialog = 'intro' | 'denied' | 'unavailable' | 'service' | null;
+type MicDialog = 'intro' | 'denied' | 'unavailable' | 'service' | 'setup' | null;
 
-// Permission can persist within the loaded app; never assume it survives
-// an iOS Home Screen app restart or a fresh page load.
-let micVerifiedForPage = false;
+// Whether the server can turn recordings into text (a speech key is set).
+// Asked once per app load; until known, recording is tried first.
+// Kept as a plain value so a tap can decide synchronously (iOS only lets the
+// microphone start inside the tap itself).
+let sttKnown: boolean | null = null;
+let sttChecking: Promise<void> | null = null;
+const checkStt = () => (sttChecking ??= supabase.functions.invoke('xs-ai', { method: 'GET' })
+  .then(({ data }) => { if (typeof data?.stt === 'boolean') sttKnown = data.stt; }).catch(() => { sttChecking = null; }));
 
 const LANG_KEY = 'xs-ai-lang';
 const HINTS: Record<Lang, string[]> = {
-  en: ['How much did we collect today?', 'Who has dues?', 'Rahul paid 1500 by UPI', 'Check in Anjali'],
-  ml: ['ഇന്ന് എത്ര രൂപ കിട്ടി?', 'ആർക്കൊക്കെ കുടിശ്ശികയുണ്ട്?', 'രാഹുൽ 1500 UPI ആയി അടച്ചു', 'അഞ്ജലിയെ ചെക്ക് ഇൻ ചെയ്യൂ'],
+  en: ['How much did we collect today?', 'Who has dues?', 'Rahul paid 1500 by UPI', 'Renew Anjali on Monthly'],
+  ml: ['ഇന്ന് എത്ര രൂപ കിട്ടി?', 'ആർക്കൊക്കെ കുടിശ്ശികയുണ്ട്?', 'രാഹുൽ 1500 UPI ആയി അടച്ചു', 'അഞ്ജലിയുടെ Monthly പുതുക്കൂ'],
 };
 
 type MicCopy = { title: string; detail: string; button: string };
@@ -31,12 +37,14 @@ const MIC_COPY: Record<Lang, Record<Exclude<MicDialog, null>, MicCopy>> = {
     denied: { title: 'Microphone permission needed', detail: 'Your phone did not allow microphone access. Try again to request permission. If access was permanently denied, iOS may not show the Allow pop-up again.', button: 'Try again' },
     service: { title: 'Speech recognition unavailable', detail: 'The microphone is ready, but speech recognition could not start in this installed app. Try voice again, or dictate using your phone’s keyboard.', button: 'Try voice again' },
     unavailable: { title: 'Microphone unavailable', detail: 'This device could not open a microphone. You can still type or use your keyboard’s dictation feature.', button: '' },
+    setup: { title: 'Voice is not set up yet', detail: 'The gym owner needs to add a speech key (GROQ_API_KEY) in Supabase. Until then, type here or use the microphone on your keyboard.', button: '' },
   },
   ml: {
     intro: { title: 'മൈക്രോഫോൺ അനുവദിക്കുക', detail: 'ജിം കാര്യങ്ങൾ സംസാരിച്ച് ചോദിക്കാൻ XS AI-ക്ക് മൈക്രോഫോൺ അനുമതി നൽകൂ. ഫോണിൽ Allow എന്ന പോപ്പപ്പ് വന്നേക്കാം.', button: 'മൈക്രോഫോൺ അനുവദിക്കുക' },
     denied: { title: 'മൈക്രോഫോൺ അനുമതി ആവശ്യമാണ്', detail: 'ഫോൺ മൈക്രോഫോൺ അനുവദിച്ചില്ല. വീണ്ടും ശ്രമിക്കൂ. സ്ഥിരമായി ബ്ലോക്ക് ചെയ്തിട്ടുണ്ടെങ്കിൽ Allow പോപ്പപ്പ് വീണ്ടും വരണമെന്നില്ല.', button: 'വീണ്ടും ശ്രമിക്കുക' },
     service: { title: 'ശബ്ദം തിരിച്ചറിയാൻ കഴിയുന്നില്ല', detail: 'മൈക്രോഫോൺ അനുവദിച്ചിട്ടുണ്ട്. പക്ഷേ ഈ ഇൻസ്റ്റാൾ ചെയ്ത ആപ്പിൽ ശബ്ദം തിരിച്ചറിയൽ തുടങ്ങാനായില്ല. വീണ്ടും ശ്രമിക്കൂ, അല്ലെങ്കിൽ കീബോർഡ് ഉപയോഗിക്കൂ.', button: 'വീണ്ടും സംസാരിക്കുക' },
     unavailable: { title: 'മൈക്രോഫോൺ ലഭ്യമല്ല', detail: 'ഈ ഫോണിൽ മൈക്രോഫോൺ തുറക്കാനായില്ല. പകരം ടൈപ്പ് ചെയ്യാം, അല്ലെങ്കിൽ കീബോർഡിലെ ഡിക്റ്റേഷൻ ഉപയോഗിക്കാം.', button: '' },
+    setup: { title: 'വോയ്സ് ഇതുവരെ സജ്ജമാക്കിയിട്ടില്ല', detail: 'ജിം ഉടമ Supabase-ൽ സ്പീച്ച് കീ (GROQ_API_KEY) ചേർക്കണം. അതുവരെ ടൈപ്പ് ചെയ്യൂ, അല്ലെങ്കിൽ കീബോർഡിലെ മൈക്ക് ഉപയോഗിക്കൂ.', button: '' },
   },
 };
 
@@ -53,7 +61,7 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
   const [text, setText] = useState('');
   const [mute, setMute] = useState(false);
   const [micDialog, setMicDialog] = useState<MicDialog>(null);
-  const [micChecking, setMicChecking] = useState(false);
+  const micChecking = false;
   const micCheckingRef = useRef(false);
   const micAttemptRef = useRef(0);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -65,7 +73,8 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
   const undoBusy = useRef(new Set<string>());
   const scroller = useRef<HTMLDivElement>(null);
   const turnsRef = useRef(turns); turnsRef.current = turns;
-  const voiceOk = canListen();
+  const voiceOk = canRecord() || canListen();
+  useEffect(() => { void checkStt(); }, []);
 
   useEffect(() => { try { localStorage.setItem(LANG_KEY, lang); } catch { /* storage blocked */ } }, [lang]);
   useEffect(() => { scroller.current?.scrollTo({ top: scroller.current.scrollHeight, behavior: 'smooth' }); }, [turns, live, state]);
@@ -114,8 +123,54 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
     }
   }
 
-  // The recognition API is distinct from microphone access on iOS. First
-  // get an explicit microphone grant, then start Web Speech recognition.
+  const orbRef = useRef<HTMLButtonElement>(null);
+  const setLevel = (v: number) => orbRef.current?.style.setProperty('--lvl', v.toFixed(3));
+
+  // Main voice path: record here (works in iPhone home-screen apps), then the
+  // server turns the recording into text. One tap: the first time, the phone
+  // shows its own Allow prompt inside the app.
+  async function beginRecording() {
+    if (closingRef.current || listeningBusy.current || requestBusy.current) return;
+    listeningBusy.current = true;
+    stopSpeaking();
+    setState('listening'); setLive('');
+    try {
+      const rec = await startRecording({ onLevel: setLevel });
+      stopRef.current = rec.stop;
+      const audio = await rec.done;
+      stopRef.current = () => {};
+      if (closingRef.current) return;
+      if (!audio) { setState('idle'); toast(lang === 'ml' ? 'ഒന്നും കേട്ടില്ല. വീണ്ടും ശ്രമിക്കൂ.' : "Didn't hear anything. Tap and speak again."); return; }
+      setLive(lang === 'ml' ? 'മനസ്സിലാക്കുന്നു…' : 'Understanding…');
+      setState('thinking');
+      const { data, error } = await supabase.functions.invoke('xs-ai', { body: { transcribe: { audio, lang } } });
+      if (error) {
+        let msg = errorMessage(error); let status = 0;
+        try { const ctx = (error as { context?: Response }).context; status = ctx?.status ?? 0; const body = await ctx?.json(); if (body?.error) msg = body.error; } catch { /* not JSON */ }
+        // No speech key on the server: use the browser's recognition where it works.
+        if (status === 503 && /speech key/.test(msg)) sttKnown = false;
+        throw new Error(msg);
+      }
+      const heard = String(data?.text ?? '').trim();
+      listeningBusy.current = false;
+      if (closingRef.current) return;
+      setLive(''); setState('idle');
+      if (heard) await ask(heard);
+      else toast(lang === 'ml' ? 'ഒന്നും കേട്ടില്ല. വീണ്ടും ശ്രമിക്കൂ.' : "Didn't catch that. Tap and speak again.");
+    } catch (e) {
+      if (closingRef.current) return;
+      setState('idle'); setLive('');
+      if (e instanceof RecorderError) setMicDialog(e.reason === 'denied' ? 'denied' : 'unavailable');
+      else toast(e instanceof Error ? e.message : String(e), 'bad');
+    } finally {
+      listeningBusy.current = false;
+      stopRef.current = () => {};
+      setLevel(0);
+    }
+  }
+
+  // Fallback when the server has no speech key: the browser's own speech
+  // recognition (Chrome, Android, Safari in a tab; blocked in iPhone home-screen apps).
   async function beginListening() {
     if (closingRef.current || listeningBusy.current || requestBusy.current) return;
     listeningBusy.current = true;
@@ -133,47 +188,12 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
     } catch (e) {
       if (!closingRef.current) {
         setState('idle');
-        if (e instanceof SpeechListenError) {
-          // A successful getUserMedia grant proves microphone access, but
-          // Safari can separately block its speech-recognition service.
-          if (['denied', 'service', 'unsupported', 'audio'].includes(e.reason)) {
-            setMicDialog('service');
-          } else {
-            toast(e.message, 'bad');
-          }
-        } else {
-          toast(e instanceof Error ? e.message : String(e), 'bad');
-        }
+        if (e instanceof SpeechListenError && ['denied', 'service', 'unsupported', 'audio'].includes(e.reason)) setMicDialog('service');
+        else toast(e instanceof Error ? e.message : String(e), 'bad');
       }
     } finally {
       listeningBusy.current = false;
       stopRef.current = () => {};
-    }
-  }
-
-  async function enableMicrophone() {
-    if (closingRef.current || micCheckingRef.current || requestBusy.current) return;
-    micCheckingRef.current = true;
-    const attempt = ++micAttemptRef.current;
-    setMicChecking(true);
-    try {
-      // This button press triggers the native Allow permission prompt when iOS
-      // offers one. Never fake or bypass an operating-system permission.
-      await requestMicrophone();
-      if (closingRef.current || micAttemptRef.current !== attempt) return;
-      micVerifiedForPage = true;
-      setMicDialog(null);
-      // Immediately try listening. On iOS versions that require a second
-      // user gesture for recognition, a clear in-app Retry action is shown.
-      void beginListening();
-    } catch (e) {
-      if (!closingRef.current && micAttemptRef.current === attempt) {
-        setMicDialog(e instanceof MicrophoneAccessError && e.reason === 'denied'
-          ? 'denied' : 'unavailable');
-      }
-    } finally {
-      micCheckingRef.current = false;
-      if (!closingRef.current) setMicChecking(false);
     }
   }
 
@@ -183,16 +203,18 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
     requestAnimationFrame(() => inputRef.current?.focus());
   }
 
-  async function talk() {
-    if (closingRef.current || micDialog) return;
+  // retry=true when called from the help panel's "Try again" (the panel is
+  // still open in this render, so its state cannot gate the call).
+  async function talk(retry = false) {
+    if (closingRef.current || (micDialog && !retry)) return;
     if (state === 'listening') { stopRef.current(); return; }
     if (state === 'speaking') { stopSpeaking(); return; }
     if (requestBusy.current || listeningBusy.current || micCheckingRef.current) return;
-    if (!micVerifiedForPage) {
-      setMicDialog('intro');
-      return;
-    }
-    await beginListening();
+    // Decide without awaiting anything: iOS only lets the microphone and audio
+    // start inside the tap itself.
+    if (sttKnown !== false && canRecord()) return beginRecording();
+    if (canListen() && !isIosStandalone()) return beginListening();
+    setMicDialog(canRecord() ? 'setup' : 'unavailable');
   }
 
   async function undo(turn: number, i: number) {
@@ -253,7 +275,7 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
 
         <div className="xsai-controls">
           {voiceOk && (
-            <button type="button" className={`xsai-orb ${state}`} onClick={talk} disabled={state === 'thinking'}
+            <button ref={orbRef} type="button" className={`xsai-orb ${state}`} onClick={() => void talk()} disabled={state === 'thinking'}
               aria-label={state === 'listening' ? 'Stop listening' : state === 'speaking' ? 'Stop speaking' : 'Talk to XS AI'}>
               <span className="xsai-orb-glow" aria-hidden />
               {state === 'listening' || state === 'speaking' ? <Square size={22} fill="currentColor" /> : <Mic size={26} />}
@@ -273,21 +295,14 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
               <h3 id="xsai-mic-heading">{MIC_COPY[lang][micDialog].title}</h3>
               <p id="xsai-mic-desc">{MIC_COPY[lang][micDialog].detail}</p>
               <div className="xsai-mic-actions">
-                {micDialog !== 'unavailable' && (
+                {micDialog !== 'unavailable' && micDialog !== 'setup' && (
                   <button ref={micActionRef} type="button" className="btn primary" disabled={micChecking}
-                    onClick={() => {
-                      if (micDialog === 'service') {
-                        setMicDialog(null);
-                        void beginListening();
-                      } else {
-                        void enableMicrophone();
-                      }
-                    }}>
+                    onClick={() => { setMicDialog(null); void talk(true); }}>
                     {micChecking ? (lang === 'ml' ? 'അനുമതി ചോദിക്കുന്നു…' : 'Requesting…')
                       : MIC_COPY[lang][micDialog].button}
                   </button>
                 )}
-                <button ref={micDialog === 'unavailable' ? micActionRef : undefined} type="button" className="btn ghost" onClick={useKeyboard}>
+                <button ref={micDialog === 'unavailable' || micDialog === 'setup' ? micActionRef : undefined} type="button" className="btn ghost" onClick={useKeyboard}>
                   <Keyboard size={17} /> {lang === 'ml' ? 'കീബോർഡ് ഉപയോഗിക്കുക' : 'Use keyboard instead'}
                 </button>
               </div>

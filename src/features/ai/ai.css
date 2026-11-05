@@ -100,3 +100,8 @@
   .xsai-orb-glow, .xsai-entry::after, .sidebar .xsai-side .xsai-mark::after, .xsai-dots i { animation: none !important; }
   .xsai-turn { animation: none; }
 }
+
+/* The orb follows your voice while recording (--lvl is set from the microphone level). */
+.xsai-orb.listening { transform: scale(calc(1 + var(--lvl, 0) * 0.14)); transition: transform 90ms linear; }
+.xsai-orb.listening .xsai-orb-glow { opacity: calc(0.5 + var(--lvl, 0) * 0.5); }
+@media (prefers-reduced-motion: reduce) { .xsai-orb.listening { transform: none; } }
