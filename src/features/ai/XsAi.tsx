@@ -1,17 +1,22 @@
 import { useQueryClient } from '@tanstack/react-query';
-import { ArrowUp, Check, Mic, RotateCcw, Square, X } from 'lucide-react';
+import { ArrowUp, Check, Keyboard, Mic, RotateCcw, Square, X } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router';
 import { useGym } from '../../app/gym';
 import { Segmented, Sheet, useToast } from '../../components/ui';
 import { errorMessage } from '../../lib/errors';
 import { rpc, supabase } from '../../lib/supabase';
-import { canListen, listen, speak, stopSpeaking, voiceFor, type Lang } from './voice';
+import { canListen, listen, MicrophoneAccessError, requestMicrophone, speak, SpeechListenError, stopSpeaking, voiceFor, type Lang } from './voice';
 import './ai.css';
 
 type Action = { tool: string; ok: boolean; summary: string; undo?: { rpc: string; args: Record<string, unknown> }; undone?: boolean };
 type Turn = { role: 'user' | 'assistant'; content: string; actions?: Action[]; tone?: 'bad' };
 type State = 'idle' | 'listening' | 'thinking' | 'speaking';
+type MicDialog = 'intro' | 'denied' | 'unavailable' | 'service' | null;
+
+// Permission can persist within the loaded app; never assume it survives
+// an iOS Home Screen app restart or a fresh page load.
+let micVerifiedForPage = false;
 
 const LANG_KEY = 'xs-ai-lang';
 const HINTS: Record<Lang, string[]> = {
@@ -31,6 +36,10 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
   const [live, setLive] = useState('');
   const [text, setText] = useState('');
   const [mute, setMute] = useState(false);
+  const [micDialog, setMicDialog] = useState<MicDialog>(null);
+  const [micChecking, setMicChecking] = useState(false);
+  const micCheckingRef = useRef(false);
+  const inputRef = useRef<HTMLInputElement>(null);
   const stopRef = useRef<() => void>(() => {});
   const closingRef = useRef(false);
   const requestBusy = useRef(false);
@@ -85,33 +94,84 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
     }
   }
 
-  async function talk() {
-    if (closingRef.current) return;
-    if (state === 'listening') { stopRef.current(); return; }
-    if (state === 'speaking') { stopSpeaking(); return; }
-    if (requestBusy.current || listeningBusy.current) return;
+  // The recognition API is distinct from microphone access on iOS. First
+  // get an explicit microphone grant, then start Web Speech recognition.
+  async function beginListening() {
+    if (closingRef.current || listeningBusy.current || requestBusy.current) return;
     listeningBusy.current = true;
     stopSpeaking();
     setState('listening'); setLive('');
     try {
-      const l = listen(lang, setLive);
+      const l = listen(lang, (heard) => { if (!closingRef.current) setLive(heard); });
       stopRef.current = l.stop;
       const heard = await l.done;
       listeningBusy.current = false;
       stopRef.current = () => {};
-      // Dismissing mid-utterance must never trigger an unintended write.
       if (closingRef.current) return;
       setState('idle');
       if (heard) await ask(heard);
     } catch (e) {
       if (!closingRef.current) {
         setState('idle');
-        toast(e instanceof Error ? e.message : String(e), 'bad');
+        if (e instanceof SpeechListenError) {
+          if (e.reason === 'denied' || e.reason === 'audio') {
+            micVerifiedForPage = false;
+            setMicDialog('denied');
+          } else if (e.reason === 'service' || e.reason === 'unsupported') {
+            setMicDialog('service');
+          } else {
+            toast(e.message, 'bad');
+          }
+        } else {
+          toast(e instanceof Error ? e.message : String(e), 'bad');
+        }
       }
     } finally {
       listeningBusy.current = false;
       stopRef.current = () => {};
     }
+  }
+
+  async function enableMicrophone() {
+    if (closingRef.current || micCheckingRef.current || requestBusy.current) return;
+    micCheckingRef.current = true;
+    setMicChecking(true);
+    try {
+      // This button press triggers the native Allow permission prompt when iOS
+      // offers one. Never fake or bypass an operating-system permission.
+      await requestMicrophone();
+      if (closingRef.current) return;
+      micVerifiedForPage = true;
+      setMicDialog(null);
+      // Immediately try listening. On iOS versions that require a second
+      // user gesture for recognition, a clear in-app Retry action is shown.
+      void beginListening();
+    } catch (e) {
+      if (!closingRef.current) {
+        setMicDialog(e instanceof MicrophoneAccessError && e.reason === 'denied'
+          ? 'denied' : 'unavailable');
+      }
+    } finally {
+      micCheckingRef.current = false;
+      if (!closingRef.current) setMicChecking(false);
+    }
+  }
+
+  function useKeyboard() {
+    setMicDialog(null);
+    requestAnimationFrame(() => inputRef.current?.focus());
+  }
+
+  async function talk() {
+    if (closingRef.current || micDialog) return;
+    if (state === 'listening') { stopRef.current(); return; }
+    if (state === 'speaking') { stopSpeaking(); return; }
+    if (requestBusy.current || listeningBusy.current || micCheckingRef.current) return;
+    if (!micVerifiedForPage) {
+      setMicDialog('intro');
+      return;
+    }
+    await beginListening();
   }
 
   async function undo(turn: number, i: number) {
@@ -180,10 +240,49 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
           )}
           <p className="xsai-status" aria-live="polite">{status}{lang === 'ml' && !mute && !voiceFor('ml') ? ' · replies shown as text on this device' : ''}</p>
           <form className="xsai-type" onSubmit={(e) => { e.preventDefault(); void ask(text); }}>
-            <input className="input" value={text} onChange={(e) => setText(e.target.value)} placeholder={lang === 'ml' ? 'ടൈപ്പ് ചെയ്യൂ…' : 'Type a message…'} aria-label="Message XS AI" enterKeyHint="send" />
+            <input ref={inputRef} className="input" value={text} onChange={(e) => setText(e.target.value)} placeholder={lang === 'ml' ? 'ടൈപ്പ് ചെയ്യൂ…' : 'Type a message…'} aria-label="Message XS AI" enterKeyHint="send" />
             <button className="btn primary icon-btn" disabled={!text.trim() || state !== 'idle'} aria-label="Send"><ArrowUp size={20} /></button>
           </form>
         </div>
+
+        {micDialog && (
+          <div className="xsai-mic-backdrop">
+            <section className="xsai-mic-dialog" role="dialog" aria-modal="true" aria-labelledby="xsai-mic-heading" aria-describedby="xsai-mic-desc">
+              <span className="xsai-mic-icon" aria-hidden><Mic size={27} strokeWidth={1.8} /></span>
+              <h3 id="xsai-mic-heading">
+                {micDialog === 'intro' ? 'Enable microphone'
+                  : micDialog === 'denied' ? 'Microphone permission needed'
+                  : micDialog === 'service' ? 'Speech recognition unavailable'
+                  : 'Microphone unavailable'}
+              </h3>
+              <p id="xsai-mic-desc">
+                {micDialog === 'intro'
+                  ? 'Allow XS AI to hear your gym commands. Your phone may ask for microphone permission.'
+                  : micDialog === 'denied'
+                    ? 'Your phone did not allow microphone access. Try again to request permission. If access was permanently denied, iOS may not show the Allow pop-up again.'
+                    : micDialog === 'service'
+                      ? 'The microphone is ready, but speech recognition could not start in this installed app. Try voice again, or dictate using your phone’s keyboard.'
+                      : 'This device could not open a microphone. You can still type or use your keyboard’s dictation feature.'}
+              </p>
+              <div className="xsai-mic-actions">
+                {micDialog !== 'unavailable' && (
+                  <button type="button" className="btn primary" disabled={micChecking}
+                    onClick={() => micDialog === 'service'
+                      ? (setMicDialog(null), void beginListening()) : void enableMicrophone()}>
+                    {micChecking ? 'Requesting…'
+                      : micDialog === 'service' ? 'Try voice again'
+                      : micDialog === 'intro' ? 'Allow microphone' : 'Try again'}
+                  </button>
+                )}
+                <button type="button" className="btn ghost" disabled={micChecking} onClick={useKeyboard}>
+                  <Keyboard size={17} /> Use keyboard instead
+                </button>
+              </div>
+              <button type="button" className="xsai-mic-dismiss" disabled={micChecking}
+                aria-label="Dismiss microphone help" onClick={() => setMicDialog(null)}><X size={19}/></button>
+            </section>
+          </div>
+        )}
       </div>
     </Sheet>
   );
