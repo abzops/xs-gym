@@ -1,12 +1,14 @@
 import {
   BarChart3, ClipboardList, Home, LogOut, Menu, Receipt, ScanLine, Settings, Users, Wallet,
 } from 'lucide-react';
-import { useLayoutEffect, useRef, useState, type ComponentType } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
+import { useEffect, useLayoutEffect, useRef, useState, type ComponentType } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router';
 import { AppearanceButton, AppearanceControl } from '../components/Appearance';
 import { Logo, Notice, Sheet } from '../components/ui';
 import { daysBetween, todayInGym } from '../lib/dates';
 import { setTransition } from '../lib/motion';
+import { pageModules, prefetchSection } from '../lib/sections';
 import { supabase } from '../lib/supabase';
 import { ROLE_LABEL } from '../lib/types';
 import { useGym } from './gym';
@@ -43,6 +45,22 @@ export function Shell() {
     : null;
   const tab = () => setTransition('tab');
 
+  // Make every section open instantly: once the app is idle, fetch the code and
+  // first data of each section this role can open; repeat on touch/hover.
+  const qc = useQueryClient();
+  const warm = (n: NavItem) => { void prefetchSection(qc, gym, n.to); };
+  useEffect(() => {
+    let cancelled = false;
+    const idle = (fn: () => void) => ('requestIdleCallback' in window ? requestIdleCallback(fn, { timeout: 2500 }) : setTimeout(fn, 900));
+    idle(async () => {
+      for (const load of Object.values(pageModules)) { if (cancelled) return; await load().catch(() => {}); }
+      for (const n of items) { if (cancelled) return; await prefetchSection(qc, gym, n.to)?.catch(() => {}); }
+    });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gym.id]);
+  const warmProps = (n: NavItem) => ({ onPointerEnter: () => warm(n), onPointerDown: () => warm(n), onFocus: () => warm(n) });
+
   // Liquid Glass tab bar: an indicator glides to the active tab.
   const tabbar = useRef<HTMLElement>(null);
   const indicator = useRef<HTMLSpanElement>(null);
@@ -73,7 +91,7 @@ export function Shell() {
           {trialDays !== null && <span>Trial ends in {trialDays} day{trialDays === 1 ? '' : 's'}</span>}
         </div>
         {items.map((n) => (
-          <NavLink key={n.label} to={link(n)} end={!n.to} viewTransition onClick={tab} title={n.label}>
+          <NavLink key={n.label} to={link(n)} end={!n.to} onClick={tab} title={n.label} {...warmProps(n)}>
             <n.icon size={20} strokeWidth={1.9} /> <span className="nav-label">{n.label}</span>
           </NavLink>
         ))}
@@ -104,11 +122,11 @@ export function Shell() {
       <nav className="tabbar" aria-label="Main" ref={tabbar}>
         <span className="tab-indicator" ref={indicator} aria-hidden />
         {primary.map((n) => (
-          <NavLink key={n.label} to={link(n)} end={!n.to} viewTransition onClick={tab}>
+          <NavLink key={n.label} to={link(n)} end={!n.to} onClick={tab} {...warmProps(n)}>
             <n.icon size={23} strokeWidth={1.8} /> <span>{n.label}</span>
           </NavLink>
         ))}
-        <button onClick={() => setMore(true)} className={onOverflowRoute || more ? 'active' : ''} aria-haspopup="dialog">
+        <button onClick={() => setMore(true)} onPointerDown={() => overflow.forEach(warm)} className={onOverflowRoute || more ? 'active' : ''} aria-haspopup="dialog">
           <Menu size={23} strokeWidth={1.8} /> <span>More</span>
         </button>
       </nav>
@@ -122,7 +140,7 @@ export function Shell() {
           <ul className="list grouped">
             {overflow.map((n) => (
               <li key={n.label}>
-                <NavLink className="item" to={link(n)} viewTransition onClick={() => { tab(); setMore(false); }}>
+                <NavLink className="item" to={link(n)} onClick={() => { tab(); setMore(false); }} {...warmProps(n)}>
                   <n.icon size={20} /> <span className="main-col"><span className="title">{n.label}</span></span>
                 </NavLink>
               </li>
