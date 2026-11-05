@@ -1,3 +1,4 @@
+import { staffQuery } from '../../lib/sections';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { UserPlus } from 'lucide-react';
 import { useState } from 'react';
@@ -6,7 +7,7 @@ import { AppearanceControl } from '../../components/Appearance';
 import { Field, Loading, Notice, Sheet, useToast } from '../../components/ui';
 import { formatDate } from '../../lib/dates';
 import { errorMessage } from '../../lib/errors';
-import { rpc, supabase } from '../../lib/supabase';
+import { rpc } from '../../lib/supabase';
 import { ROLE_LABEL, type Role, type StaffRow } from '../../lib/types';
 
 export function SettingsPage() {
@@ -68,14 +69,7 @@ function GymSettings() {
 function StaffSection() {
   const { gym, can } = useGym();
   const [adding, setAdding] = useState<StaffRow | 'new' | null>(null);
-  const staff = useQuery({
-    queryKey: ['staff', gym.id],
-    queryFn: async () => {
-      const { data, error } = await supabase.from('gym_staff').select('*').eq('gym_id', gym.id).order('role').order('created_at');
-      if (error) throw error;
-      return data as StaffRow[];
-    },
-  });
+  const staff = useQuery(staffQuery(gym.id));
   const manage = can('staff.manage');
   return (
     <section className="card flush">

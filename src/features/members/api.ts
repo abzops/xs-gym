@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query';
+import { queryOptions, useQuery } from '@tanstack/react-query';
 import { addDays, todayInGym } from '../../lib/dates';
 import { supabase } from '../../lib/supabase';
 import type { Attendance, Charge, MemberOverview, Membership, Payment, Plan } from '../../lib/types';
@@ -11,7 +11,10 @@ function safeTerm(q: string) {
 }
 
 export function useMembers(gymId: string, search: string, filter: MemberFilter, timezone: string) {
-  return useQuery({
+  return useQuery(membersQuery(gymId, search, filter, timezone));
+}
+
+export const membersQuery = (gymId: string, search: string, filter: MemberFilter, timezone: string) => queryOptions({
     queryKey: ['members', gymId, search, filter],
     queryFn: async () => {
       let q = supabase.from('member_overview').select('*').eq('gym_id', gymId);
@@ -34,8 +37,7 @@ export function useMembers(gymId: string, search: string, filter: MemberFilter, 
       if (error) throw error;
       return data as MemberOverview[];
     },
-  });
-}
+});
 
 export function useMember(gymId: string, memberId: string) {
   return useQuery({
@@ -76,7 +78,10 @@ export function useMemberHistory(gymId: string, memberId: string, canSeeMoney: b
 }
 
 export function usePlans(gymId: string, includeArchived = false) {
-  return useQuery({
+  return useQuery(plansQuery(gymId, includeArchived));
+}
+
+export const plansQuery = (gymId: string, includeArchived = false) => queryOptions({
     queryKey: ['plans', gymId, includeArchived],
     queryFn: async () => {
       let q = supabase.from('membership_plans').select('*').eq('gym_id', gymId);
@@ -85,8 +90,7 @@ export function usePlans(gymId: string, includeArchived = false) {
       if (error) throw error;
       return data as Plan[];
     },
-  });
-}
+});
 
 export function planDuration(p: Pick<Plan, 'duration_unit' | 'duration_count'>) {
   const n = p.duration_count;

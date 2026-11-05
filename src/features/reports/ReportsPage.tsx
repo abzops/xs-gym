@@ -1,3 +1,4 @@
+import { dailyReportQuery } from '../../lib/sections';
 import { useQuery } from '@tanstack/react-query';
 import { Download } from 'lucide-react';
 import { useState } from 'react';
@@ -8,7 +9,6 @@ import { csvAmount, downloadCSV } from '../../lib/csv';
 import { addDays, formatDate, todayInGym } from '../../lib/dates';
 import { errorMessage } from '../../lib/errors';
 import { formatINR } from '../../lib/money';
-import { rpc } from '../../lib/supabase';
 import { useMembers } from '../members/api';
 
 type Day = {
@@ -37,10 +37,7 @@ function DailyReport() {
   const today = todayInGym(gym.timezone);
   const [from, setFrom] = useState(`${today.slice(0, 7)}-01`);
   const [to, setTo] = useState(today);
-  const report = useQuery({
-    queryKey: ['daily-report', gym.id, from, to],
-    queryFn: () => rpc<Day[]>('daily_report', { p_gym: gym.id, p_from: from, p_to: to }),
-  });
+  const report = useQuery(dailyReportQuery<Day>(gym.id, from, to));
   const rows = report.data ?? [];
   const sum = (k: keyof Day) => rows.reduce((s, r) => s + Number(r[k]), 0);
 

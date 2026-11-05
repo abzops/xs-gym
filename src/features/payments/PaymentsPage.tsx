@@ -1,32 +1,17 @@
+import { paymentsDayQuery } from '../../lib/sections';
 import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 import { useGym } from '../../app/gym';
 import { Empty, Field, Loading, Notice, PushLink } from '../../components/ui';
-import { addDays, formatDate, formatTime, todayInGym } from '../../lib/dates';
+import { formatDate, formatTime, todayInGym } from '../../lib/dates';
 import { errorMessage } from '../../lib/errors';
 import { formatINR } from '../../lib/money';
-import { supabase } from '../../lib/supabase';
-import { METHOD_LABEL, type Method, type Payment } from '../../lib/types';
-
-/** Start of a gym-local day as an absolute timestamp (IST is a fixed +05:30). */
-function dayStart(date: string) {
-  return `${date}T00:00:00+05:30`;
-}
+import { METHOD_LABEL, type Method } from '../../lib/types';
 
 export function PaymentsPage() {
   const { gym } = useGym();
   const [day, setDay] = useState(() => todayInGym(gym.timezone));
-  const payments = useQuery({
-    queryKey: ['payments', gym.id, day],
-    queryFn: async () => {
-      const { data, error } = await supabase.from('payments')
-        .select('*, members(full_name, member_no), payment_reversals(id, reason, reversed_at)')
-        .eq('gym_id', gym.id).gte('received_at', dayStart(day)).lt('received_at', dayStart(addDays(day, 1)))
-        .order('received_at', { ascending: false });
-      if (error) throw error;
-      return data as Payment[];
-    },
-  });
+  const payments = useQuery(paymentsDayQuery(gym.id, day));
 
   const live = payments.data?.filter((p) => !p.payment_reversals?.length) ?? [];
   const byMethod = live.reduce<Partial<Record<Method, number>>>((acc, p) => ({ ...acc, [p.method]: (acc[p.method] ?? 0) + p.amount_paise }), {});

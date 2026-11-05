@@ -22,21 +22,30 @@ import { NewMemberPage } from './features/members/MemberForm';
 import { MembersPage } from './features/members/MembersPage';
 import { LandingPage } from './features/landing/LandingPage';
 import { errorMessage } from './lib/errors';
+import { pageModules } from './lib/sections';
 
 // Less frequent screens load on demand to keep the first load small.
-const ExpensesPage = lazy(() => import('./features/expenses/ExpensesPage').then((m) => ({ default: m.ExpensesPage })));
-const PaymentsPage = lazy(() => import('./features/payments/PaymentsPage').then((m) => ({ default: m.PaymentsPage })));
-const PlansPage = lazy(() => import('./features/plans/PlansPage').then((m) => ({ default: m.PlansPage })));
-const ReportsPage = lazy(() => import('./features/reports/ReportsPage').then((m) => ({ default: m.ReportsPage })));
-const ReceiptPage = lazy(() => import('./features/payments/ReceiptPage').then((m) => ({ default: m.ReceiptPage })));
-const ImportPage = lazy(() => import('./features/members/ImportPage').then((m) => ({ default: m.ImportPage })));
-const SettingsPage = lazy(() => import('./features/settings/SettingsPage').then((m) => ({ default: m.SettingsPage })));
+const ExpensesPage = lazy(() => pageModules.expenses().then((m) => ({ default: m.ExpensesPage })));
+const PaymentsPage = lazy(() => pageModules.payments().then((m) => ({ default: m.PaymentsPage })));
+const PlansPage = lazy(() => pageModules.plans().then((m) => ({ default: m.PlansPage })));
+const ReportsPage = lazy(() => pageModules.reports().then((m) => ({ default: m.ReportsPage })));
+const ReceiptPage = lazy(() => pageModules.receipt().then((m) => ({ default: m.ReceiptPage })));
+const ImportPage = lazy(() => pageModules.import().then((m) => ({ default: m.ImportPage })));
+const SettingsPage = lazy(() => pageModules.settings().then((m) => ({ default: m.SettingsPage })));
 
 // GitHub Pages cannot send frame-ancestors; refuse to render inside a frame.
 if (window.top !== window.self) {
   document.documentElement.style.display = 'none';
   throw new Error('Framing is not allowed');
 }
+
+// A page animation is cancelled when the phone's address bar resizes the
+// viewport mid-slide. Navigation still completes; the rejected animation
+// promise is expected, so keep it out of the error console.
+window.addEventListener('unhandledrejection', (e) => {
+  const r = e.reason as { name?: string; message?: string } | undefined;
+  if ((r?.name === 'InvalidStateError' || r?.name === 'AbortError') && /transition/i.test(r.message ?? '')) e.preventDefault();
+});
 
 const queryClient = new QueryClient({
   defaultOptions: {

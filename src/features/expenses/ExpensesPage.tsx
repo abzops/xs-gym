@@ -1,3 +1,4 @@
+import { expensesMonthQuery } from '../../lib/sections';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Plus } from 'lucide-react';
 import { useState } from 'react';
@@ -8,7 +9,7 @@ import { formatDate, todayInGym } from '../../lib/dates';
 import { errorMessage } from '../../lib/errors';
 import { formatINR, parseINR } from '../../lib/money';
 import { newKey, rpc, supabase } from '../../lib/supabase';
-import { METHOD_LABEL, type Expense, type Method } from '../../lib/types';
+import { METHOD_LABEL, type Method } from '../../lib/types';
 import { ReasonSheet } from '../members/actions';
 
 const DEFAULT_CATEGORIES = ['Rent', 'Electricity', 'Salaries', 'Equipment', 'Maintenance', 'Cleaning', 'Water', 'Marketing'];
@@ -23,19 +24,7 @@ export function ExpensesPage() {
   const month = todayInGym(gym.timezone).slice(0, 7);
   const [period, setPeriod] = useState(month);
 
-  const expenses = useQuery({
-    queryKey: ['expenses', gym.id, period],
-    queryFn: async () => {
-      const [y, m] = period.split('-').map(Number);
-      const next = m === 12 ? `${y + 1}-01-01` : `${y}-${String(m + 1).padStart(2, '0')}-01`;
-      const { data, error } = await supabase.from('expenses')
-        .select('*, expense_categories(name), expense_reversals(id, reason)')
-        .eq('gym_id', gym.id).gte('expense_date', `${period}-01`).lt('expense_date', next)
-        .order('expense_date', { ascending: false }).order('created_at', { ascending: false });
-      if (error) throw error;
-      return data as Expense[];
-    },
-  });
+  const expenses = useQuery(expensesMonthQuery(gym.id, period));
   const live = expenses.data?.filter((x) => !x.expense_reversals?.length) ?? [];
   const total = live.reduce((s, x) => s + x.amount_paise, 0);
   const byCategory = Object.entries(live.reduce<Record<string, number>>((acc, x) => {
