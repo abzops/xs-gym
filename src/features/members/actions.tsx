@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { ScanLine } from 'lucide-react';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useNavigate } from 'react-router';
 import { useGym } from '../../app/gym';
 import { Field, Notice, Segmented, Sheet, useToast } from '../../components/ui';
@@ -11,6 +11,20 @@ import { setTransition } from '../../lib/motion';
 import { newKey, rpc } from '../../lib/supabase';
 import { METHOD_LABEL, type MemberOverview, type Membership, type Method, type Payment } from '../../lib/types';
 import { planDuration, usePlans } from './api';
+
+/**
+ * Lets a submit run once until it settles. A fast double tap fires two submit
+ * events before React re-renders the disabled button; without this the second
+ * one re-runs onSuccess (a second toast and a second receipt in history).
+ */
+function useOnce() {
+  const busy = useRef(false);
+  return (start: (done: { onSettled: () => void }) => void) => {
+    if (busy.current) return;
+    busy.current = true;
+    start({ onSettled: () => { busy.current = false; } });
+  };
+}
 
 function useRefreshMember(memberId: string) {
   const { gym } = useGym();
@@ -53,6 +67,7 @@ export function SellPlanSheet({ member, onClose, onSold }: {
     || (discountPaise ?? 0) > (plan?.price_paise ?? 0) || ((discountPaise ?? 0) > 0 && !reason.trim())
     || (customStart && !start);
 
+  const once = useOnce();
   const sell = useMutation({
     mutationFn: () => rpc<Membership>('sell_membership', {
       p_gym: gym.id, p_member: member.id, p_plan: planId, p_idempotency_key: key,
@@ -68,7 +83,7 @@ export function SellPlanSheet({ member, onClose, onSold }: {
 
   return (
     <Sheet title={renewing ? 'Renew membership' : 'Sell a plan'} onClose={onClose}>
-      <form className="stack lg" onSubmit={(e) => { e.preventDefault(); if (!invalid) sell.mutate(); }}>
+      <form className="stack lg" onSubmit={(e) => { e.preventDefault(); if (!invalid) once((o) => sell.mutate(undefined, o)); }}>
         {plans.data?.length === 0 && <Notice tone="warn">No plans yet. Add plans first under Plans.</Notice>}
         <div className="stack" role="radiogroup" aria-label="Plan">
           {plans.data?.map((p) => (
@@ -145,6 +160,7 @@ export function PaymentSheet({ member, onClose }: { member: MemberOverview; onCl
   const [notes, setNotes] = useState('');
   const paise = parseINR(amount);
 
+  const once = useOnce();
   const pay = useMutation({
     mutationFn: () => rpc<Payment>('record_payment', {
       p_gym: gym.id, p_member: member.id, p_amount_paise: paise, p_method: method,
@@ -161,7 +177,7 @@ export function PaymentSheet({ member, onClose }: { member: MemberOverview; onCl
 
   return (
     <Sheet title="Record payment" onClose={onClose}>
-      <form className="stack lg" onSubmit={(e) => { e.preventDefault(); if (paise) pay.mutate(); }}>
+      <form className="stack lg" onSubmit={(e) => { e.preventDefault(); if (paise) once((o) => pay.mutate(undefined, o)); }}>
         <p className="muted">
           {member.due_paise > 0 ? `${formatINR(member.due_paise)} due` : 'Nothing due'}
         </p>
@@ -197,6 +213,7 @@ export function CheckInButton({ member, compact = false }: { member: MemberOverv
   const [reason, setReason] = useState('');
   const blocked = !['active', 'grace'].includes(member.membership_status);
 
+  const once = useOnce();
   const checkIn = useMutation({
     mutationFn: (overrideReason: string | null) =>
       rpc<{ checked_in_at: string }>('check_in', { p_gym: gym.id, p_member: member.id, p_override_reason: overrideReason }),
@@ -215,12 +232,12 @@ export function CheckInButton({ member, compact = false }: { member: MemberOverv
   return (
     <>
       <button className={`btn ${blocked ? '' : 'primary'} ${compact ? 'small' : ''}`} disabled={checkIn.isPending}
-        onClick={() => (blocked ? setOverride(true) : checkIn.mutate(null))}>
+        onClick={() => (blocked ? setOverride(true) : once((o) => checkIn.mutate(null, o)))}>
         {checkIn.isPending ? <span className="spinner" /> : <><ScanLine size={compact ? 16 : 18} /> {blocked ? 'Override' : 'Check in'}</>}
       </button>
       {override && (
         <Sheet title="Check in with override" onClose={() => setOverride(false)}>
-          <form className="stack lg" onSubmit={(e) => { e.preventDefault(); if (reason.trim()) checkIn.mutate(reason); }}>
+          <form className="stack lg" onSubmit={(e) => { e.preventDefault(); if (reason.trim()) once((o) => checkIn.mutate(reason, o)); }}>
             <Notice tone="warn">
               Membership is {member.membership_status === 'none' ? 'not set up' : member.membership_status}. Your reason is logged.
             </Notice>
@@ -240,10 +257,11 @@ export function ReasonSheet({ title, warning, confirmLabel, onClose, onConfirm }
   title: string; warning: string; confirmLabel: string; onClose: () => void; onConfirm: (reason: string) => Promise<unknown>;
 }) {
   const [reason, setReason] = useState('');
+  const once = useOnce();
   const run = useMutation({ mutationFn: () => onConfirm(reason.trim()), onSuccess: onClose });
   return (
     <Sheet title={title} onClose={onClose}>
-      <form className="stack lg" onSubmit={(e) => { e.preventDefault(); if (reason.trim()) run.mutate(); }}>
+      <form className="stack lg" onSubmit={(e) => { e.preventDefault(); if (reason.trim()) once((o) => run.mutate(undefined, o)); }}>
         <Notice tone="warn">{warning}</Notice>
         <Field label="Reason (required)">
           <input className="input" value={reason} onChange={(e) => setReason(e.target.value)} />
