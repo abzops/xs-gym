@@ -169,16 +169,18 @@ for (const [name, viewport, mobile] of [['phone', { width: 390, height: 844 }, t
     await retryDialog.waitFor();
     await page.evaluate(() => { window.__micPermission = 'denied'; window.__say = 'How much did we collect today?'; });
     const beforeDenied = sent.length;
+    check(`${name} ${scheme}: permission guidance is localized after Malayalam selection`,
+      await retryDialog.getByRole('button', { name: 'മലയാളം' }).count() > 0);
     await tap(retryDialog.getByRole('button', { name: 'Talk to XS AI' }));
-    await tap(retryDialog.getByRole('button', { name: 'Allow microphone' }));
-    const denied = retryDialog.getByRole('dialog', { name: 'Microphone permission needed' });
+    await tap(retryDialog.getByRole('button', { name: 'മൈക്രോഫോൺ അനുവദിക്കുക' }));
+    const denied = retryDialog.getByRole('dialog', { name: 'മൈക്രോഫോൺ അനുമതി ആവശ്യമാണ്' });
     await denied.waitFor();
     check(`${name} ${scheme}: permission denial shows recoverable dialog without submitting`,
       await denied.isVisible() && sent.length === beforeDenied);
 
     // User fixes permission: the Retry button requests access and starts voice.
     await page.evaluate(() => { window.__micPermission = 'granted'; });
-    await tap(denied.getByRole('button', { name: 'Try again' }));
+    await tap(denied.getByRole('button', { name: 'വീണ്ടും ശ്രമിക്കുക' }));
     await retryDialog.getByText('You collected ₹18,500').waitFor({ timeout: 6000 });
     check(`${name} ${scheme}: retry grants permission and starts listening`,
       await page.evaluate(() => window.__micRequests === 2 && window.__micStopped === 1));
@@ -187,11 +189,11 @@ for (const [name, viewport, mobile] of [['phone', { width: 390, height: 844 }, t
     await page.waitForTimeout(500);
     await page.evaluate(() => { window.__speechError = 'service-not-allowed'; });
     await tap(retryDialog.getByRole('button', { name: 'Talk to XS AI' }));
-    const speechError = retryDialog.getByRole('dialog', { name: 'Speech recognition unavailable' });
+    const speechError = retryDialog.getByRole('dialog', { name: 'ശബ്ദം തിരിച്ചറിയാൻ കഴിയുന്നില്ല' });
     await speechError.waitFor();
     check(`${name} ${scheme}: separate iOS speech-engine failure with keyboard option`,
-      await speechError.getByRole('button', { name: 'Use keyboard instead' }).isVisible());
-    await tap(speechError.getByRole('button', { name: 'Use keyboard instead' }));
+      await speechError.getByRole('button', { name: 'കീബോർഡ് ഉപയോഗിക്കുക' }).isVisible());
+    await tap(speechError.getByRole('button', { name: 'കീബോർഡ് ഉപയോഗിക്കുക' }));
     check(`${name} ${scheme}: keyboard fallback focuses the message input`,
       await retryDialog.getByRole('textbox', { name: 'Message XS AI' }).isFocused());
     await ctx.close();
