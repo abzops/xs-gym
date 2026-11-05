@@ -47,9 +47,11 @@ The exact question **Who has dues?** reads the current gym's outstanding balance
 via the signed-in user's permission checks, without requiring an AI provider.
 The response lists up to 25 active members with dues.
 
-Read: today's overview, member search and details, plans, payments by day, reports for a date range, expenses by month.
+Read: today's overview, member search and details, plans, payments by day, totals for a date range, expenses by month,
+analytics by month (revenue, profit, members joined/lost, renewals, plans, methods, dues by age, enquiries).
 Change: record payment, sell/renew plan (with discount reason and admission fee), add member, record expense,
-reverse payment, archive/restore member, open any screen. (Check-in was removed from the web app.)
+save an enquiry (lead), reverse payment, archive/restore member, open any screen including Analytics and Enquiries.
+(Check-in was removed from the web app.)
 
 Each role only gets the tools its permissions allow (reception has no reversals or financial reports).
 

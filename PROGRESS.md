@@ -177,3 +177,18 @@
 - Edge Function `xs-ai` v15 deployed. OWNER ACTION: add `GROQ_API_KEY` (free) in Supabase secrets — voice and fast
   replies need it; NVIDIA timed out and the xAI key returned 403 in the logs.
 - Tests: e2e phone/tablet/laptop 37/37 each, agent 19 checks, voice UI 52 checks, all UI suites.
+
+### 2026-11-05 — Analytics, onboarding, enquiries, WhatsApp
+- Reports became **Analytics** (`/analytics`; `/reports` redirects): 8 KPIs and 10 SVG charts from one RPC
+  `gym_analytics(p_gym, p_months)` (3/6/12 months), each chart with hover/tap tooltip and table view, colour-blind
+  safe palette validated for light and dark. Daily / Dues / Expiring lists and CSV kept as tabs.
+- **Signup onboarding**: after creating a gym the owner gets a full-screen wizard (gym details → plan presets with
+  prices → first member → team → done); `gyms.onboarded_at` + `complete_onboarding()`. Existing gyms marked done.
+  Dashboard shows a self-ticking Getting started checklist for the first 45 days.
+- **Enquiries** (leads): `enquiries` table (RLS: members.read), `save_enquiry()` (members.write); follow-up dates,
+  stages, Joined creates the member and links it, Lost closes it. Counts and sources feed Analytics.
+- **WhatsApp reminders** (wa.me, staff presses send): renewal, expired, dues, enquiry, welcome; English/Malayalam;
+  on member page, Dues/Expiring lists and Enquiries.
+- XS AI: `get_analytics`, `add_enquiry`; `open_screen` knows Analytics and Enquiries; `last_visit` removed.
+- Research and next features: `docs/ROADMAP.md` (freeze, GST invoices, automatic WhatsApp, UPI links, PT packages…).
+- Migration `20261106000100_analytics_leads_onboarding.sql`; DB tests extended (analytics, enquiries, onboarding, roles).

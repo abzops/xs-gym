@@ -137,24 +137,61 @@ with sync_playwright() as p:
         expect(page.get_by_role('heading', name='Set up your gym')).to_be_visible(timeout=10000)
         page.screenshot(path=f'{OUT}/02-setup-gym.png')
 
-    @step('create gym → lands on plans with welcome')
+    @step('create gym → setup wizard opens')
     def _():
         if not page.get_by_role('heading', name='Set up your gym').count():
             go('login'); page.locator('input[type=email]').fill(EMAIL); page.locator('input[autocomplete=current-password]').fill(PASSWORD)
             page.locator('form button.btn.primary').click(); page.wait_for_timeout(1500)
         page.locator('input[autocomplete=organization]').fill(GYM)
         page.locator('form button.btn.primary').click()
-        page.wait_for_url(re.compile(r'/g/[^/]+/plans'), timeout=10000)
+        page.wait_for_url(re.compile(r'/g/[^/]+/welcome'), timeout=10000)
         state['slug'] = re.search(r'/g/([^/]+)/', page.url).group(1)
         state['gym'] = sql(f"select id from gyms where slug = '{state['slug']}'")[0][0]
-        page.wait_for_load_state('networkidle'); page.screenshot(path=f'{OUT}/03-plans-welcome.png')
+        expect(page.get_by_role('heading', name='Welcome to XS Gym')).to_be_visible(timeout=8000)
+        if page.locator('nav.sidebar, nav.tabbar').count(): note('BUG', 'setup wizard shows the app navigation')
+        page.wait_for_load_state('networkidle'); page.screenshot(path=f'{OUT}/03-onboarding-gym.png')
+
+    @step('setup wizard: gym details → plans with prices → skip member and team → done')
+    def _():
+        page.get_by_label('Gym phone').fill('9876500077')
+        tap(page.get_by_role('group', name='Grace days').get_by_role('button', name='5 days'))
+        tap(page.get_by_role('button', name='Continue'))
+        expect(page.get_by_role('heading', name='What do you sell?')).to_be_visible(timeout=8000)
+        for name in ['Quarterly', 'Half-yearly', 'Yearly']:
+            page.locator('.onb-plans li', has_text=name).locator('input[type=checkbox]').uncheck()
+        page.locator('.onb-plans li', has_text='Day pass').locator('input[type=checkbox]').check()
+        page.get_by_label('Monthly price').fill('abc')
+        if page.get_by_role('button', name=re.compile('Add 2 plans')).is_enabled(): note('BUG', 'setup allows a non-numeric plan price')
+        page.get_by_label('Monthly price').fill('1000')
+        page.screenshot(path=f'{OUT}/03-onboarding-plans.png', full_page=True)
+        tap(page.get_by_role('button', name='Add 2 plans'))
+        expect(page.get_by_role('heading', name='Add your first member')).to_be_visible(timeout=8000)
+        tap(page.get_by_role('button', name='Skip for now'))
+        expect(page.get_by_role('heading', name='Bring your team')).to_be_visible(timeout=8000)
+        page.get_by_label('Staff email').fill('nobody-here@example.com')
+        tap(page.get_by_role('button', name='Add to team'))
+        expect(page.locator('main')).to_contain_text('sign up first', timeout=8000)
+        tap(page.get_by_role('button', name='Skip for now'))
+        expect(page.get_by_role('heading', name="You're all set")).to_be_visible(timeout=8000)
+        page.screenshot(path=f'{OUT}/03-onboarding-done.png', full_page=True)
+        rows = sql(f"select name, price_paise, duration_unit from membership_plans where gym_id = '{state['gym']}' order by name")
+        assert rows == [['Day pass', '15000', 'day'], ['Monthly', '100000', 'month']], f'plans after setup: {rows}'
+        g = sql(f"select grace_days, phone, onboarded_at is not null from gyms where id = '{state['gym']}'")[0]
+        assert g == ['5', '9876500077', 't'], f'gym after setup: {g}'
+        tap(page.get_by_role('button', name='Go to dashboard'))
+        page.wait_for_url(re.compile(r'/g/[^/]+$'), timeout=8000); page.wait_for_load_state('networkidle')
+        expect(page.locator('.start-card')).to_contain_text('Getting started', timeout=8000)
+        page.reload(); page.wait_for_load_state('networkidle')
+        if '/welcome' in page.url: note('BUG', 'finished setup still opens the wizard after reload')
+        page.screenshot(path=f'{OUT}/03-dashboard-new.png', full_page=True)
 
     base = lambda: f"g/{state['slug']}"
 
     # ---------------- Plans ----------------
-    @step('add plans (Monthly ₹1,000 and Day pass ₹150), invalid price blocked')
+    @step('add a plan on Plans (Couple monthly ₹1,800), invalid price blocked')
     def _():
-        for name, length, unit, price in [('Monthly', '1', 'Months', '1000'), ('Day pass', '1', 'Days', '150')]:
+        nav('Plans')
+        for name, length, unit, price in [('Couple monthly', '1', 'Months', '1800')]:
             tap(page.get_by_role('button', name=re.compile('Add (your first )?plan')).first)
             d = dialog(); expect(d).to_be_visible()
             d.get_by_label('Plan name').fill(name)
@@ -167,7 +204,7 @@ with sync_playwright() as p:
             toast('Plan added')
             expect(dialog()).to_have_count(0, timeout=5000)
         n = sql(f"select count(*) from membership_plans where gym_id = '{state['gym']}'")[0][0]
-        assert n == '2', f'expected 2 plans in DB, found {n}'
+        assert n == '3', f'expected 3 plans in DB, found {n}'
 
     # ---------------- Members ----------------
     @step('add member: validation then save → member page offers a sale')
@@ -399,13 +436,47 @@ with sync_playwright() as p:
         if want not in main: note('BUG', f'dashboard "Collected today" does not show {want}; DB says {f}')
         page.screenshot(path=f'{OUT}/07-dashboard.png', full_page=True)
 
-    @step('reports: daily summary, dues and expiring tabs, CSV download')
+    @step('analytics: KPIs and charts match the database, table view, period switch')
     def _():
-        nav('Reports')
-        for tab in ['Daily summary', 'Dues', 'Expiring']:
+        nav('Analytics')
+        expect(page.locator('.analytics-kpis .tile')).to_have_count(8, timeout=8000)
+        a = json.loads(sql(f"select set_config('request.jwt.claim.sub', user_id::text, true), public.gym_analytics(gym_id, 6)::text from gym_staff where gym_id = '{state['gym']}' and role = 'owner'")[0][1])
+        cards = page.locator('.viz-card')
+        if cards.count() < 9: note('BUG', f'analytics shows {cards.count()} charts, expected 10')
+        if page.locator('.viz-card svg').count() < 4: note('BUG', 'analytics column/line charts did not draw')
+        rev = page.locator('.viz-card', has_text='Revenue and expenses')
+        tap(rev.get_by_role('button', name='Table'))
+        cur = a['months'][-1]
+        want = f"₹{cur['revenue_paise'] // 100:,}"
+        if want not in rev.inner_text(): note('BUG', f'revenue table does not show {want} for {cur["month"]}')
+        tap(rev.get_by_role('button', name='Chart'))
+        box = rev.locator('svg').bounding_box()
+        if box:
+            page.mouse.move(box['x'] + box['width'] - 30, box['y'] + box['height'] / 2) if not touch else rev.locator('svg rect[fill=transparent]').tap(position={'x': box['width'] - 70, 'y': 60})
+            page.wait_for_timeout(200)
+            if not rev.locator('.viz-tip').count(): note('BUG', 'hovering/tapping a month shows no tooltip')
+        tap(page.get_by_role('group', name='Period').get_by_role('button', name='12 months')); page.wait_for_timeout(800)
+        if page.locator('main .notice.bad').count(): note('BUG', 'analytics 12 months shows an error')
+        page.screenshot(path=f'{OUT}/08-analytics.png', full_page=True)
+
+    @step('analytics lists: daily summary, dues and expiring tabs, CSV download, WhatsApp reminder')
+    def _():
+        tap(page.get_by_role('group', name='View').get_by_role('button', name='Overview'))
+        for tab in ['Daily', 'Dues', 'Expiring']:
             tap(page.get_by_role('button', name=tab)); page.wait_for_timeout(500)
             if page.locator('main .notice.bad, main [class*="bad"]').filter(has_text=re.compile('error|wrong', re.I)).count(): note('BUG', f'reports {tab} shows an error')
-        tap(page.get_by_role('button', name='Daily summary'))
+        tap(page.get_by_role('group', name='View').get_by_role('button', name='Dues')); page.wait_for_timeout(500)
+        remind = page.get_by_role('button', name=re.compile('^Remind'))
+        if remind.count():
+            tap(remind.first)
+            link = dialog().get_by_role('link', name='Open WhatsApp')
+            href = link.get_attribute('href') or ''
+            if not re.match(r'^https://wa\.me/91\d{10}\?text=', href): note('BUG', f'WhatsApp link looks wrong: {href[:60]}')
+            tap(dialog().get_by_role('group', name='Language').get_by_role('button', name='മലയാളം'))
+            if 'ബാക്കി' not in dialog().locator('textarea').input_value(): note('BUG', 'Malayalam dues reminder text missing')
+            page.keyboard.press('Escape'); page.wait_for_timeout(600)
+            if dialog().count(): tap(dialog().get_by_role('button', name=re.compile('Close|Cancel')).first)
+        tap(page.get_by_role('group', name='View').get_by_role('button', name='Daily')); page.wait_for_timeout(500)
         with page.expect_download(timeout=8000) as dl:
             tap(page.get_by_role('button', name='CSV').first)
         path = dl.value.path(); text = open(path, encoding='utf-8-sig').read()
@@ -414,6 +485,27 @@ with sync_playwright() as p:
         state['csv_head'] = rows[0]
         if text.startswith('=') or any(c.startswith(('=', '+', '@')) for r in rows[1:] for c in r if c and not re.match(r'^[+-]?\d', c)):
             note('SECURITY', 'CSV cells start with formula characters')
+
+    @step('enquiries: add, follow-up shows, joined creates the member, lost closes')
+    def _():
+        nav('Enquiries')
+        for name, phone in [('Lead Joiner', '9811100001'), ('Lead Lost', '9811100002')]:
+            tap(page.get_by_role('button', name='Add enquiry'))
+            d = dialog(); d.get_by_label('Name').fill(name); d.get_by_label('Mobile').fill(phone)
+            d.get_by_label('How did they find us').select_option('instagram')
+            tap(d.get_by_role('button', name='Save enquiry')); toast('Enquiry saved')
+            expect(dialog()).to_have_count(0, timeout=5000)
+        expect(page.locator('main .list')).to_contain_text('Lead Joiner')
+        tap(page.locator('.item.enquiry', has_text='Lead Lost').locator('.main-col'))
+        tap(dialog().get_by_role('button', name='Mark lost')); toast('marked lost')
+        tap(page.locator('.item.enquiry', has_text='Lead Joiner').locator('.main-col'))
+        tap(dialog().get_by_role('button', name=re.compile('Joined'))); 
+        page.wait_for_url(re.compile(r'/members/[0-9a-f-]{36}'), timeout=8000)
+        rows = sql(f"select e.status, m.full_name from enquiries e left join members m on m.id = e.member_id where e.gym_id = '{state['gym']}' order by e.full_name")
+        assert rows == [['joined', 'Lead Joiner'], ['lost', '']], f'enquiries in DB: {rows}'
+        wa = page.get_by_role('button', name=re.compile('WhatsApp'))
+        if not wa.count(): note('BUG', 'member page has no WhatsApp button')
+        page.screenshot(path=f'{OUT}/09-enquiry-member.png', full_page=True)
 
     # ---------------- Settings, staff, import, appearance ----------------
     @step('settings: grace days validation, save gym details')
@@ -561,7 +653,7 @@ with sync_playwright() as p:
 
     @step('demo owner: every screen loads without errors')
     def _():
-        for label in ['Home', 'Members', 'Payments', 'Plans', 'Expenses', 'Reports', 'Settings']:
+        for label in ['Home', 'Members', 'Payments', 'Analytics', 'Enquiries', 'Plans', 'Expenses', 'Settings']:
             t = time.time(); nav(label); dt = time.time() - t
             if page.locator('main .notice.bad').count(): note('BUG', f'{label} shows an error notice')
             if dt > 2.5: note('PERF', f'{label} took {dt:.1f}s to settle on {PLATFORM}')
