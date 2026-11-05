@@ -240,6 +240,23 @@ html[data-vt="pop"]::view-transition-new(page) { animation: vt-pop-in 320ms var(
 @keyframes vt-push-in { from { transform: translateX(100%); } }
 @keyframes vt-pop-out { to { transform: translateX(100%); } }
 @keyframes vt-pop-in { from { opacity: 0.6; transform: translateX(-24%); } }
+/* Keep transitions inside the content area: the sidebar and tab bar stay on
+   top and still, pages are clipped to their own box and painted opaque so the
+   old and new screens never show through each other, and the box itself
+   snaps to the new size instead of stretching the snapshots. */
+::view-transition-group(sidebar), ::view-transition-group(tabbar) { z-index: 2; }
+::view-transition-group(page) { z-index: 1; animation-duration: 0s; }
+::view-transition-image-pair(page) { overflow-x: clip; }
+::view-transition-old(page), ::view-transition-new(page) { background: var(--canvas); height: auto; }
+/* Wide screens: the full-width iOS push reads as a glitch beside a sidebar.
+   Use a short slide and fade within the content area instead. */
+@media (min-width: 720px) {
+  html[data-vt="push"]::view-transition-old(page), html[data-vt="pop"]::view-transition-old(page) { animation: vt-fade-out 120ms ease-out both; }
+  html[data-vt="push"]::view-transition-new(page) { animation: vt-side-in 260ms var(--ease-out) both; }
+  html[data-vt="pop"]::view-transition-new(page) { animation: vt-side-back 260ms var(--ease-out) both; }
+}
+@keyframes vt-side-in { from { opacity: 0; transform: translateX(28px); } }
+@keyframes vt-side-back { from { opacity: 0; transform: translateX(-28px); } }
 
 /* ---------- Controls ---------- */
 .btn {
