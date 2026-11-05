@@ -164,6 +164,33 @@ select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000a3
 select t.eq((select count(*) from public.payments)::int, 0, 'trainer cannot read payments');
 select t.fails($$select public.create_member(t.id('gymA'), 'T', '9000000004')$$, 'XS403', 'trainer cannot add members');
 
+-- Analytics, enquiries, onboarding
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000a1', false);
+select t.eq((select (public.gym_analytics(t.id('gymA'), 6) -> 'months' -> -1 ->> 'revenue_paise')::bigint),
+            (select sum(amount_paise) from public.payments p where p.gym_id = t.id('gymA')
+               and not exists (select 1 from public.payment_reversals r where r.payment_id = p.id))::bigint,
+            'analytics month revenue excludes reversals');
+select t.eq(jsonb_array_length(public.gym_analytics(t.id('gymA'), 6) -> 'months'), 6, 'analytics returns one row per month');
+select t.fails($$select public.gym_analytics(t.id('gymA'), 30)$$, 'XS422', 'analytics month range limited');
+select t.fails($$select public.gym_analytics(t.id('gymB'), 6)$$, 'XS403', 'analytics stays inside the tenant');
+select t.eq((select (public.gym_analytics(t.id('gymA'), 6) -> 'members' ->> 'total')::int), 1, 'analytics member count');
+insert into t.ids select 'enq1', id from public.save_enquiry(t.id('gymA'), null, 'Walk In', '+919000000099', 'instagram', 'Monthly', null, current_date + 1);
+select t.eq((select status from public.enquiries where id = t.id('enq1')), 'new', 'enquiry saved as new');
+select t.fails($$select public.save_enquiry(t.id('gymA'), t.id('enq1'), 'Walk In', '+919000000099', 'instagram', null, null, null, 'joined')$$,
+               'XS422', 'joined enquiry needs a member');
+select public.save_enquiry(t.id('gymA'), t.id('enq1'), 'Walk In', '+919000000099', 'instagram', null, null, null, 'joined', t.id('m1'));
+select t.eq((select closed_at is not null from public.enquiries where id = t.id('enq1')), true, 'joined enquiry is closed');
+select t.eq((select (public.gym_analytics(t.id('gymA'), 6) -> 'enquiries' ->> 'joined')::int), 1, 'analytics counts joined enquiries');
+select t.fails($$update public.enquiries set status = 'lost'$$, 'permission denied', 'enquiries change only through commands');
+select t.eq((select onboarded_at is null from public.gyms where id = t.id('gymA')), true, 'new gym starts onboarding');
+select public.complete_onboarding(t.id('gymA'));
+select t.eq((select onboarded_at is not null from public.gyms where id = t.id('gymA')), true, 'onboarding completes');
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000a3', false);
+select t.eq((select count(*) from public.enquiries)::int, 1, 'trainer (members.read) sees enquiries of own gym only');
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000a2', false);
+select t.fails($$select public.gym_analytics(t.id('gymA'), 6)$$, 'XS403', 'reception cannot see analytics');
+select t.fails($$select public.complete_onboarding(t.id('gymA'))$$, 'XS403', 'reception cannot finish onboarding');
+
 -- Expired subscription: read-only
 reset role;
 update public.gym_subscriptions set trial_ends_at = now() - interval '1 minute' where gym_id = t.id('gymA');
