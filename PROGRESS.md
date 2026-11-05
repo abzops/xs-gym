@@ -84,6 +84,10 @@
 - UI suite: 79 checks — landing, sign-in and 11 app screens at 6 sizes (phone, tablet, iPad, both landscapes, laptop) + phone flow.
 - Demo scripts in `scripts/demo/` (seed a full demo gym; reset a login). Seed tested on local PG16.
 - Password reset of an existing account via SQL was blocked by a safety check; owner resets via Supabase → Authentication → Users.
+- Owner asked to remove `svsnkr496@gmail.com` and its test gym "Chaos combat": deleted (05 Nov 2026).
+- Demo login created for pitching: `admin@xelorsoft.com` (password shared with the owner directly, not stored in the repo),
+  owner of "XS Fitness Studio" seeded with `scripts/demo/seed_rich_demo.sql`; subscription active for a year.
+- Client auth switched to implicit flow so dashboard-sent recovery and confirmation emails work on any device.
 
 ### 2026-11-05 — Session 1
 
