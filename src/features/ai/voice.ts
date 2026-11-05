@@ -23,16 +23,20 @@ export type MicIssue = 'denied' | 'missing' | 'busy' | 'unsupported' | 'unknown'
 
 /** Differentiate OS microphone permission from Web Speech recognition failures. */
 export class MicrophoneAccessError extends Error {
-  constructor(public readonly reason: MicIssue, message: string) {
+  readonly reason: MicIssue;
+  constructor(reason: MicIssue, message: string) {
     super(message);
     this.name = 'MicrophoneAccessError';
+    this.reason = reason;
   }
 }
 
 export class SpeechListenError extends Error {
-  constructor(public readonly reason: 'denied' | 'service' | 'network' | 'audio' | 'unsupported' | 'unknown', message: string) {
+  readonly reason: 'denied' | 'service' | 'network' | 'audio' | 'unsupported' | 'unknown';
+  constructor(reason: SpeechListenError['reason'], message: string) {
     super(message);
     this.name = 'SpeechListenError';
+    this.reason = reason;
   }
 }
 
