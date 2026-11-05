@@ -62,6 +62,14 @@
 
 ## 6. Session log
 
+### 2026-11-05 — Session 4 (repair NVIDIA model retirement)
+
+- Confirmed from production logs at 15:54Z: the former NVIDIA model returned 410 and xAI Grok returned 403.
+- NVIDIA now tries currently catalogued GPT OSS 20B, Nemotron 3.5 Lightning and GLM 5.3 Flash models before switching providers; optional NVIDIA_MODEL is tried first.
+- Key-wide denials and provider rate limits skip sibling NVIDIA models; model retirement still falls through to the next candidate.
+- Added a permission-checked, RLS-protected read-only response for the exact question "Who has dues?" even without AI keys.
+- Added unit and local E2E regression checks. xAI 403 still requires checking model access, team permissions and API billing in xAI Console.
+ 
 ### 2026-11-05 — Session 3 (provider failover)
 
 - XS Supabase logs confirm user, gym and role checks succeed; provider error 403 triggers an XS AI failure.
