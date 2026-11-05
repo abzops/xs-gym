@@ -61,7 +61,9 @@ mislabelled as a microphone permission denial.
 Tests: `src/features/ai/voice.test.ts` validates real permission-request logic
 with simulated devices. `tests/ui/ai.mjs` covers phone/laptop light/dark
 permission grant, denial, retry, recognition-service errors, and input focus.
-Those UI tests use browser mocks; a final installed iPhone test is required.
+A dedicated GitHub Actions workflow (`.github/workflows/voice-ui.yml`) runs
+these mocked Chromium UI checks after relevant changes; 64/64 checks passed in
+run 42067348450. A final installed iPhone test is still required.
 
 ## What it can do
 
