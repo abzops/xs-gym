@@ -12,6 +12,10 @@ on:
       - '.github/workflows/e2e-analytics.yml'
   workflow_dispatch:
 
+concurrency:
+  group: xs-full-e2e-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
