@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { UserPlus } from 'lucide-react';
 import { useState } from 'react';
 import { useGym } from '../../app/gym';
+import { AppearanceControl } from '../../components/Appearance';
 import { Field, Loading, Notice, Sheet, useToast } from '../../components/ui';
 import { formatDate } from '../../lib/dates';
 import { errorMessage } from '../../lib/errors';
@@ -13,6 +14,10 @@ export function SettingsPage() {
   return (
     <div className="stack lg" style={{ maxWidth: 820 }}>
       <div className="page-head"><h1>Settings</h1></div>
+      <section className="card appearance-row">
+        <h2>Appearance</h2>
+        <AppearanceControl />
+      </section>
       {can('gym.settings') && <GymSettings />}
       <StaffSection />
       <section className="card stack">

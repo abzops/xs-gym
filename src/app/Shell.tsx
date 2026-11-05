@@ -3,6 +3,7 @@ import {
 } from 'lucide-react';
 import { useLayoutEffect, useRef, useState, type ComponentType } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router';
+import { AppearanceButton, AppearanceControl } from '../components/Appearance';
 import { Logo, Notice, Sheet } from '../components/ui';
 import { daysBetween, todayInGym } from '../lib/dates';
 import { setTransition } from '../lib/motion';
@@ -24,7 +25,7 @@ const NAV: NavItem[] = [
 ];
 
 // Transparent badge: black on light backgrounds, white on dark (brand rule).
-const mark = `${import.meta.env.BASE_URL}brand/favicon.svg`;
+const mark = `${import.meta.env.BASE_URL}brand/badge-black.svg`;
 const markOnDark = `${import.meta.env.BASE_URL}brand/badge-white.svg`;
 
 export function Shell() {
@@ -77,6 +78,7 @@ export function Shell() {
           </NavLink>
         ))}
         <div className="grow" />
+        <AppearanceButton className="signout" />
         <button className="signout" onClick={() => supabase.auth.signOut()} title="Sign out">
           <LogOut size={20} strokeWidth={1.9} /> <span className="nav-label">Sign out</span>
         </button>
@@ -84,7 +86,8 @@ export function Shell() {
 
       <div className="content">
         <header className="topbar">
-          <img className="brand-mark" src={mark} alt="" width={26} height={26} />
+          <img className="brand-mark only-light" src={mark} alt="" width={26} height={26} />
+          <img className="brand-mark only-dark" src={markOnDark} alt="" width={26} height={26} />
           <span className="gym">{gym.name}</span>
         </header>
         <main className="main">
@@ -112,6 +115,10 @@ export function Shell() {
 
       {more && (
         <Sheet title="More" onClose={() => setMore(false)}>
+          <div className="appearance-row">
+            <span>Appearance</span>
+            <AppearanceControl />
+          </div>
           <ul className="list grouped">
             {overflow.map((n) => (
               <li key={n.label}>

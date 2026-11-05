@@ -160,10 +160,10 @@ export function Logo({ width = 180, className = 'logo', onDark = false }: { widt
   const height = Math.round((width * 496) / 1439);
   if (onDark) return <img className={className} src={`${BRAND}xelorsoft-on-dark.svg`} alt="Xelorsoft" width={width} height={height} />;
   return (
-    <picture>
-      <source srcSet={`${BRAND}xelorsoft-on-dark.svg`} media="(prefers-color-scheme: dark)" />
-      <img className={className} src={`${BRAND}xelorsoft-on-light.svg`} alt="Xelorsoft" width={width} height={height} />
-    </picture>
+    <>
+      <img className={`${className} only-light`} src={`${BRAND}xelorsoft-on-light.svg`} alt="Xelorsoft" width={width} height={height} />
+      <img className={`${className} only-dark`} src={`${BRAND}xelorsoft-on-dark.svg`} alt="Xelorsoft" width={width} height={height} />
+    </>
   );
 }
 
