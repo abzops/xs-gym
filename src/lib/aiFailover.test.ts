@@ -2,8 +2,8 @@ import { describe, expect, it, vi } from 'vitest';
 import { requestLlmWithFailover, type LlmProvider } from '../../supabase/functions/xs-ai/agent';
 
 const providers: LlmProvider[] = [
-  { name: 'NVIDIA NIM', apiKey: 'test-nvidia', baseUrl: 'https://integrate.api.nvidia.com/v1', model: 'openai/gpt-oss-20b' },
-  { name: 'xAI Grok', apiKey: 'test-xai', baseUrl: 'https://api.x.ai/v1', model: 'grok-4.3' },
+  { name: 'NVIDIA NIM', group: 'nvidia', apiKey: 'test-nvidia', baseUrl: 'https://integrate.api.nvidia.com/v1', model: 'openai/gpt-oss-20b' },
+  { name: 'xAI Grok', group: 'xai', apiKey: 'test-xai', baseUrl: 'https://api.x.ai/v1', model: 'grok-4.3' },
 ];
 const convo = [{ role: 'system', content: 'You are a gym assistant.' }, { role: 'user', content: 'Who has dues?' }];
 const tools = [{ type: 'function', function: { name: 'get_overview', description: 'Get stats', parameters: { type: 'object', properties: {} } } }];
