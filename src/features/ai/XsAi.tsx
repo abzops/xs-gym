@@ -39,6 +39,7 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
   const [micDialog, setMicDialog] = useState<MicDialog>(null);
   const [micChecking, setMicChecking] = useState(false);
   const micCheckingRef = useRef(false);
+  const micAttemptRef = useRef(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const micActionRef = useRef<HTMLButtonElement>(null);
   const stopRef = useRef<() => void>(() => {});
@@ -55,6 +56,7 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
   useEffect(() => { if (micDialog) micActionRef.current?.focus(); }, [micDialog]);
   const stopInteraction = useCallback(() => {
     closingRef.current = true;
+    micAttemptRef.current++;
     stopRef.current();
     stopSpeaking();
   }, []);
@@ -136,19 +138,20 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
   async function enableMicrophone() {
     if (closingRef.current || micCheckingRef.current || requestBusy.current) return;
     micCheckingRef.current = true;
+    const attempt = ++micAttemptRef.current;
     setMicChecking(true);
     try {
       // This button press triggers the native Allow permission prompt when iOS
       // offers one. Never fake or bypass an operating-system permission.
       await requestMicrophone();
-      if (closingRef.current) return;
+      if (closingRef.current || micAttemptRef.current !== attempt) return;
       micVerifiedForPage = true;
       setMicDialog(null);
       // Immediately try listening. On iOS versions that require a second
       // user gesture for recognition, a clear in-app Retry action is shown.
       void beginListening();
     } catch (e) {
-      if (!closingRef.current) {
+      if (!closingRef.current && micAttemptRef.current === attempt) {
         setMicDialog(e instanceof MicrophoneAccessError && e.reason === 'denied'
           ? 'denied' : 'unavailable');
       }
@@ -159,6 +162,7 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
   }
 
   function useKeyboard() {
+    micAttemptRef.current++;
     setMicDialog(null);
     requestAnimationFrame(() => inputRef.current?.focus());
   }
@@ -281,12 +285,12 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
                       : micDialog === 'intro' ? 'Allow microphone' : 'Try again'}
                   </button>
                 )}
-                <button ref={micDialog === 'unavailable' ? micActionRef : undefined} type="button" className="btn ghost" disabled={micChecking} onClick={useKeyboard}>
+                <button ref={micDialog === 'unavailable' ? micActionRef : undefined} type="button" className="btn ghost" onClick={useKeyboard}>
                   <Keyboard size={17} /> Use keyboard instead
                 </button>
               </div>
-              <button type="button" className="xsai-mic-dismiss" disabled={micChecking}
-                aria-label="Dismiss microphone help" onClick={() => setMicDialog(null)}><X size={19}/></button>
+              <button type="button" className="xsai-mic-dismiss"
+                aria-label="Dismiss microphone help" onClick={() => { micAttemptRef.current++; setMicDialog(null); }}><X size={19}/></button>
             </section>
           </div>
         )}
