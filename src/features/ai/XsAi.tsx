@@ -24,6 +24,22 @@ const HINTS: Record<Lang, string[]> = {
   ml: ['ഇന്ന് എത്ര രൂപ കിട്ടി?', 'ആർക്കൊക്കെ കുടിശ്ശികയുണ്ട്?', 'രാഹുൽ 1500 UPI ആയി അടച്ചു', 'അഞ്ജലിയെ ചെക്ക് ഇൻ ചെയ്യൂ'],
 };
 
+type MicCopy = { title: string; detail: string; button: string };
+const MIC_COPY: Record<Lang, Record<Exclude<MicDialog, null>, MicCopy>> = {
+  en: {
+    intro: { title: 'Enable microphone', detail: 'Allow XS AI to hear your gym commands. Your phone may ask for microphone permission.', button: 'Allow microphone' },
+    denied: { title: 'Microphone permission needed', detail: 'Your phone did not allow microphone access. Try again to request permission. If access was permanently denied, iOS may not show the Allow pop-up again.', button: 'Try again' },
+    service: { title: 'Speech recognition unavailable', detail: 'The microphone is ready, but speech recognition could not start in this installed app. Try voice again, or dictate using your phone’s keyboard.', button: 'Try voice again' },
+    unavailable: { title: 'Microphone unavailable', detail: 'This device could not open a microphone. You can still type or use your keyboard’s dictation feature.', button: '' },
+  },
+  ml: {
+    intro: { title: 'മൈക്രോഫോൺ അനുവദിക്കുക', detail: 'ജിം കാര്യങ്ങൾ സംസാരിച്ച് ചോദിക്കാൻ XS AI-ക്ക് മൈക്രോഫോൺ അനുമതി നൽകൂ. ഫോണിൽ Allow എന്ന പോപ്പപ്പ് വന്നേക്കാം.', button: 'മൈക്രോഫോൺ അനുവദിക്കുക' },
+    denied: { title: 'മൈക്രോഫോൺ അനുമതി ആവശ്യമാണ്', detail: 'ഫോൺ മൈക്രോഫോൺ അനുവദിച്ചില്ല. വീണ്ടും ശ്രമിക്കൂ. സ്ഥിരമായി ബ്ലോക്ക് ചെയ്തിട്ടുണ്ടെങ്കിൽ Allow പോപ്പപ്പ് വീണ്ടും വരണമെന്നില്ല.', button: 'വീണ്ടും ശ്രമിക്കുക' },
+    service: { title: 'ശബ്ദം തിരിച്ചറിയാൻ കഴിയുന്നില്ല', detail: 'മൈക്രോഫോൺ അനുവദിച്ചിട്ടുണ്ട്. പക്ഷേ ഈ ഇൻസ്റ്റാൾ ചെയ്ത ആപ്പിൽ ശബ്ദം തിരിച്ചറിയൽ തുടങ്ങാനായില്ല. വീണ്ടും ശ്രമിക്കൂ, അല്ലെങ്കിൽ കീബോർഡ് ഉപയോഗിക്കൂ.', button: 'വീണ്ടും സംസാരിക്കുക' },
+    unavailable: { title: 'മൈക്രോഫോൺ ലഭ്യമല്ല', detail: 'ഈ ഫോണിൽ മൈക്രോഫോൺ തുറക്കാനായില്ല. പകരം ടൈപ്പ് ചെയ്യാം, അല്ലെങ്കിൽ കീബോർഡിലെ ഡിക്റ്റേഷൻ ഉപയോഗിക്കാം.', button: '' },
+  },
+};
+
 /** XS AI: talk to the gym. Opens as a sheet; every action shows a card with Undo. */
 export function XsAiPanel({ onClose }: { onClose: () => void }) {
   const { gym } = useGym();
@@ -254,21 +270,8 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
           <div className="xsai-mic-backdrop">
             <section className="xsai-mic-dialog" role="dialog" aria-modal="true" aria-labelledby="xsai-mic-heading" aria-describedby="xsai-mic-desc">
               <span className="xsai-mic-icon" aria-hidden><Mic size={27} strokeWidth={1.8} /></span>
-              <h3 id="xsai-mic-heading">
-                {micDialog === 'intro' ? 'Enable microphone'
-                  : micDialog === 'denied' ? 'Microphone permission needed'
-                  : micDialog === 'service' ? 'Speech recognition unavailable'
-                  : 'Microphone unavailable'}
-              </h3>
-              <p id="xsai-mic-desc">
-                {micDialog === 'intro'
-                  ? 'Allow XS AI to hear your gym commands. Your phone may ask for microphone permission.'
-                  : micDialog === 'denied'
-                    ? 'Your phone did not allow microphone access. Try again to request permission. If access was permanently denied, iOS may not show the Allow pop-up again.'
-                    : micDialog === 'service'
-                      ? 'The microphone is ready, but speech recognition could not start in this installed app. Try voice again, or dictate using your phone’s keyboard.'
-                      : 'This device could not open a microphone. You can still type or use your keyboard’s dictation feature.'}
-              </p>
+              <h3 id="xsai-mic-heading">{MIC_COPY[lang][micDialog].title}</h3>
+              <p id="xsai-mic-desc">{MIC_COPY[lang][micDialog].detail}</p>
               <div className="xsai-mic-actions">
                 {micDialog !== 'unavailable' && (
                   <button ref={micActionRef} type="button" className="btn primary" disabled={micChecking}
@@ -280,17 +283,16 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
                         void enableMicrophone();
                       }
                     }}>
-                    {micChecking ? 'Requesting…'
-                      : micDialog === 'service' ? 'Try voice again'
-                      : micDialog === 'intro' ? 'Allow microphone' : 'Try again'}
+                    {micChecking ? (lang === 'ml' ? 'അനുമതി ചോദിക്കുന്നു…' : 'Requesting…')
+                      : MIC_COPY[lang][micDialog].button}
                   </button>
                 )}
                 <button ref={micDialog === 'unavailable' ? micActionRef : undefined} type="button" className="btn ghost" onClick={useKeyboard}>
-                  <Keyboard size={17} /> Use keyboard instead
+                  <Keyboard size={17} /> {lang === 'ml' ? 'കീബോർഡ് ഉപയോഗിക്കുക' : 'Use keyboard instead'}
                 </button>
               </div>
               <button type="button" className="xsai-mic-dismiss"
-                aria-label="Dismiss microphone help" onClick={() => { micAttemptRef.current++; setMicDialog(null); }}><X size={19}/></button>
+                aria-label={lang === 'ml' ? 'മൈക്രോഫോൺ സഹായം അടയ്ക്കുക' : 'Dismiss microphone help'} onClick={() => { micAttemptRef.current++; setMicDialog(null); }}><X size={19}/></button>
             </section>
           </div>
         )}
