@@ -108,7 +108,7 @@ function Allow({ perm, children }: { perm: string; children: ReactNode }) {
 function GymHome() {
   const { gym, can } = useGym();
   // A new owner who has not finished setup lands in the setup wizard.
-  if (!gym.onboarded_at && can('gym.settings')) return <Navigate to="welcome" replace />;
+  if (gym.onboarded_at === null && can('gym.settings')) return <Navigate to="welcome" replace />;
   if (can('reports.operational')) return <Dashboard />;
   return <Navigate to="members" replace />;
 }
