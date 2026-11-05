@@ -234,6 +234,11 @@ html[data-vt="push"]::view-transition-old(page) { animation: vt-push-out 360ms v
 html[data-vt="push"]::view-transition-new(page) { animation: vt-push-in 360ms var(--ease-drawer) both; }
 html[data-vt="pop"]::view-transition-old(page) { animation: vt-pop-out 320ms var(--ease-drawer) both; }
 html[data-vt="pop"]::view-transition-new(page) { animation: vt-pop-in 320ms var(--ease-drawer) both; }
+/* Switching sections (tab bar / sidebar) is near-instant, like iOS tabs: the
+   old screen is gone at once and the new one settles in over 110 ms. */
+html[data-vt="tab"]::view-transition-old(page) { animation: none; opacity: 0; }
+html[data-vt="tab"]::view-transition-new(page) { animation: vt-settle 110ms ease-out both; }
+@keyframes vt-settle { from { opacity: 0.4; } }
 @keyframes vt-fade-out { to { opacity: 0; } }
 @keyframes vt-fade-in { from { opacity: 0; transform: translateY(6px); } }
 @keyframes vt-push-out { to { opacity: 0.6; transform: translateX(-24%); } }
