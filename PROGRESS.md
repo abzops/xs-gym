@@ -99,6 +99,15 @@
 - Elevation system (`src/styles/elevation.css`): layered shadow tokens `--elev-1/2/3`, hero, button and chip
   levels. Dark mode uses top highlights, faint rings and a subtle sheen instead of invisible shadows. Tappable
   cards lift 2 px on hover (pointer devices only, off with reduced motion); flat in high contrast and print.
+- Status colours: iOS hues (red, green, orange) — vivid for dots/icons, text shades kept at ≥ 4.5:1 on white and
+  on their tints; dark mode uses iOS dark system colours. Shown only on status (badges, dues, expiring icon).
+- Inputs: filled 48 px fields, 12 px radius, hairline edge; hover darkens the fill (90 ms), focus lifts to white with
+  a crisp ring and soft halo; custom select chevron; red ring when invalid. All hover/press transitions 80–140 ms;
+  card hover shadow fades on a pre-rendered layer (compositor-only, no repaint).
+- Vendor code split into `react`, `supabase` and `vendor` chunks so releases don't re-download libraries.
+- `tests/ui/perf.mjs` (shared fixtures in `tests/ui/mock.mjs`): 4× CPU + fast 4G phone profile. Latest:
+  LCP 1.3–1.5 s, CLS ≤ 0.035, TBT ≤ 234 ms, worst tap-to-paint 72 ms; hover, theme switch, typing and scroll
+  all hold 60 fps (p95 16.7–16.8 ms, no frames over 33 ms). First-load JS still ~193 KB gzip (budget 170).
 
 ### 2026-11-05 — Session 1
 
