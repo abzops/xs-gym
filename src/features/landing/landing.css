@@ -85,7 +85,7 @@ html:has(.lp) { scroll-behavior: smooth; }
 .ph-paid { font-size: 0.6875rem; font-weight: 600; color: var(--ok); }
 .ph-paid.pop { animation: ph-pop 700ms var(--ease-out) both; }
 @keyframes ph-pop { 0% { opacity: 0; transform: translateY(6px); } 100% { opacity: 1; transform: none; } }
-@media (prefers-color-scheme: dark) { .phone-screen { background: #ECECE8; } }
+[data-theme="dark"] .phone-screen { background: #ECECE8; }
 
 /* ---------- Sections ---------- */
 .lp-section { padding: 88px 0; }

@@ -103,9 +103,7 @@
   .q.primary:hover { background: color-mix(in srgb, var(--primary) 86%, var(--canvas)); }
 }
 
-@media (prefers-color-scheme: dark) {
-  .hero-card { background: #1C1C1E; box-shadow: inset 0 0.5px 0 rgb(255 255 255 / 10%); }
-}
+[data-theme="dark"] .hero-card { background: #1C1C1E; box-shadow: inset 0 0.5px 0 rgb(255 255 255 / 10%); }
 @media (prefers-reduced-motion: reduce) {
   .paybar i { transition: none; }
 }
