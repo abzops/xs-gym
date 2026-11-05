@@ -40,6 +40,7 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
   const [micChecking, setMicChecking] = useState(false);
   const micCheckingRef = useRef(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const micActionRef = useRef<HTMLButtonElement>(null);
   const stopRef = useRef<() => void>(() => {});
   const closingRef = useRef(false);
   const requestBusy = useRef(false);
@@ -51,6 +52,7 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
 
   useEffect(() => { try { localStorage.setItem(LANG_KEY, lang); } catch { /* storage blocked */ } }, [lang]);
   useEffect(() => { scroller.current?.scrollTo({ top: scroller.current.scrollHeight, behavior: 'smooth' }); }, [turns, live, state]);
+  useEffect(() => { if (micDialog) micActionRef.current?.focus(); }, [micDialog]);
   const stopInteraction = useCallback(() => {
     closingRef.current = true;
     stopRef.current();
@@ -266,15 +268,21 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
               </p>
               <div className="xsai-mic-actions">
                 {micDialog !== 'unavailable' && (
-                  <button type="button" className="btn primary" disabled={micChecking}
-                    onClick={() => micDialog === 'service'
-                      ? (setMicDialog(null), void beginListening()) : void enableMicrophone()}>
+                  <button ref={micActionRef} type="button" className="btn primary" disabled={micChecking}
+                    onClick={() => {
+                      if (micDialog === 'service') {
+                        setMicDialog(null);
+                        void beginListening();
+                      } else {
+                        void enableMicrophone();
+                      }
+                    }}>
                     {micChecking ? 'Requesting…'
                       : micDialog === 'service' ? 'Try voice again'
                       : micDialog === 'intro' ? 'Allow microphone' : 'Try again'}
                   </button>
                 )}
-                <button type="button" className="btn ghost" disabled={micChecking} onClick={useKeyboard}>
+                <button ref={micDialog === 'unavailable' ? micActionRef : undefined} type="button" className="btn ghost" disabled={micChecking} onClick={useKeyboard}>
                   <Keyboard size={17} /> Use keyboard instead
                 </button>
               </div>
