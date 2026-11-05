@@ -18,9 +18,14 @@ export type ChatMessage = { role: 'user' | 'assistant'; content: string };
 export type AgentRequest = { gym_id: string; messages: ChatMessage[]; lang?: 'en' | 'ml' };
 export type Action = { tool: string; ok: boolean; summary: string; undo?: { rpc: string; args: Record<string, unknown> }; error?: string };
 export type AgentResponse = { reply: string; actions: Action[]; navigate?: string; changed: string[] };
+export type LlmProvider = {
+  name: string; baseUrl: string; apiKey: string; model: string;
+};
 export type AgentEnv = {
   supabaseUrl: string; anonKey: string; userToken: string;
-  llmBaseUrl: string; llmApiKey: string; llmModel: string;
+  // Existing scripted tests and single-provider installations remain compatible.
+  llmBaseUrl?: string; llmApiKey?: string; llmModel?: string;
+  providers?: LlmProvider[];
   fetch?: typeof fetch; now?: () => Date;
 };
 
@@ -254,7 +259,68 @@ function systemPrompt(c: Ctx, lang: 'en' | 'ml') {
       : 'Reply in clear Indian English. If the user speaks Malayalam, reply in Malayalam.',
     'Your reply is read aloud: one to three short sentences, no lists, no markdown, no ids. After a change, say what you did in plain words.',
     'If a tool returns an error, explain it simply (for example "Rahul already has that number" or "you don\'t have permission to reverse payments").',
+    'Never repeat a successful completed action shown in prior tool results, including after a provider switch.',
   ].join('\n');
+}
+
+// ---------- provider failover ----------
+// Retry only LLM inference. Database tools previously executed are never
+// rerun by this function: their outcomes are already present in convo.
+export async function requestLlmWithFailover(
+  providers: LlmProvider[],
+  convo: Json[],
+  llmTools: Json[],
+  fetcher: typeof fetch,
+): Promise<Json> {
+  if (!providers.length) throw new ApiError(
+    'XS AI is not configured. Add NVIDIA_API_KEY or XAI_API_KEY in Supabase Edge Function Secrets.', 503,
+  );
+  const failures: string[] = [];
+  for (const provider of providers) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 25_000);
+    try {
+      const response = await fetcher(`${provider.baseUrl.replace(/\/$/, '')}/chat/completions`, {
+        method: 'POST',
+        headers: { authorization: `Bearer ${provider.apiKey}`, 'content-type': 'application/json' },
+        body: JSON.stringify({
+          model: provider.model, messages: convo, tools: llmTools,
+          tool_choice: 'auto', temperature: 0.2, max_tokens: 2048,
+        }),
+        signal: controller.signal,
+      });
+      if (!response.ok) {
+        failures.push(`${provider.name} (${response.status})`);
+        console.warn('XS AI provider returned an error', provider.name, response.status);
+        continue;
+      }
+      const payload = await response.json() as { choices?: { message?: Json }[] };
+      const msg = payload?.choices?.[0]?.message;
+      const calls = msg?.tool_calls;
+      const hasCalls = Array.isArray(calls) && calls.length > 0 && calls.every((call) =>
+        !!call && typeof call === 'object' &&
+        typeof call.id === 'string' && typeof call.function?.name === 'string' &&
+        typeof call.function?.arguments === 'string');
+      const malformedCalls = calls !== undefined && calls !== null &&
+        (!Array.isArray(calls) || (calls.length > 0 && !hasCalls));
+      if (!msg || malformedCalls ||
+          (!hasCalls && !(typeof msg.content === 'string' && msg.content.trim()))) {
+        failures.push(`${provider.name} (invalid response)`);
+        console.warn('XS AI provider returned an invalid completion', provider.name);
+        continue;
+      }
+      return msg;
+    } catch {
+      failures.push(`${provider.name} (${controller.signal.aborted ? 'timeout' : 'network error'})`);
+      console.warn('XS AI provider request failed', provider.name, controller.signal.aborted ? 'timeout' : 'network error');
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+  throw new ApiError(
+    `No AI provider could complete the request: ${failures.join(' → ')}. Check keys, model access, quota and credits.`,
+    503,
+  );
 }
 
 // ---------- main ----------
@@ -289,17 +355,15 @@ export async function runAgent(req: AgentRequest, env: AgentEnv): Promise<AgentR
   const byName = new Map(tools.map((t) => [t.name, t]));
   const llmTools = tools.map((t) => ({ type: 'function', function: { name: t.name, description: t.description, parameters: t.parameters } }));
   const convo: Json[] = [{ role: 'system', content: systemPrompt(ctx, lang) }, ...messages];
+  const providers: LlmProvider[] = env.providers ?? (
+    env.llmApiKey && env.llmBaseUrl && env.llmModel
+      ? [{ name: 'Default', apiKey: env.llmApiKey, baseUrl: env.llmBaseUrl, model: env.llmModel }]
+      : []
+  );
   const actions: Action[] = []; const changed = new Set<string>(); let navigate: string | undefined; let writes = 0;
 
   for (let turn = 0; turn < MAX_TURNS; turn++) {
-    const r = await f(`${env.llmBaseUrl.replace(/\/$/, '')}/chat/completions`, {
-      method: 'POST', headers: { authorization: `Bearer ${env.llmApiKey}`, 'content-type': 'application/json' },
-      body: JSON.stringify({ model: env.llmModel, messages: convo, tools: llmTools, tool_choice: 'auto', temperature: 0.2 }),
-    });
-    if (r.status === 429) throw new ApiError('XS AI is busy (free usage limit reached). Try again in a minute.', 429);
-    if (!r.ok) throw new ApiError(`the AI service failed (${r.status})`, 502);
-    const msg = ((await r.json()) as { choices?: { message?: Json }[] }).choices?.[0]?.message;
-    if (!msg) throw new ApiError('the AI service returned nothing', 502);
+    const msg = await requestLlmWithFailover(providers, convo, llmTools, f);
     const calls = (msg.tool_calls as { id: string; function: { name: string; arguments: string } }[] | undefined) ?? [];
     if (!calls.length) return { reply: str(msg.content, 1200) || 'Done.', actions, navigate, changed: [...changed] };
     convo.push({ role: 'assistant', content: msg.content ?? '', tool_calls: calls });

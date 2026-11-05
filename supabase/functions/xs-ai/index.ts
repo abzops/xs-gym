@@ -1,34 +1,32 @@
-// Supabase Edge Function: /functions/v1/xs-ai
-//   POST { gym_id, messages: [{ role, content }], lang: 'en' | 'ml' } → agent reply
-//   GET  → { configured, model } (no gym data; for setup checks)
-// Secrets (Dashboard → Edge Functions → Secrets):
-//   LLM_API_KEY   free key from Google AI Studio (Gemini), Groq or OpenRouter
-//   LLM_MODEL     optional; by default the best available Gemini Flash model is picked
-//   LLM_BASE_URL  optional; default is Gemini's OpenAI-compatible endpoint
-import { ApiError, runAgent } from './agent.ts';
+// Authenticated gym operations with ordered model-provider failover.
+// Provider credentials must only be set in Supabase Edge Function Secrets.
+import { ApiError, runAgent, type LlmProvider } from './agent.ts';
 
 const ALLOWED_ORIGINS = ['https://abzops.github.io', 'http://localhost:5173', 'http://localhost:4173', 'http://localhost:4185'];
-const BASE = (Deno.env.get('LLM_BASE_URL') ?? 'https://generativelanguage.googleapis.com/v1beta/openai').replace(/\/$/, '');
-const KEY = Deno.env.get('LLM_API_KEY') ?? '';
 
-let chosen: Promise<string> | null = null;
-/** LLM_MODEL if set, else the newest general Flash model the key can use. */
-function model(): Promise<string> {
-  const fixed = Deno.env.get('LLM_MODEL');
-  if (fixed) return Promise.resolve(fixed);
-  chosen ??= (async () => {
-    const r = await fetch(`${BASE}/models`, { headers: { authorization: `Bearer ${KEY}` } });
-    if (!r.ok) { chosen = null; throw new ApiError(r.status === 400 || r.status === 401 || r.status === 403 ? 'The AI key was rejected. Check LLM_API_KEY in Supabase.' : `Could not list AI models (${r.status}).`, 503); }
-    const ids: string[] = ((await r.json()).data ?? []).map((m: { id: string }) => m.id.replace(/^models\//, ''));
-    const usable = ids.filter((id) => /gemini/.test(id) && /flash/.test(id) && !/(lite|image|tts|audio|live|thinking|embedding|exp|preview)/.test(id));
-    const pick = (list: string[]) => list.sort((a, b) => version(b) - version(a) || a.length - b.length)[0];
-    const best = pick(usable) ?? pick(ids.filter((id) => /flash/.test(id) && !/(image|tts|audio|live|embedding)/.test(id))) ?? ids[0];
-    if (!best) { chosen = null; throw new ApiError('No AI model is available for this key.', 503); }
-    return best;
-  })();
-  return chosen;
+// NVIDIA NIM -> xAI Grok -> optional OpenAI-compatible provider.
+function configuredProviders(): LlmProvider[] {
+  const providers: LlmProvider[] = [];
+  const nvidiaKey = Deno.env.get('NVIDIA_API_KEY');
+  const xaiKey = Deno.env.get('XAI_API_KEY');
+  const legacyKey = Deno.env.get('LLM_API_KEY');
+  if (nvidiaKey) providers.push({
+    name: 'NVIDIA NIM', apiKey: nvidiaKey,
+    baseUrl: 'https://integrate.api.nvidia.com/v1',
+    model: Deno.env.get('NVIDIA_MODEL') || 'mistralai/mistral-nemotron',
+  });
+  if (xaiKey) providers.push({
+    name: 'xAI Grok', apiKey: xaiKey,
+    baseUrl: 'https://api.x.ai/v1',
+    model: Deno.env.get('XAI_MODEL') || 'grok-4.3',
+  });
+  if (legacyKey) providers.push({
+    name: 'Additional', apiKey: legacyKey,
+    baseUrl: Deno.env.get('LLM_BASE_URL') || 'https://generativelanguage.googleapis.com/v1beta/openai',
+    model: Deno.env.get('LLM_MODEL') || 'gemini-2.5-flash',
+  });
+  return providers;
 }
-const version = (id: string) => Number((/(\d+(?:\.\d+)?)/.exec(id) ?? ['0', '0'])[1]);
 
 Deno.serve(async (req) => {
   const origin = req.headers.get('origin') ?? '';
@@ -39,16 +37,23 @@ Deno.serve(async (req) => {
     vary: 'origin',
   };
   if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: cors });
-  const json = (status: number, body: unknown) => new Response(JSON.stringify(body), { status, headers: { ...cors, 'content-type': 'application/json' } });
-  if (!KEY) return json(503, { configured: false, error: 'XS AI is not set up yet. The owner needs to add an AI key in Supabase.' });
-
+  const json = (status: number, body: unknown) =>
+    new Response(JSON.stringify(body), { status, headers: { ...cors, 'content-type': 'application/json' } });
   try {
-    if (req.method === 'GET') return json(200, { configured: true, model: await model() });
+    const providers = configuredProviders();
+    if (req.method === 'GET') return json(200, {
+      configured: providers.length > 0,
+      providers: providers.map((p) => ({ name: p.name, model: p.model })),
+    });
     if (req.method !== 'POST') return json(405, { error: 'GET or POST only' });
+    if (!providers.length) return json(503, {
+      error: 'XS AI is not configured. Add NVIDIA_API_KEY or XAI_API_KEY to Supabase Edge Function Secrets.',
+    });
     const token = (req.headers.get('authorization') ?? '').replace(/^Bearer\s+/i, '');
     const out = await runAgent(await req.json(), {
-      supabaseUrl: Deno.env.get('SUPABASE_URL')!, anonKey: Deno.env.get('SUPABASE_ANON_KEY')!, userToken: token,
-      llmApiKey: KEY, llmModel: await model(), llmBaseUrl: BASE,
+      supabaseUrl: Deno.env.get('SUPABASE_URL')!,
+      anonKey: Deno.env.get('SUPABASE_ANON_KEY')!,
+      userToken: token, providers,
     });
     return json(200, out);
   } catch (e) {

@@ -62,6 +62,13 @@
 
 ## 6. Session log
 
+### 2026-11-05 — Session 3 (provider failover)
+
+- XS Supabase logs confirm user, gym and role checks succeed; provider error 403 triggers an XS AI failure.
+- Added NVIDIA NIM → xAI Grok → optional OpenAI-compatible inference failover within each model step, without replaying completed database tools.
+- Added deterministic CI tests for upstream 403, 429, invalid responses, all-provider failures and retained tool results.
+- Owner must add `NVIDIA_API_KEY` and `XAI_API_KEY` as Supabase Edge Function Secrets for project `knuanihnxtxtyrgvsumq`. Neither key belongs in client-side code.
+
 ### 2026-11-05 — Session 2 (voice reliability)
 
 - Prevented rapid double submissions of XS AI commands and Undo actions with synchronous guards.
