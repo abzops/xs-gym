@@ -11,10 +11,10 @@
 | Phase | **P0 core operations built and deployed** (Phases 3–4 compressed at owner's request) |
 | Live app | <https://abzops.github.io/xs-gym/> — served from `gh-pages`, updated by CI on every push to `main` |
 | Backend | Supabase project `xs-gym`, ref `knuanihnxtxtyrgvsumq`, region `ap-south-1`, Free plan |
-| Database | 3 migrations applied (`supabase/migrations/`), 16 tables, RLS on all |
+| Database | 4 live migrations applied, 17 public tables; RLS on all exposed tables |
 | CI | `.github/workflows/pages.yml`: typecheck, lint, unit tests, DB tests on PG16, secret scan → `gh-pages` |
 | Remote | `https://github.com/abzops/xs-gym`, branch `main`; commits authored as `abzops` |
-| Last updated | 05 Nov 2026 |
+| Last updated | 06 Nov 2026 |
 
 ## 2. Rules for whoever continues
 
@@ -61,6 +61,36 @@
 6. Phases 6–7 (AI text and voice) only after the pilot uses the core daily.
 
 ## 6. Session log
+
+### 2026-11-06 — Release: Analytics + Enquiries + onboarding + cloud voice
+
+- Applied `analytics_leads_onboarding` migration to production Supabase project
+  `knuanihnxtxtyrgvsumq`; verified 4 applied migrations and 17 public tables.
+  Existing production data was preserved: one gym, 77 members, 198 payments
+  at migration time. Security advisor showed no error-level findings, but
+  existing and new `SECURITY DEFINER` permission warnings require review.
+- Verified live `gym_analytics()` returns six months of owner-authorized
+  results; `save_enquiry()` passed a real signed-in role test in a transaction
+  that was rolled back, leaving zero QA records.
+- Deployed Supabase `xs-ai` Edge Function version **16** with active-staff JWT
+  checks for cloud transcription; accepts existing `NVIDIA_API_KEY` (English
+  Riva ASR), and `Grok` or `XAI_API_KEY` (xAI STT), plus optional Groq and
+  Gemini credentials. Fallback is server-side; keys never enter the frontend.
+  xAI chat previously returned 403: provider access/credits remain unverified.
+  xAI's published STT language list doesn't explicitly guarantee Malayalam.
+- Fast-forwarded tested `analytics-onboarding` branch to `main`, published
+  `gh-pages` and GitHub Pages successfully. Production build, DB checks,
+  secret scan and deploy jobs passed.
+- Independent phone/tablet/laptop E2E tests **40/40 each** against isolated
+  PostgreSQL 16 with real migrations (run 42117676067). Simulated voice UI
+  test **56/56** passed (run 42118694866). Physical iOS Home Screen microphone,
+  actual vendor STT permission and Malayalam accuracy still require field QA.
+- The existing behavior of voiding a paid charge (credit created, membership
+  remains active) remains an **open product decision**; do not silently change
+  that accounting rule.
+- Next owner checks: production signup confirmation SMTP/redirect settings
+  (X6/X7), iPhone installed-PWA microphone permission and spoken commands,
+  actual STT provider account access, backups before real customers.
 
 ### 2026-11-05 — Session 5 (iOS PWA microphone permission)
 
@@ -166,7 +196,7 @@
 - Phase 0: inspected supplied files (greenfield), recovered SVG masters, wrote audit, plan, design docs and ADRs.
 
 ### 2026-11-05 — XS AI voice, speed, check-in removal
-- Voice works in the installed iPhone app: the app records the microphone itself (Web Audio, end-of-speech detection,
+- Installed-iPhone voice recording is implemented, but physical-device QA remains open: Web Audio, end-of-speech detection,
   16 kHz WAV) and the `xs-ai` function transcribes it (Groq Whisper, else Gemini). One tap, in-app Allow prompt,
   in-app help on denial with Try again / keyboard. Web Speech remains a fallback where it works.
 - Speed: providers fastest first (Groq → Gemini → NVIDIA → xAI), hedged requests (backup after 5 s, 30 s cap),
@@ -174,8 +204,9 @@
   confirmation after successful changes.
 - Check-in removed from the web app (nav, page, dashboard, member page, reports, landing, AI tools). Database
   history kept; dashboard shows New members and Expiring soon instead. Pages show a skeleton while loading.
-- Edge Function `xs-ai` v15 deployed. OWNER ACTION: add `GROQ_API_KEY` (free) in Supabase secrets — voice and fast
-  replies need it; NVIDIA timed out and the xAI key returned 403 in the logs.
+- Edge Function `xs-ai` v16 deployed. NVIDIA English ASR and xAI STT now use existing server-side
+  keys; a Groq or Gemini key is still recommended for more dependable Malayalam transcription.
+  xAI key previously returned 403 for chat; production STT entitlement has not been proven.
 - Tests: e2e phone/tablet/laptop 37/37 each, agent 19 checks, voice UI 52 checks, all UI suites.
 
 ### 2026-11-05 — Analytics, onboarding, enquiries, WhatsApp
