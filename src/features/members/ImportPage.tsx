@@ -7,7 +7,7 @@ import { BackLink, Notice } from '../../components/ui';
 import { downloadCSV } from '../../lib/csv';
 import { parseCSV, toImportRows, type ImportRow } from '../../lib/csvParse';
 import { errorMessage } from '../../lib/errors';
-import { rpc } from '../../lib/supabase';
+import { rpc, supabase } from '../../lib/supabase';
 
 type Result = { line: number; name: string; ok: boolean; message: string };
 
@@ -28,6 +28,13 @@ export function ImportPage() {
     setFileName(file.name);
     if (file.size > 2_000_000) { setRows([]); setMissing(['file is larger than 2 MB']); return; }
     const parsed = toImportRows(parseCSV(await file.text()));
+    // Flag numbers that already belong to a member, so the preview matches the result.
+    const { data: existing } = await supabase.from('members').select('phone, member_no').eq('gym_id', gym.id).limit(20000);
+    const taken = new Map((existing ?? []).map((m) => [String(m.phone).replace(/\D/g, '').slice(-10), m.member_no as string]));
+    for (const r of parsed.rows) {
+      const no = taken.get(r.phone.replace(/\D/g, '').slice(-10));
+      if (no && r.problems.length === 0) r.problems.push(`already a member (${no})`);
+    }
     setRows(parsed.rows.slice(0, 2000));
     setMissing(parsed.missing);
   }
@@ -106,7 +113,7 @@ export function ImportPage() {
       {results && (
         <div className="card stack">
           <Notice tone={added === results.length ? 'ok' : 'warn'}>
-            Added {added} of {results.length}. {results.length - added > 0 ? 'The rest were not added — usually because the phone number already belongs to a member.' : ''}
+            Added {added} of {results.length}. {results.length - added > 0 ? 'The rows below were not added.' : ''}
           </Notice>
           <div className="table-wrap">
             <table className="data">
