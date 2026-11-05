@@ -1,0 +1,57 @@
+# Browser-based checks for XS AI permission onboarding. Does not call live
+# Supabase, microphone hardware, NVIDIA or xAI; APIs are mocked in the browser.
+name: XS AI voice UI
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'src/features/ai/**'
+      - 'tests/ui/ai.mjs'
+      - '.github/workflows/voice-ui.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  microphone:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      VITE_SUPABASE_URL: https://knuanihnxtxtyrgvsumq.supabase.co
+      VITE_SUPABASE_PUBLISHABLE_KEY: sb_publishable_2NshKjNCOJkokq3z0bezrw_21Dl7t-j
+      VITE_BASE_PATH: /xs-gym/
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Install isolated Playwright Chromium runner
+        run: |
+          npm install --no-save --no-package-lock playwright@1.64.1
+          npx playwright install --with-deps chromium
+      - run: npm run build
+      - name: Start local GitHub Pages preview
+        run: |
+          npm run preview -- --host 127.0.0.1 --port 4173 >/tmp/xs-voice-preview.log 2>&1 &
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:4173/xs-gym/ >/dev/null; then exit 0; fi
+            sleep 1
+          done
+          cat /tmp/xs-voice-preview.log
+          exit 1
+      - name: Check voice permission flow on phone and desktop, light and dark
+        run: |
+          mkdir -p /tmp/xs-voice-screens
+          node tests/ui/ai.mjs "$(pwd)/node_modules/playwright/index.js" "http://127.0.0.1:4173/xs-gym/" "/tmp/xs-voice-screens"
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: xs-voice-debug
+          path: |
+            /tmp/xs-voice-screens/
+            /tmp/xs-voice-preview.log
+          retention-days: 3
