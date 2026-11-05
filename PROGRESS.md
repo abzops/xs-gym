@@ -88,6 +88,11 @@
 - Demo login created for pitching: `admin@xelorsoft.com` (password shared with the owner directly, not stored in the repo),
   owner of "XS Fitness Studio" seeded with `scripts/demo/seed_rich_demo.sql`; subscription active for a year.
 - Client auth switched to implicit flow so dashboard-sent recovery and confirmation emails work on any device.
+- Dashboard rebuilt iOS-style: greeting, round quick actions (pills on wide screens), "Collected today" hero
+  with cash/UPI bar, 2×2 stat tiles, inset grouped "This month" and "Latest check-ins" lists (`dashboard.css`).
+  Dark mode now uses iOS system greys (#000 / #1C1C1E / #2C2C2E); no white focus box on mouse click; thin
+  scrollbar on laptops; full sidebar from 1000 px. UI suite adds iPhone 16 Pro Max (440) and iPad Pro 13 (1032),
+  with `SIZES=` and `SCHEME=dark` filters.
 
 ### 2026-11-05 — Session 1
 
