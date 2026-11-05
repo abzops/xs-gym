@@ -435,6 +435,12 @@ table.data tfoot td { font-weight: 600; border-top: 1px solid var(--hair-strong)
 .auth { width: 100%; max-width: 400px; display: grid; gap: 22px; }
 .auth h2 { font-size: var(--t-xl); letter-spacing: -0.02em; }
 .auth .segmented { display: grid; grid-template-columns: 1fr 1fr; }
+/* Tablet portrait: fuller brand header, form anchored right under it */
+@media (min-width: 720px) and (max-width: 899px) {
+  .auth-brand { padding: 32px 40px 44px; gap: 40px; }
+  .auth-brand h1 { font-size: var(--t-3xl); line-height: 1.06; letter-spacing: -0.035em; max-width: 16ch; }
+  .auth-main { place-items: start center; padding: 56px 40px; }
+}
 @media (min-width: 900px) {
   .auth-split { grid-template-columns: minmax(420px, 46%) 1fr; grid-template-rows: none; }
   .auth-brand { padding: 44px 56px; align-content: space-between; }
