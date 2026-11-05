@@ -503,8 +503,8 @@ with sync_playwright() as p:
         page.wait_for_url(re.compile(r'/members/[0-9a-f-]{36}'), timeout=8000)
         rows = sql(f"select e.status, m.full_name from enquiries e left join members m on m.id = e.member_id where e.gym_id = '{state['gym']}' order by e.full_name")
         assert rows == [['joined', 'Lead Joiner'], ['lost', '']], f'enquiries in DB: {rows}'
-        wa = page.get_by_role('button', name=re.compile('WhatsApp'))
-        if not wa.count(): note('BUG', 'member page has no WhatsApp button')
+        try: expect(page.get_by_role('button', name=re.compile('^WhatsApp'))).to_be_visible(timeout=8000)
+        except AssertionError: note('BUG', 'member page has no WhatsApp button')
         page.screenshot(path=f'{OUT}/09-enquiry-member.png', full_page=True)
 
     # ---------------- Settings, staff, import, appearance ----------------

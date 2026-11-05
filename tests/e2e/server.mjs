@@ -140,7 +140,7 @@ async function rest(req, url, body, claims) {
       : f.typtype === 'c' ? `select to_jsonb(t) j from ${call} t` : `select to_jsonb(${call}) j`;
     return withRole(claims, async (c) => ({ status: 200, body: (await c.query(sql, params)).rows[0]?.j ?? null }));
   }
-  if (req.method !== 'GET') throw Object.assign(new Error('table writes are not used by the app'), { status: 405 });
+  if (req.method !== 'GET' && req.method !== 'HEAD') throw Object.assign(new Error('table writes are not used by the app'), { status: 405 });
   const table = path; const params = []; const where = []; let order = ''; let limit = ''; let sel = '*';
   for (const [k, v] of url.searchParams) {
     if (k === 'select') sel = v;
@@ -155,6 +155,11 @@ async function rest(req, url, body, claims) {
   where.push(...innerJoins);
   const inner = `select ${cols} from public.${q(table)} t0${where.length ? ' where ' + where.join(' and ') : ''}${order}${limit}`;
   const rows = await withRole(claims, async (c) => (await c.query(`select coalesce(jsonb_agg(to_jsonb(s)), '[]'::jsonb) j from (${inner}) s`, params)).rows[0].j);
+  // Prefer: count=exact (with HEAD for counts only) → Content-Range: 0-n/total
+  if (/count=exact/.test(req.headers.prefer ?? '')) {
+    const headers = { 'content-range': `${rows.length ? `0-${rows.length - 1}` : '*'}/${rows.length}` };
+    return { status: 200, body: req.method === 'HEAD' ? null : rows, headers };
+  }
   if ((req.headers.accept ?? '').includes('vnd.pgrst.object')) {
     if (rows.length !== 1) return { status: 406, body: { code: 'PGRST116', message: 'JSON object requested, multiple (or no) rows returned', details: `The result contains ${rows.length} rows`, hint: null } };
     return { status: 200, body: rows[0] };
@@ -223,7 +228,8 @@ http.createServer((req, res) => {
     } catch (e) { out = pgErr(e); }
     log({ t: new Date().toISOString(), ms: Date.now() - t0, method: req.method, path: url.pathname, query: url.search, body: body || undefined, user: claims?.sub ?? null, status: out.status,
       error: out.status >= 400 ? out.body : undefined });
-    res.writeHead(out.status, { ...cors, 'content-type': 'application/json' });
+    res.writeHead(out.status, { ...cors, 'content-type': 'application/json', ...(out.headers ?? {}) });
+    if (req.method === 'HEAD') return res.end();
     res.end(out.body === null ? (out.status === 204 ? '' : 'null') : JSON.stringify(out.body));
   });
 }).listen(PORT, () => console.log(`devstack on :${PORT}`));

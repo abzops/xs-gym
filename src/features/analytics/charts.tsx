@@ -1,6 +1,6 @@
 // Small SVG charts for Analytics. Thin marks, one axis, recessive grid,
 // hover/touch tooltips, and every chart has a table view (see ChartCard).
-import { useLayoutEffect, useRef, useState, type PointerEvent, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent, type ReactNode } from 'react';
 
 export type Series = { key: string; label: string; color: string; values: number[] };
 
@@ -68,12 +68,21 @@ const PAD = { top: 12, right: 8, bottom: 26, left: 52 };
 
 function usePointer(n: number, plotLeft: number, plotW: number) {
   const [active, setActive] = useState<number | null>(null);
+  // Tapping anywhere else closes a touch tooltip.
+  useEffect(() => {
+    if (active === null) return;
+    const close = (e: Event) => { if (!(e.target as Element).closest?.('.viz-plot')) setActive(null); };
+    document.addEventListener('pointerdown', close);
+    return () => document.removeEventListener('pointerdown', close);
+  }, [active]);
   const pick = (e: PointerEvent<SVGElement>) => {
     const box = (e.currentTarget.ownerSVGElement ?? (e.currentTarget as SVGSVGElement)).getBoundingClientRect();
     const i = Math.floor(((e.clientX - box.left - plotLeft) / plotW) * n);
     setActive(i >= 0 && i < n ? i : null);
   };
-  return { active, handlers: { onPointerMove: pick, onPointerDown: pick, onPointerLeave: () => setActive(null) } };
+  // A finger lifting also fires pointerleave; keep the tooltip until the next tap.
+  const leave = (e: PointerEvent<SVGElement>) => { if (e.pointerType !== 'touch') setActive(null); };
+  return { active, handlers: { onPointerMove: pick, onPointerDown: pick, onPointerLeave: leave } };
 }
 
 /** Grouped columns over categories (months). */

@@ -19,5 +19,7 @@ for f in "$REPO"/supabase/migrations/*.sql; do "${PSQL[@]}" -f "$f"; done
 "${PSQL[@]}" -c "insert into auth.users (id, email) values ('94e7afae-e4a3-4f4e-ad93-10b37b5f8f44', 'admin@xelorsoft.com');
   insert into auth.passwords values ('94e7afae-e4a3-4f4e-ad93-10b37b5f8f44', '${DEMO_PASSWORD:-demo-password}');"
 "${PSQL[@]}" -f "$REPO/scripts/demo/seed_rich_demo.sql" 2>&1 | grep -v NOTICE || true
+# The demo gym is already set up (live, the migration marks existing gyms).
+"${PSQL[@]}" -c "update public.gyms set onboarded_at = coalesce(onboarded_at, created_at);"
 "${PSQL[@]}" -tc "select 'members ' || count(*) from public.members; select 'payments ' || count(*) from public.payments;"
 echo DB READY
