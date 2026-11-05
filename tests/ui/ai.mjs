@@ -196,7 +196,7 @@ for (const [name, viewport, mobile] of [['phone', { width: 390, height: 844 }, t
     await tap(speechError.getByRole('button', { name: 'കീബോർഡ് ഉപയോഗിക്കുക' }));
     await page.waitForTimeout(80); // allow focus to land after the overlay unmounts
     check(`${name} ${scheme}: keyboard fallback focuses the message input`,
-      await retryDialog.getByRole('textbox', { name: 'Message XS AI' }).isFocused());
+      await retryDialog.getByRole('textbox', { name: 'Message XS AI' }).evaluate((el) => document.activeElement === el));
     await ctx.close();
   }
 }
