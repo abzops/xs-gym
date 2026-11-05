@@ -12,14 +12,14 @@
 .quick { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
 .q { display: grid; justify-items: center; gap: 8px; text-decoration: none; color: var(--ink); font-size: 0.8125rem; font-weight: 600; text-align: center; }
 .q-ico { display: grid; place-items: center; width: 60px; height: 60px; border-radius: 50%; background: var(--paper);
-  transition: transform 160ms var(--ease-out), background-color 150ms ease; }
+  transition: transform 120ms var(--ease-out), background-color 100ms ease; }
 .q.primary .q-ico { background: var(--primary); color: var(--on-primary); }
 .q:active .q-ico { transform: scale(0.92); }
 @media (hover: hover) and (pointer: fine) { .q:not(.primary):hover .q-ico { background: var(--paper-2); } }
 
 /* Hero card */
 .hero-card { display: grid; gap: 6px; padding: 20px; border-radius: 22px; background: var(--carbon); color: #F6F6F4; text-decoration: none;
-  transition: transform 180ms var(--ease-out); }
+  transition: transform 140ms var(--ease-out); }
 .hero-card:active { transform: scale(0.985); }
 .hc-top { display: flex; align-items: center; justify-content: space-between; color: #B7B7BD; font-size: var(--t-sm); font-weight: 600; }
 .hc-value { font-size: 3rem; font-weight: 600; letter-spacing: -0.05em; line-height: 1.05; margin: 2px 0 10px; }
@@ -36,12 +36,14 @@
 /* Stat tiles (Health-style) */
 .stats { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .stat { display: grid; gap: 2px; padding: 14px 16px 16px; border-radius: 18px; background: var(--paper); text-decoration: none; color: var(--ink);
-  transition: transform 160ms var(--ease-out), background-color 150ms ease; }
+  transition: transform 120ms var(--ease-out), background-color 100ms ease; }
 .stat:active { transform: scale(0.97); }
 @media (hover: hover) and (pointer: fine) { .stat:hover { background: var(--paper-2); } }
 .st-label { display: flex; align-items: center; gap: 6px; color: var(--graphite); font-size: var(--t-sm); font-weight: 600; margin-bottom: 4px; }
 .st-value { font-size: 1.875rem; font-weight: 600; letter-spacing: -0.04em; line-height: 1.1; }
 .st-value.due { color: var(--bad); }
+.st-label .tone-warn { color: var(--warn-vivid); }
+.st-label .tone-bad { color: var(--bad-vivid); }
 .st-sub { color: var(--graphite); font-size: var(--t-sm); }
 
 /* iOS inset grouped list */

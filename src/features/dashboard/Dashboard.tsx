@@ -102,13 +102,13 @@ export function Dashboard() {
           <span className="st-sub">{s.new_members_month} new this month</span>
         </PushLink>
         <PushLink className="stat" to={`${base}/members?filter=expiring`}>
-          <span className="st-label"><CalendarClock size={16} />Expiring</span>
+          <span className="st-label"><CalendarClock size={16} className={s.expiring_7_days > 0 ? 'tone-warn' : undefined} />Expiring</span>
           <span className="st-value num">{s.expiring_7_days}</span>
           <span className="st-sub">{s.expiring_today} today</span>
         </PushLink>
         {f ? (
           <PushLink className="stat" to={`${base}/members?filter=dues`}>
-            <span className="st-label"><IndianRupee size={16} />Dues</span>
+            <span className="st-label"><IndianRupee size={16} className={f.dues_total > 0 ? 'tone-bad' : undefined} />Dues</span>
             <span className={`st-value num ${f.dues_total > 0 ? 'due' : ''}`}>{formatINR(f.dues_total)}</span>
             <span className="st-sub">{f.members_with_dues} members</span>
           </PushLink>
