@@ -80,7 +80,10 @@ with sync_playwright() as p:
                 tap(dialog().get_by_role('link', name=label))
         else:
             tap(page.locator('nav.sidebar').get_by_role('link', name=label, exact=True))
-        page.wait_for_load_state('networkidle'); page.wait_for_timeout(250)
+        page.wait_for_load_state('networkidle')
+        # Wait for the section itself: its heading is shown and nothing is still loading.
+        page.wait_for_function('() => !!document.querySelector("main h1") && !document.querySelector("main [aria-busy=true]")', timeout=10000)
+        page.wait_for_timeout(250)
     state = {}
     def after_payment():
         page.wait_for_url(re.compile(r'/receipts/[0-9a-f-]{36}'), timeout=8000); page.wait_for_load_state('networkidle')
@@ -231,8 +234,11 @@ with sync_playwright() as p:
         btn = d.locator('form button.btn.primary.block:not([type=button])')
         if not touch: btn.dblclick()
         else:
+            # A second activation of the same button (not a tap at its old
+            # position, which after the sheet closes is the tab bar).
+            handle = btn.element_handle()
             btn.tap()
-            try: btn.tap(force=True, timeout=600)
+            try: handle.dispatch_event('click')
             except Exception: pass
         toast('recorded')
         after_payment()
@@ -270,25 +276,6 @@ with sync_playwright() as p:
         page.screenshot(path=f'{OUT}/05-receipt.png', full_page=True)
         page.go_back(); page.wait_for_load_state('networkidle')
         expect(page.locator('main')).to_contain_text('Rahul QA')
-
-    @step('check in member, second check-in same day is handled')
-    def _():
-        tap(page.locator('main').get_by_role('button', name=re.compile('^Check in')).first)
-        toast('checked in')
-        page.wait_for_timeout(500)
-        tap(page.locator('main').get_by_role('button', name=re.compile('^Check in')).first)
-        page.wait_for_timeout(1500)
-        n = sql(f"select count(*) from attendance_events where member_id = '{state['member']}' and voided_at is null")[0][0]
-        state['checkins'] = n
-        if n == '2': note('INFO', 'a second check-in on the same day is recorded as a separate visit (no duplicate guard)')
-
-    @step('remove a check-in with a reason')
-    def _():
-        tap(page.locator('main').get_by_role('button', name='Remove').first)
-        d = dialog(); d.get_by_label('Reason (required)').fill('Tapped twice')
-        tap(d.get_by_role('button', name='Remove check-in')); toast('Check-in removed')
-        n = sql(f"select count(*) from attendance_events where member_id = '{state['member']}' and voided_at is null")[0][0]
-        assert int(n) == int(state['checkins']) - 1, f'void did not apply ({n} active)'
 
     @step('reverse the ₹600 cash payment → dues come back, receipt marked reversed')
     def _():
@@ -354,40 +341,28 @@ with sync_playwright() as p:
         toast('Member restored')
         assert sql(f"select status from members where id = '{state['member']}'")[0][0] == 'active'
 
-    # ---------------- Check-in screen ----------------
-    @step('check-in screen: search by last phone digits, by name, unknown name')
+    # ---------------- Member search ----------------
+    @step('members search: by last phone digits, by name, unknown name, special characters')
     def _():
-        nav('Check in')
-        box = page.get_by_role('searchbox', name='Find member to check in')
+        nav('Members')
+        box = page.get_by_role('searchbox', name='Search members')
         box.fill('12345'); page.wait_for_timeout(900)
         expect(page.locator('main')).to_contain_text('Rahul QA Edited')
         box.fill('rahul'); page.wait_for_timeout(900)
         expect(page.locator('main')).to_contain_text('Rahul QA Edited')
         box.fill('zzzz nobody'); page.wait_for_timeout(900)
-        expect(page.locator('main')).to_contain_text('No member found')
+        expect(page.locator('main')).not_to_contain_text('Rahul QA Edited')
         box.fill('(%,*'); page.wait_for_timeout(900)
         if page.locator('main .notice').count(): note('BUG', 'special characters in search show an error')
 
-    @step('expired / no-plan member → check-in needs override reason')
+    @step('check-in is gone from the web app (nav, member page, old link)')
     def _():
-        go(base() + '/members/new')
-        page.get_by_label('Full name').fill('Walkin NoPlan'); page.get_by_label('Mobile number').fill('9000011111')
-        tap(page.locator('main button.btn.primary')); toast('Member added')
-        page.wait_for_url(re.compile(r'/members/[0-9a-f-]{36}'))
-        state['m2'] = re.search(r'/members/([0-9a-f-]{36})', page.url).group(1)
-        expect(dialog()).to_be_visible(timeout=4000); tap(dialog().get_by_role('button', name='Close'))
-        expect(dialog()).to_have_count(0, timeout=4000)
-        btn = page.locator('main').get_by_role('button', name=re.compile('Check in|Not active|Override')).first
-        txt = btn.inner_text()
-        if btn.is_disabled(): state['m2_mode'] = 'blocked'; return
-        tap(btn); page.wait_for_timeout(600)
-        if dialog().count():
-            d = dialog(); d.get_by_label('Reason').fill('Paying tomorrow')
-            tap(d.get_by_role('button', name='Check in anyway')); toast('checked in')
-            r = sql(f"select override_reason from attendance_events where member_id = '{state['m2']}'")
-            assert r and r[0][0] == 'Paying tomorrow', f'override reason not stored: {r}'
-        else:
-            note('BUG', f'member without a plan was checked in with no override ({txt})')
+        go(base() + f"/members/{state['member']}")
+        nav_text = page.locator('nav.tabbar, nav.sidebar').first.inner_text()
+        assert 'Check in' not in nav_text, 'Check in still in navigation'
+        assert page.locator('main').get_by_role('button', name=re.compile('Check in|Override')).count() == 0, 'Check in button on member page'
+        go(base() + '/check-in'); page.wait_for_timeout(600)
+        assert '/check-in' not in page.url, f'old check-in link still opens a page: {page.url}'
 
     # ---------------- Payments, expenses, reports ----------------
     @step('payments screen shows today’s collections; reversed one excluded from total')
@@ -586,7 +561,7 @@ with sync_playwright() as p:
 
     @step('demo owner: every screen loads without errors')
     def _():
-        for label in ['Home', 'Check in', 'Members', 'Payments', 'Plans', 'Expenses', 'Reports', 'Settings']:
+        for label in ['Home', 'Members', 'Payments', 'Plans', 'Expenses', 'Reports', 'Settings']:
             t = time.time(); nav(label); dt = time.time() - t
             if page.locator('main .notice.bad').count(): note('BUG', f'{label} shows an error notice')
             if dt > 2.5: note('PERF', f'{label} took {dt:.1f}s to settle on {PLATFORM}')

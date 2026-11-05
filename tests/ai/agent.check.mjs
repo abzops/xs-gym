@@ -75,7 +75,7 @@ const otherGym = sql(`select g.id from gyms g join gym_staff s on s.gym_id = g.i
     : say('I cannot do that.');
   const out = await runAgent({ gym_id: gym, messages: [{ role: 'user', content: 'reverse the last payment' }] }, env(reception));
   const names = lastBody.tools.map((t) => t.function.name);
-  check('reception: no reverse_payment or report tools offered', !names.includes('reverse_payment') && !names.includes('report') && names.includes('check_in'), names.join(','));
+  check('reception: no reverse_payment or report tools offered', !names.includes('reverse_payment') && !names.includes('report') && names.includes('record_payment') && !names.includes('check_in'), names.join(','));
   const results = toolMsgs(lastBody);
   check('reception: forced calls are refused', results.every((r) => /cannot use/.test(r.error ?? '')) && out.actions.every((a) => !a.ok));
 }
@@ -120,19 +120,31 @@ const otherGym = sql(`select g.id from gyms g join gym_staff s on s.gym_id = g.i
   check('Malayalam requested and reply passed through', /Malayalam/.test(sys) && out.reply === 'ശരി');
 }
 
-// 6. Sale + check-in + reading tools.
+// 6. Reading tools, then a sale and a payment by NAME in one step: the tool
+// finds the member and plan, and the reply needs no extra model round trip.
 {
-  const plan = sql(`select id from membership_plans where gym_id = '${gym}' and status = 'active' order by price_paise limit 1`);
-  script = (body) => {
-    const n = toolMsgs(body).length;
-    if (n === 0) return { role: 'assistant', content: '', tool_calls: [call('get_overview', {}), call('list_plans', {}), call('report', { from: '2026-11-01', to: '2026-11-05' })] };
-    if (n === 3) return { role: 'assistant', content: '', tool_calls: [call('sell_plan', { member_id: member[0], plan_id: plan }), call('check_in', { member_id: member[0] })] };
-    return say('done');
-  };
-  const out = await runAgent({ gym_id: gym, messages: [{ role: 'user', content: 'renew and check in' }] }, env(owner));
+  script = (body) => toolMsgs(body).length === 0
+    ? { role: 'assistant', content: '', tool_calls: [call('get_overview', {}), call('list_plans', {}), call('report', { from: '2026-11-01', to: '2026-11-05' })] }
+    : say('Here are the numbers.');
+  await runAgent({ gym_id: gym, messages: [{ role: 'user', content: 'numbers' }] }, env(owner));
   const reads = toolMsgs(lastBody);
   check('overview, plans and report tools return data', reads[0].active_members > 0 && reads[1].length > 0 && /^₹/.test(reads[2].collected));
-  check('sell and check-in through the AI', out.actions.length === 2 && out.actions.every((a) => a.ok), out.actions.map((a) => a.summary).join(' | '));
+  check('check-in tools are gone', !lastBody.tools.some((t) => /check_in/.test(t.function.name)));
+
+  const planName = sql(`select name from membership_plans where gym_id = '${gym}' and status = 'active' order by price_paise limit 1`);
+  let llmCalls = 0;
+  script = () => { llmCalls++; return { role: 'assistant', content: '', tool_calls: [call('sell_plan', { member: member[2], plan: planName.toLowerCase() }), call('record_payment', { member: member[1], amount: 500, method: 'cash' })] }; };
+  const out = await runAgent({ gym_id: gym, messages: [{ role: 'user', content: `renew ${member[1]} on ${planName} and take 500 cash` }] }, env(owner));
+  check('sale and payment by name, one model call, direct confirmation', llmCalls === 1 && out.actions.length === 2 && out.actions.every((a) => a.ok) && out.reply.startsWith('Done.') && out.reply.includes(member[1]), `${llmCalls} calls; ${out.reply}`);
+
+  llmCalls = 0;
+  script = (body) => { llmCalls++; return toolMsgs(body).length === 0 ? { role: 'assistant', content: '', tool_calls: [call('record_payment', { member: member[1].split(' ')[0].slice(0, 2), amount: 100, method: 'cash' })] } : say('Which one did you mean?'); };
+  const amb = await runAgent({ gym_id: gym, messages: [{ role: 'user', content: 'record 100' }] }, env(owner));
+  check('ambiguous name: nothing recorded, the model asks', amb.actions.length === 1 && !amb.actions[0].ok && /more than one member/.test(amb.actions[0].summary) && llmCalls === 2, amb.actions[0]?.summary);
+
+  script = () => ({ role: 'assistant', content: '', tool_calls: [call('record_payment', { member: member[1], amount: 250, method: 'upi' })] });
+  const ml = await runAgent({ gym_id: gym, lang: 'ml', messages: [{ role: 'user', content: 'പേയ്മെന്റ്' }] }, env(owner));
+  check('Malayalam direct confirmation', ml.reply.startsWith('ശരി.') && ml.reply.includes('രേഖപ്പെടുത്തി'), ml.reply);
 }
 
 // 7. Read-only dues works even when every LLM provider is unavailable.
