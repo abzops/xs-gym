@@ -5,12 +5,13 @@
 // support; xAI STT supports more languages but does NOT explicitly list Malayalam
 // in its formatting-language table, so Gemini remains available as backup.
 //   GROQ_API_KEY            → Groq Whisper
+//   NVIDIA_API_KEY          → NVIDIA Riva ASR for English only
 //   XAI_API_KEY / Grok      → xAI grok-voice-transcribe-2.0
 //   GEMINI_API_KEY          → Gemini audio understanding
 import { ApiError } from './agent.ts';
 
-export type SttEnv = { groqKey?: string; xaiKey?: string; geminiKey?: string; geminiModel?: string; fetch?: typeof fetch };
-export const sttConfigured = (e: SttEnv) => !!(e.groqKey || e.xaiKey || e.geminiKey);
+export type SttEnv = { groqKey?: string; nvidiaKey?: string; xaiKey?: string; geminiKey?: string; geminiModel?: string; fetch?: typeof fetch };
+export const sttConfigured = (e: SttEnv) => !!(e.groqKey || e.nvidiaKey || e.xaiKey || e.geminiKey);
 
 const MAX_B64 = 4_000_000; // ≈ 2 minutes of 16 kHz mono 16-bit WAV
 const HINT = 'XS Gym. Members, plans, payments, UPI, cash, card, dues, renewal, expense, rupees, XS-0001.';
@@ -45,6 +46,27 @@ async function groq(audio: Uint8Array, lang: 'en' | 'ml', key: string, f: typeof
     return String(((await r.json()) as { text?: string }).text ?? '').trim();
   }
   throw new Error('groq: no whisper model available');
+}
+
+// NVIDIA API Catalog Riva preview endpoint, Parakeet English ASR.
+// This endpoint is not multilingual Malayalam; never use it in ml mode.
+const NVIDIA_ASR = 'https://1598d209-5e27-4d3c-8079-4751568b1081.invocation.api.nvcf.nvidia.com/v1/audio/transcriptions';
+async function nvidia(audio: Uint8Array, key: string, f: typeof fetch): Promise<string> {
+  const form = new FormData();
+  form.append('language', 'en-US');
+  form.append('word_time_offsets', 'False');
+  form.append('file', new Blob([new Uint8Array(audio)], { type: 'audio/wav' }), 'speech.wav');
+  const response = await withTimeout(18_000, (signal) => f(NVIDIA_ASR, {
+    method: 'POST', headers: { authorization: `Bearer ${key}` }, body: form, signal,
+  }));
+  if (!response.ok) throw new Error(`NVIDIA English ASR ${response.status}`);
+  const json = await response.json() as {
+    text?: string; transcript?: string;
+    results?: { alternatives?: { transcript?: string }[] }[];
+  };
+  const transcript = json.text ?? json.transcript ??
+    json.results?.map((r) => r.alternatives?.[0]?.transcript ?? '').join(' ') ?? '';
+  return String(transcript).trim().slice(0, 2000);
 }
 
 /** xAI's official /v1/stt REST endpoint. Never sends the API key to the browser. */
@@ -85,7 +107,7 @@ async function gemini(b64: string, lang: 'en' | 'ml', key: string, model: string
 /** Returns the transcript ('' when nothing was said). */
 export async function transcribe(body: { audio?: unknown; lang?: unknown }, env: SttEnv): Promise<string> {
   const f = env.fetch ?? fetch;
-  if (!sttConfigured(env)) throw new ApiError('Voice needs a speech API key. Add GROQ_API_KEY, GEMINI_API_KEY or XAI_API_KEY to Supabase; you can type meanwhile.', 503);
+  if (!sttConfigured(env)) throw new ApiError('Voice needs a speech API key. Add NVIDIA_API_KEY (English), GROQ_API_KEY, GEMINI_API_KEY or XAI_API_KEY to Supabase; you can type meanwhile.', 503);
   const b64 = typeof body.audio === 'string' ? body.audio : '';
   if (!b64 || b64.length > MAX_B64 || !/^[A-Za-z0-9+/]+=*$/.test(b64)) throw new ApiError('That recording could not be read. Please try again.', 400);
   const lang = body.lang === 'ml' ? 'ml' : 'en';
@@ -93,9 +115,13 @@ export async function transcribe(body: { audio?: unknown; lang?: unknown }, env:
   if (env.groqKey) {
     try { return await groq(decode(b64), lang, env.groqKey, f); } catch (e) { failures.push(String(e instanceof Error ? e.message : e)); }
   }
-  // Prefer Groq's Whisper for code-switched Malayalam. xAI covers the owner's
-  // existing API key without requiring another service. Gemini is a final
-  // independent fallback when configured.
+  // NVIDIA offers an independent hosted English transcription endpoint.
+  // Do not send Malayalam to an English-only model.
+  if (lang === 'en' && env.nvidiaKey) {
+    try { return await nvidia(decode(b64), env.nvidiaKey, f); }
+    catch (e) { failures.push(String(e instanceof Error ? e.message : e)); }
+  }
+  // xAI covers the owner's other API key; Gemini is a final fallback.
   if (env.xaiKey) {
     try { return await xai(decode(b64), lang, env.xaiKey, f); }
     catch (e) { failures.push(String(e instanceof Error ? e.message : e)); }
