@@ -18,5 +18,6 @@ node "$HERE/server.mjs" & API=$!
 python3 "$HERE/pages_server.py" "$DIST" 4300 & WEB=$!
 sleep 2
 status=0
+node --experimental-strip-types "$ROOT/tests/ai/agent.test.mjs" 2>&1 | grep -v ExperimentalWarning || status=1
 for p in ${1:-phone tablet laptop}; do python3 "$HERE/e2e.py" "$p" || status=1; done
 exit $status
