@@ -105,9 +105,11 @@ function PlanSheet({ plan, onClose }: { plan: Plan | null; onClose: () => void }
           <Field label="Length" error={count && !countOk ? `1–${unit === 'month' ? 36 : 366}` : null}>
             <input className="input" inputMode="numeric" value={count} onChange={(e) => setCount(e.target.value.replace(/\D/g, ''))} />
           </Field>
-          <Field label="Unit">
+          {/* Not a <label>: it would rename the first button to "Unit" for screen readers. */}
+          <div className="field">
+            <span aria-hidden>Unit</span>
             <Segmented label="Unit" value={unit} onChange={setUnit} options={[{ value: 'month', label: 'Months' }, { value: 'day', label: 'Days' }]} />
-          </Field>
+          </div>
         </div>
         <Field label="Price" hint="Use 0 for a free plan" error={price && pricePaise === null ? 'Enter a price like 1000' : null}>
           <input className="input num" inputMode="decimal" value={price} onChange={(e) => setPrice(e.target.value)} placeholder="₹" />
