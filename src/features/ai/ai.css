@@ -43,6 +43,44 @@
 .xsai-type .input { flex: 1; border-radius: 999px; }
 .xsai-type .btn { flex: none; width: 48px; min-height: 48px; padding: 0; border-radius: 50%; }
 
+/* A self-contained permission flow inside the installed app.
+   This is an explanation; only the browser/OS can show the actual Allow prompt. */
+.xsai { position: relative; }
+.xsai-mic-backdrop {
+  position: absolute; inset: -4px 0 0; z-index: 10;
+  display: grid; place-items: center; padding: 16px 10px;
+  overflow: auto; overscroll-behavior: contain;
+  background: color-mix(in srgb, var(--paper) 90%, transparent);
+  -webkit-backdrop-filter: blur(9px); backdrop-filter: blur(9px);
+}
+.xsai-mic-dialog {
+  position: relative; width: min(100%, 400px); margin: auto;
+  display: grid; justify-items: center; gap: 12px;
+  padding: 30px 24px 22px; border: 1px solid var(--hair);
+  border-radius: 24px; background: var(--paper); color: var(--ink);
+  box-shadow: var(--elev-3), 0 18px 44px -18px rgb(0 0 0 / 14%);
+  text-align: center;
+}
+.xsai-mic-icon {
+  display: grid; place-items: center; width: 62px; height: 62px;
+  border-radius: 22px; background: var(--paper-2);
+}
+.xsai-mic-dialog h3 { font-size: 20px; line-height: 1.25; letter-spacing: -.025em; }
+.xsai-mic-dialog p { color: var(--graphite); font-size: var(--t-base); line-height: 1.5; max-width: 340px; }
+.xsai-mic-actions { width: 100%; display: grid; gap: 8px; margin-top: 8px; }
+.xsai-mic-actions .btn { min-height: 46px; border-radius: 13px; justify-content: center; }
+.xsai-mic-dismiss {
+  position: absolute; top: 10px; right: 10px;
+  width: 36px; height: 36px; display: grid; place-items: center;
+  color: var(--graphite); background: transparent; border: 0; border-radius: 50%; cursor: pointer;
+}
+.xsai-mic-dismiss:hover { background: var(--paper-2); }
+.xsai-mic-dismiss:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+@media (max-width: 420px) {
+  .xsai-mic-backdrop { padding: 8px 0; }
+  .xsai-mic-dialog { padding: 28px 18px 18px; }
+}
+
 /* The orb */
 .xsai-orb { position: relative; display: grid; place-items: center; width: 76px; height: 76px; border: 0; border-radius: 50%; cursor: pointer;
   color: var(--on-primary); background: radial-gradient(circle at 35% 30%, color-mix(in srgb, var(--primary) 70%, #fff) 0%, var(--primary) 60%);
