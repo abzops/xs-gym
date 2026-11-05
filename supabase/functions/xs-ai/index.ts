@@ -11,18 +11,26 @@ function configuredProviders(): LlmProvider[] {
   // Accept the existing dashboard secret name `Grok` as well as standard names.
   const xaiKey = Deno.env.get('XAI_API_KEY') || Deno.env.get('GROK_API_KEY') || Deno.env.get('Grok');
   const legacyKey = Deno.env.get('LLM_API_KEY');
-  if (nvidiaKey) providers.push({
-    name: 'NVIDIA NIM', apiKey: nvidiaKey,
-    baseUrl: 'https://integrate.api.nvidia.com/v1',
-    model: Deno.env.get('NVIDIA_MODEL') || 'mistralai/mistral-nemotron',
-  });
+  // Try multiple documented NIM models; a 410 means model retirement.
+  if (nvidiaKey) {
+    const preferred = Deno.env.get('NVIDIA_MODEL')?.trim();
+    const candidates = [...new Set([
+      preferred, 'openai/gpt-oss-20b',
+      'nvidia/nemotron-3.5-lightning-30b-a3b',
+      'z-ai/glm-5.3-flash',
+    ].filter((model): model is string => !!model))];
+    for (const model of candidates) providers.push({
+      name: `NVIDIA NIM / ${model}`, group: 'nvidia', apiKey: nvidiaKey,
+      baseUrl: 'https://integrate.api.nvidia.com/v1', model,
+    });
+  }
   if (xaiKey) providers.push({
-    name: 'xAI Grok', apiKey: xaiKey,
+    name: 'xAI Grok', group: 'xai', apiKey: xaiKey,
     baseUrl: 'https://api.x.ai/v1',
     model: Deno.env.get('XAI_MODEL') || 'grok-4.3',
   });
   if (legacyKey) providers.push({
-    name: 'Additional', apiKey: legacyKey,
+    name: 'Additional', group: 'additional', apiKey: legacyKey,
     baseUrl: Deno.env.get('LLM_BASE_URL') || 'https://generativelanguage.googleapis.com/v1beta/openai',
     model: Deno.env.get('LLM_MODEL') || 'gemini-2.5-flash',
   });
@@ -47,9 +55,8 @@ Deno.serve(async (req) => {
       providers: providers.map((p) => ({ name: p.name, model: p.model })),
     });
     if (req.method !== 'POST') return json(405, { error: 'GET or POST only' });
-    if (!providers.length) return json(503, {
-      error: 'XS AI is not configured. Add NVIDIA_API_KEY or XAI_API_KEY to Supabase Edge Function Secrets.',
-    });
+    // The agent can answer a narrow set of permission-checked read-only
+    // questions even if all model providers are unavailable.
     const token = (req.headers.get('authorization') ?? '').replace(/^Bearer\s+/i, '');
     const out = await runAgent(await req.json(), {
       supabaseUrl: Deno.env.get('SUPABASE_URL')!,
