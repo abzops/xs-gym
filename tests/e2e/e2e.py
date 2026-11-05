@@ -405,8 +405,10 @@ with sync_playwright() as p:
     @step('payments screen shows today’s collections; reversed one excluded from total')
     def _():
         nav('Payments')
+        # Section navigation and async query hydration can race on slower CI
+        # tablets. Wait for the actual payment row before reading the table.
+        expect(page.locator('main')).to_contain_text('Rahul QA Edited', timeout=12000)
         main = page.locator('main').inner_text()
-        assert 'Rahul QA Edited' in main, 'today’s payment missing from Payments'
         if '1,600' in main: note('BUG', 'reversed payment is included in the day total on Payments')
         page.screenshot(path=f'{OUT}/06-payments.png', full_page=True)
 
