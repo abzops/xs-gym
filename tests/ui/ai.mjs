@@ -172,7 +172,7 @@ for (const [name, viewport, mobile] of [['phone', { width: 390, height: 844 }, t
   const help = dialog.locator('.xsai-mic-dialog');
   await help.waitFor({ timeout: 4000 });
   check('iPhone app, no speech key: in-app "not set up" help, no recording, keyboard offered',
-    /not set up/i.test(await help.innerText()) && log.transcribe.length === 0 && (await page.evaluate(() => window.__mic.opened)) === 0);
+    /needs a transcription service|not set up/i.test(await help.innerText()) && log.transcribe.length === 0 && (await page.evaluate(() => window.__mic.opened)) === 0);
   await tap(help.getByRole('button', { name: /keyboard/i }));
   await page.waitForTimeout(300);
   check('iPhone app, no speech key: keyboard fallback focuses the message box', await page.evaluate(() => document.activeElement?.getAttribute('aria-label') === 'Message XS AI') && errors.length === 0);
