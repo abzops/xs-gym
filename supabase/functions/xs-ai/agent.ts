@@ -435,11 +435,13 @@ export async function requestLlmWithFailover(
 // ---------- main ----------
 export async function runAgent(req: AgentRequest, env: AgentEnv): Promise<AgentResponse> {
   const f = env.fetch ?? fetch;
-  if (!isUuid(req.gym_id)) throw new ApiError('gym_id is required', 400);
+  if (!req || typeof req !== 'object' || !isUuid(req.gym_id))
+    throw new ApiError('gym_id is required', 400);
+  if (!Array.isArray(req.messages)) throw new ApiError('messages must be an array', 400);
   if (req.request_id !== undefined && !isUuid(req.request_id))
     throw new ApiError('request_id must be a UUID', 400);
   const requestId = req.request_id ?? uuid();
-  const messages = (req.messages ?? []).filter((m) => (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string').slice(-12)
+  const messages = req.messages.filter((m) => m && typeof m === 'object' && (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string').slice(-12)
     .map((m) => ({ role: m.role, content: m.content.slice(0, 2000) }));
   if (!messages.length || messages[messages.length - 1].role !== 'user') throw new ApiError('the last message must be from the user', 400);
   const lang = req.lang === 'ml' ? 'ml' : 'en';
@@ -454,7 +456,9 @@ export async function runAgent(req: AgentRequest, env: AgentEnv): Promise<AgentR
   const rpc = (fn: string, args: Json) => rest(`rpc/${fn}`, { method: 'POST', body: JSON.stringify(args) });
 
   // Who is asking, in which gym — all through RLS with the user's token.
-  const user = (await (await f(`${env.supabaseUrl}/auth/v1/user`, { headers })).json()) as Json;
+  const auth = await f(`${env.supabaseUrl}/auth/v1/user`, { headers });
+  if (!auth.ok) throw new ApiError('not signed in', 401);
+  const user = (await auth.json().catch(() => null)) as Json | null;
   if (!isUuid(user?.id)) throw new ApiError('not signed in', 401);
   const gyms = (await rest(`gyms?select=id,name,slug,timezone,grace_days&id=eq.${req.gym_id}`)) as Ctx['gym'][];
   const staff = (await rest(`gym_staff?select=role,status&gym_id=eq.${req.gym_id}&user_id=eq.${user.id}`)) as Json[];
