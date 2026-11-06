@@ -1,6 +1,6 @@
-// Free, on-device-or-browser speech: Web Speech API for listening and speaking.
-// Chrome/Edge/Android and iOS Safari 14.5+ support recognition; Firefox does not
-// (XS AI then works by typing).
+// Browser Web Speech API for live interim transcription and spoken replies.
+// XS AI does not capture or upload raw audio. Browser providers may handle
+// recognition remotely; only recognized text is sent to the XS AI server.
 
 export type Lang = 'en' | 'ml';
 const LOCALE: Record<Lang, string> = { en: 'en-IN', ml: 'ml-IN' };
@@ -14,63 +14,19 @@ type Recognition = {
 };
 type RecognitionCtor = new () => Recognition;
 
-const Ctor = (typeof window !== 'undefined'
-  ? (window as unknown as { SpeechRecognition?: RecognitionCtor; webkitSpeechRecognition?: RecognitionCtor }).SpeechRecognition
-    ?? (window as unknown as { webkitSpeechRecognition?: RecognitionCtor }).webkitSpeechRecognition
-  : undefined);
+const recognitionCtor = (): RecognitionCtor | undefined => {
+  if (typeof window === 'undefined') return undefined;
+  const w = window as unknown as { SpeechRecognition?: RecognitionCtor; webkitSpeechRecognition?: RecognitionCtor };
+  return w.SpeechRecognition ?? w.webkitSpeechRecognition;
+};
 
-export type MicIssue = 'denied' | 'missing' | 'busy' | 'unsupported' | 'unknown';
-
-/** Differentiate OS microphone permission from Web Speech recognition failures. */
-export class MicrophoneAccessError extends Error {
-  readonly reason: MicIssue;
-  constructor(reason: MicIssue, message: string) {
-    super(message);
-    this.name = 'MicrophoneAccessError';
-    this.reason = reason;
-  }
-}
-
-export class SpeechListenError extends Error {
-  readonly reason: 'denied' | 'service' | 'network' | 'audio' | 'unsupported' | 'unknown';
-  constructor(reason: SpeechListenError['reason'], message: string) {
-    super(message);
-    this.name = 'SpeechListenError';
-    this.reason = reason;
-  }
-}
-
-/** A user-initiated call asks iOS / the browser to display its native Allow prompt. */
-export async function requestMicrophone(): Promise<void> {
-  if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
-    throw new MicrophoneAccessError('unsupported', 'Microphone access is not available in this app.');
-  }
-  try {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    // This is only a permission check. Recognition starts separately, and
-    // all tracks must be closed immediately (also after the sheet closes).
-    stream.getTracks().forEach((track) => track.stop());
-  } catch (error) {
-    const name = error instanceof Error ? error.name : '';
-    if (['NotAllowedError', 'PermissionDeniedError', 'SecurityError'].includes(name)) {
-      throw new MicrophoneAccessError('denied', 'Microphone permission was not granted.');
-    }
-    if (['NotFoundError', 'DevicesNotFoundError'].includes(name)) {
-      throw new MicrophoneAccessError('missing', 'No microphone was found on this device.');
-    }
-    if (['NotReadableError', 'TrackStartError', 'AbortError'].includes(name)) {
-      throw new MicrophoneAccessError('busy', 'The microphone is busy. Close other recordings and try again.');
-    }
-    throw new MicrophoneAccessError('unknown', 'Could not start the microphone. Please try again.');
-  }
-}
-
-export const canListen = () => !!Ctor;
+export const canListen = () => !!recognitionCtor();
 export const canSpeak = () => typeof window !== 'undefined' && 'speechSynthesis' in window;
 
 /** Listens once; calls onText with live text, resolves with the final text ('' if nothing heard). */
 export function listen(lang: Lang, onText: (text: string) => void): { done: Promise<string>; stop: () => void } {
-  if (!Ctor) return { done: Promise.reject(new Error('Voice input is not supported in this browser. Type instead.')), stop: () => {} };
+  const Ctor = recognitionCtor();
+  if (!Ctor) return { done: Promise.reject(new SpeechListenError('unsupported', 'Live speech recognition is not available. Use keyboard dictation or type instead.')), stop: () => {} };
   const r = new Ctor();
   r.lang = LOCALE[lang]; r.interimResults = true; r.continuous = false; r.maxAlternatives = 1;
   let text = '';
