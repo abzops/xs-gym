@@ -113,7 +113,8 @@ describe('XS Gym recorded-voice speech-to-text', () => {
   });
 
   it('does not fall back to xAI for repeated preview snapshots when Groq returns 403', async () => {
-    const fetcher = vi.fn(async () => new Response('forbidden', { status: 403 }));
+    const fetcher = vi.fn(async (_url: RequestInfo | URL, _init?: RequestInit) =>
+      new Response('forbidden', { status: 403 }));
     await expect(transcribe({ audio: wav, lang: 'ml', preview: true },
       { groqKey: 'bad-groq', xaiKey: 'xai', fetch: fetcher as typeof fetch }))
       .rejects.toMatchObject({ code: 'speech_access_denied', retryable: false });
