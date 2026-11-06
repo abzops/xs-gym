@@ -83,6 +83,8 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
   const closingRef = useRef(false);
   const requestBusy = useRef(false);
   const listeningBusy = useRef(false);
+  const recordingEpoch = useRef(0); // Ignore late partial replies after stop/close.
+  const [voiceMode, setVoiceMode] = useState<'native' | 'progressive' | null>(null);
   // Some installed browsers expose SpeechRecognition but reject its service.
   // Only fall back to WAV recording for the language that actually failed.
   const liveUnavailable = useRef(new Set<Lang>());
@@ -98,6 +100,7 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
   const stopInteraction = useCallback(() => {
     closingRef.current = true;
     micAttemptRef.current++;
+    recordingEpoch.current++;
     stopRef.current();
     stopSpeaking();
   }, []);
@@ -148,10 +151,39 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
   async function beginRecording() {
     if (closingRef.current || listeningBusy.current || requestBusy.current) return;
     listeningBusy.current = true;
+    const epoch = ++recordingEpoch.current;
+    let previewPending = false;
+    let previewUnavailable = false;
+    let finalDelivered = false;
     stopSpeaking();
-    setState('listening'); setLive('');
+    setVoiceMode('progressive');
+    setText(''); setState('listening'); setLive('');
+    // File-based Whisper cannot emit individual token deltas, but a snapshot
+    // while the microphone is still recording produces progressive draft text.
+    // One request at a time, capped by the recorder; an unavailable preview
+    // never blocks final transcription and provider failover.
+    const previewAudio = (audio: string) => {
+      if (closingRef.current || recordingEpoch.current !== epoch ||
+          previewPending || previewUnavailable || finalDelivered) return;
+      previewPending = true;
+      void (async () => {
+        try {
+          const { data, error } = await supabase.functions.invoke('xs-ai', {
+            body: { gym_id: gym.id, transcribe: { audio, lang, preview: true } },
+          });
+          if (error) { previewUnavailable = true; return; }
+          const partial = String(data?.text ?? '').trim();
+          if (partial && !finalDelivered && !closingRef.current && recordingEpoch.current === epoch) {
+            setLive(partial);
+            setText(partial);
+          }
+        } catch { previewUnavailable = true; }
+        finally { previewPending = false; }
+      })();
+    };
     try {
-      const rec = await startRecording({ onLevel: setLevel });
+      const rec = await startRecording({ onLevel: setLevel, onPartial: previewAudio });
+      if (closingRef.current || recordingEpoch.current !== epoch) { rec.cancel(); return; }
       stopRef.current = rec.stop;
       const audio = await rec.done;
       stopRef.current = () => {};
@@ -186,8 +218,9 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
         throw new Error(msg);
       }
       const heard = String(data?.text ?? '').trim();
+      finalDelivered = true;
       listeningBusy.current = false;
-      if (closingRef.current) return;
+      if (closingRef.current || recordingEpoch.current !== epoch) return;
       setLive(''); setState('idle');
       if (heard) await ask(heard);
       else toast(lang === 'ml' ? 'ഒന്നും കേട്ടില്ല. വീണ്ടും ശ്രമിക്കൂ.' : "Didn't catch that. Tap and speak again.");
@@ -197,6 +230,7 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
       if (e instanceof RecorderError) setMicDialog(e.reason === 'denied' ? 'denied' : 'unavailable');
       else toast(e instanceof Error ? e.message : String(e), 'bad');
     } finally {
+      finalDelivered = true;
       listeningBusy.current = false;
       stopRef.current = () => {};
       setLevel(0);
@@ -211,6 +245,7 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
     if (closingRef.current || listeningBusy.current || requestBusy.current) return;
     listeningBusy.current = true;
     stopSpeaking();
+    setVoiceMode('native');
     setText(''); setLive(''); setState('listening');
     try {
       // listen() calls SpeechRecognition.start() synchronously before its
@@ -301,7 +336,10 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
     }
   }
 
-  const status = state === 'listening' ? (lang === 'ml' ? 'കേൾക്കുന്നു…' : 'Listening…')
+  const status = state === 'listening'
+    ? voiceMode === 'progressive'
+      ? (lang === 'ml' ? 'കേൾക്കുന്നു · തത്സമയ ടെക്സ്റ്റ്…' : 'Listening · progressive text…')
+      : (lang === 'ml' ? 'ലൈവ് കേൾക്കുന്നു…' : 'Listening live…')
     : state === 'thinking' ? (lang === 'ml' ? 'ആലോചിക്കുന്നു…' : 'Thinking…')
     : state === 'speaking' ? (lang === 'ml' ? 'സംസാരിക്കുന്നു…' : 'Speaking…')
       : sttBlocked[lang] && isIosStandalone() && !canListen() ? (lang === 'ml' ? 'കീബോർഡിലെ മൈക്ക് ഉപയോഗിക്കൂ' : 'Use keyboard dictation')
