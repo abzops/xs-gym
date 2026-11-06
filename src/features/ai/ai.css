@@ -69,6 +69,13 @@
 .xsai-mic-dialog p { color: var(--graphite); font-size: var(--t-base); line-height: 1.5; max-width: 340px; }
 .xsai-mic-actions { width: 100%; display: grid; gap: 8px; margin-top: 8px; }
 .xsai-mic-actions .btn { min-height: 46px; border-radius: 13px; justify-content: center; }
+.xsai-dictation-hint {
+  font-size: var(--t-sm) !important;
+  line-height: 1.45;
+  text-align: start;
+  color: var(--graphite);
+  max-width: 340px;
+}
 .xsai-mic-dismiss {
   position: absolute; top: 10px; right: 10px;
   width: 36px; height: 36px; display: grid; place-items: center;
