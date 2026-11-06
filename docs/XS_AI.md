@@ -34,6 +34,42 @@ Supabase Dashboard → project `xs-gym` → **Edge Functions → Secrets**. Keys
 without exposing keys. Provider failures are written to the function log for the owner;
 users only see a plain message.
 
+## Malayalam speech provider access (6 November 2026)
+
+Production incident: XS AI successfully recorded Malayalam audio on an
+installed iPhone Home Screen app, but the xAI speech endpoint returned **403**.
+The Edge Function logged `xAI speech service 403` and responded with 503 at
+10:46 IST. A second `NVIDIA_API_KEY` is configured, but that Parakeet endpoint
+accepts **English only**. No authorized Malayalam transcription model was
+available. This is **not** a microphone permission failure.
+
+The `xs-ai` function now returns a typed, non-sensitive failure code:
+
+- `speech_access_denied`: every configured applicable provider denied API
+  access (401/402/403); not retryable without fixing the key/credits.
+- `speech_not_configured`: no compatible provider for the chosen language.
+- `speech_rate_limited` or `speech_provider_unavailable`: transient errors
+  where trying later may succeed.
+
+The iPhone UI distinguishes permanent provider-access failures from temporary
+outages. After access is denied, the current language stops uploading the same
+recording repeatedly; it opens a recovery dialog with **Use keyboard instead**.
+The fallback focuses the input *synchronously in the tap event*, allowing
+the user to invoke iOS keyboard dictation (including Malayalam if enabled on
+their keyboard) without visiting Safari or browser Settings. English uses its
+own provider and can still work even when Malayalam is blocked.
+
+For normal one-tap Malayalam voice operation a functioning STT key is required:
+add `GROQ_API_KEY` from [GroqCloud](https://console.groq.com/keys) in the
+Supabase Edge Function Secrets screen. Groq's free tier offers
+`whisper-large-v3` within rate limits; the Malayalam flow tries that
+higher-accuracy model first and supplies a Malayalam script/context prompt.
+`GEMINI_API_KEY` is another supported provider. The previously configured xAI
+secret can instead be repaired by enabling speech model access/credits in the
+xAI account. No client app can override a server-side 403 or create a usable
+third-party API credential itself. Never put API secrets in browser code,
+GitHub or a user-facing message.
+
 ## Microphone
 
 One tap on the orb starts local recording in a home-screen iPhone app; the phone
