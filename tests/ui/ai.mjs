@@ -52,7 +52,7 @@ function wavInfo(b64) {
   return { riff: b.toString('ascii', 0, 4) === 'RIFF' && b.toString('ascii', 8, 12) === 'WAVE', channels: b.readUInt16LE(22), rate: b.readUInt32LE(24), bits: b.readUInt16LE(34), seconds: b.readUInt32LE(40) / 32000 };
 }
 
-async function setup({ viewport, mobile, scheme, standalone = false, stt = true }) {
+async function setup({ viewport, mobile, scheme, standalone = false, stt = true, sttErrorCode = null }) {
   const ctx = await browser.newContext({ viewport, isMobile: mobile, hasTouch: mobile, colorScheme: scheme });
   await ctx.addInitScript(([k, v]) => localStorage.setItem(k, v), [`sb-${REF}-auth-token`, JSON.stringify(session)]);
   await ctx.addInitScript(fakeDevice, { standalone });
@@ -65,6 +65,13 @@ async function setup({ viewport, mobile, scheme, standalone = false, stt = true 
       if (b.transcribe) {
         log.transcribe.push(b.transcribe);
         if (!stt) return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: 'Voice needs a speech key. The gym owner can add GROQ_API_KEY in Supabase. You can type instead.' }) });
+        if (sttErrorCode && b.transcribe.lang === 'ml') {
+          await new Promise((r) => setTimeout(r, 130));
+          return route.fulfill({
+            status: 503, contentType: 'application/json',
+            body: JSON.stringify({ error: 'Malayalam speech provider denied API access (403).', code: sttErrorCode, language: 'ml', retryable: false }),
+          });
+        }
         await new Promise((r) => setTimeout(r, 200));
         return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ text: log.say }) });
       }
@@ -187,6 +194,40 @@ for (const [name, viewport, mobile] of [['phone', { width: 390, height: 844 }, t
   await tap(orb(dialog));
   await dialog.locator('.xsai-action').first().waitFor({ timeout: 10_000 });
   check('iPhone app with speech key: voice command works end to end', log.transcribe.length === 1 && log.agent.length === 1);
+  await ctx.close();
+}
+
+// Real incident: installed iPhone recorded Malayalam successfully, but its
+// only configured Malayalam cloud transcription provider returned HTTP 403.
+// Show permission diagnosis without trying the same doomed recording again.
+{
+  const { ctx, page, log, tap, entry, dialog, errors } = await setup({
+    viewport: { width: 393, height: 852 }, mobile: true, scheme: 'light',
+    standalone: true, stt: true, sttErrorCode: 'speech_access_denied',
+  });
+  await tap(entry); await dialog.waitFor(); await page.waitForTimeout(500);
+  await tap(dialog.getByRole('group', { name: 'Language' }).getByRole('button', { name: 'മലയാളം' }));
+  await tap(orb(dialog));
+  const help = dialog.locator('.xsai-mic-dialog');
+  await help.waitFor({ timeout: 10_000 });
+  check('iPhone Malayalam 403: identifies rejected cloud API, not denied microphone',
+    /API.*403/.test(await help.innerText()) && log.transcribe.length === 1 && log.agent.length === 0);
+  check('iPhone Malayalam 403: keyboard dictation is the primary recovery action',
+    await help.getByRole('button', { name: 'കീബോർഡ് ഉപയോഗിക്കുക' }).getAttribute('class')?.then((c) => c.includes('primary')));
+  await tap(help.getByRole('button', { name: 'കീബോർഡ് ഉപയോഗിക്കുക' }));
+  check('iPhone Malayalam 403: keyboard fallback receives focus on the user tap',
+    await page.evaluate(() => document.activeElement?.getAttribute('aria-label') === 'Message XS AI'));
+  await tap(orb(dialog));
+  await help.waitFor();
+  check('iPhone Malayalam 403: repeated microphone tap does not upload another doomed recording',
+    log.transcribe.length === 1 && /API.*403/.test(await help.innerText()));
+  await tap(help.getByRole('button', { name: 'കീബോർഡ് ഉപയോഗിക്കുക' }));
+  await tap(dialog.getByRole('group', { name: 'Language' }).getByRole('button', { name: 'English' }));
+  await tap(orb(dialog));
+  await dialog.locator('.xsai-action').first().waitFor({ timeout: 10_000 });
+  check('iPhone Malayalam 403: English remains available through its independent provider',
+    log.transcribe.length === 2 && log.transcribe.at(-1).lang === 'en' && log.agent.length === 1 && errors.length === 0);
+  await page.screenshot({ path: `${outDir}/ai-iphone-malayalam-api-403.png` });
   await ctx.close();
 }
 
