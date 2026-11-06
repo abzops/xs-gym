@@ -20,6 +20,15 @@ const recognitionCtor = (): RecognitionCtor | undefined => {
   return w.SpeechRecognition ?? w.webkitSpeechRecognition;
 };
 
+export class SpeechListenError extends Error {
+  readonly reason: 'denied' | 'service' | 'network' | 'audio' | 'unsupported' | 'unknown';
+  constructor(reason: SpeechListenError['reason'], message: string) {
+    super(message);
+    this.name = 'SpeechListenError';
+    this.reason = reason;
+  }
+}
+
 export const canListen = () => !!recognitionCtor();
 export const canSpeak = () => typeof window !== 'undefined' && 'speechSynthesis' in window;
 
