@@ -62,6 +62,27 @@
 
 ## 6. Session log
 
+### 2026-11-06 — Text-only voice input: remove WAV/cloud transcription
+
+- Owner reported live Malayalam transcription still behaved like a delayed
+  audio-upload workflow. Replaced the XS AI frontend with a strict live
+  `SpeechRecognition` path (`en-IN` / `ml-IN`, interim words in the input,
+  auto-submit of recognized text once recognition ends).
+- Removed the Web Audio recorder, cloud STT backend and their obsolete tests.
+  The Edge Function now returns HTTP 410 for a legacy `transcribe` or raw
+  `audio` request, protecting against stale app bundles. No gym or billing
+  database schema has changed.
+- When native live speech is unavailable or rejected, the app offers a clear
+  keyboard-dictation action rather than recording audio or uploading it.
+  iPhone dictation is controlled by iOS and cannot be started directly by
+  JavaScript. Browser SpeechRecognition itself may use the platform's own
+  online speech service; the application never uploads raw audio.
+- New automated checks cover live English/Malayalam interim text, one-time
+  submission, unsupported browser fallback and absence of getUserMedia/
+  transcription uploads. Real installed-iPhone recognition requires field QA.
+- Prior cloud transcription release notes below are historical and no longer
+  describe the current architecture; see `docs/XS_AI.md` for the active contract.
+
 ### 2026-11-06 — Release: Analytics + Enquiries + onboarding + cloud voice
 
 - Aligned all four migration file version prefixes with Supabase's recorded versions (without schema changes) to avoid accidental duplicate future `db push` runs.
