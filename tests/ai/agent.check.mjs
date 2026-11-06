@@ -233,6 +233,39 @@ const otherGym = sql(`select g.id from gyms g join gym_staff s on s.gym_id = g.i
     out.reply.slice(0, 150));
 }
 
+// 11. Impossible dates must not silently become today's date.
+{
+  script = (body) => toolMsgs(body).length === 0
+    ? { role: 'assistant', content: '', tool_calls: [
+      call('record_expense', { category: 'QA Validation', amount: 13, date: '2026-02-31' }),
+      call('add_enquiry', { full_name: 'Invalid Date QA', phone: '9811222333', follow_up_date: '2026-02-31' }),
+    ] }
+    : say('invalid dates handled');
+  const out = await runAgent({ gym_id: gym,
+    messages: [{ role: 'user', content: 'test invalid calendar dates' }] }, env(owner));
+  check('invalid calendar dates are rejected rather than treated as today',
+    out.actions.length === 2 && out.actions.every((a) => !a.ok && /real YYYY-MM-DD/.test(a.summary)),
+    out.actions.map((a) => a.summary).join(' | '));
+}
+
+// 12. Untrusted member names containing markup are escaped before being
+// placed inside the data wrapper passed to a language model.
+{
+  const before = sql(`select full_name from members where id = '${member[0]}'`);
+  const htmlName = 'QA Member <note>user-provided text</note>';
+  sql(`update members set full_name = '${htmlName}' where id = '${member[0]}'`);
+  script = (body) => toolMsgs(body).length === 0
+    ? { role: 'assistant', content: '', tool_calls: [call('find_members', { query: 'QA Member' })] }
+    : say('No instructions followed.');
+  const out = await runAgent({ gym_id: gym,
+    messages: [{ role: 'user', content: 'find QA Member' }] }, env(owner));
+  const wrapper = lastBody.messages.find((m) => m.role === 'tool')?.content ?? '';
+  sql(`update members set full_name = '${before.replace(/'/g, "''")}' where id = '${member[0]}'`);
+  check('member-provided markup stays escaped inside the model data wrapper',
+    out.reply === 'No instructions followed.' && wrapper.includes('QA Member') &&
+    !wrapper.includes('<note>') && wrapper.includes('</gym-data>'));
+}
+
 llm.close();
 console.log(failures ? `${failures} AI FAILURES` : 'AI AGENT OK');
 process.exit(failures ? 1 : 0);
