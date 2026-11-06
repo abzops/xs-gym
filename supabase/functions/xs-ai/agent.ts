@@ -459,9 +459,10 @@ export async function runAgent(req: AgentRequest, env: AgentEnv): Promise<AgentR
   const auth = await f(`${env.supabaseUrl}/auth/v1/user`, { headers });
   if (!auth.ok) throw new ApiError('not signed in', 401);
   const user = (await auth.json().catch(() => null)) as Json | null;
-  if (!isUuid(user?.id)) throw new ApiError('not signed in', 401);
+  const userId = typeof user?.id === 'string' ? user.id : '';
+  if (!isUuid(userId)) throw new ApiError('not signed in', 401);
   const gyms = (await rest(`gyms?select=id,name,slug,timezone,grace_days&id=eq.${req.gym_id}`)) as Ctx['gym'][];
-  const staff = (await rest(`gym_staff?select=role,status&gym_id=eq.${req.gym_id}&user_id=eq.${user.id}`)) as Json[];
+  const staff = (await rest(`gym_staff?select=role,status&gym_id=eq.${req.gym_id}&user_id=eq.${userId}`)) as Json[];
   if (!gyms[0] || !staff[0] || staff[0].status !== 'active') throw new ApiError('you are not staff in this gym', 403);
   const role = String(staff[0].role);
   const perms = new Set(((await rest(`role_permissions?select=permission&role=eq.${role}`)) as Json[]).map((p) => String(p.permission)));
