@@ -10,7 +10,7 @@
 //   GEMINI_API_KEY or LLM_API_KEY      Google Gemini (LLM_BASE_URL switches LLM_API_KEY to any OpenAI-compatible service)
 //   NVIDIA_API_KEY                     NVIDIA NIM
 //   XAI_API_KEY / GROK_API_KEY / Grok  xAI Grok LLM
-import { ApiError, runAgent, type LlmProvider } from './agent.ts';
+import { ApiError, runAgent, type AgentRequest, type LlmProvider } from './agent.ts';
 
 const ALLOWED_ORIGINS = ['https://abzops.github.io', 'http://localhost:5173', 'http://localhost:4173', 'http://localhost:4185'];
 const env = (k: string) => Deno.env.get(k)?.trim() || undefined;
@@ -59,8 +59,8 @@ Deno.serve(async (req) => {
     const token = (req.headers.get('authorization') ?? '').replace(/^Bearer\s+/i, '');
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const anonKey = Deno.env.get('SUPABASE_ANON_KEY')!;
-    let body: Record<string, unknown>;
-    try { body = await req.json() as Record<string, unknown>; }
+    let body: AgentRequest & { transcribe?: unknown; audio?: unknown };
+    try { body = await req.json() as typeof body; }
     catch { return json(400, { error: 'Request body must be valid JSON.' }); }
     if (!body || typeof body !== 'object' || Array.isArray(body))
       return json(400, { error: 'Request body must be a JSON object.' });
