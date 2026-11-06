@@ -175,6 +175,7 @@ for (const [name, mobile, standalone, scheme] of [
   const { ctx, page, dialog, log, tap, errors } = await setup({
     standalone: true, mobile: true, noSpeech: true, stt: true,
   });
+  await tap(dialog.getByRole('group', { name: 'Language' }).getByRole('button', { name: 'മലയാളം' }));
   await tap(dialog.getByRole('button', { name: 'Talk to XS AI' }));
   const help = dialog.getByRole('dialog', { name: 'കീബോർഡ് ഡിക്റ്റേഷൻ ഉപയോഗിക്കുക' });
   await help.waitFor({ timeout: 3000 });
