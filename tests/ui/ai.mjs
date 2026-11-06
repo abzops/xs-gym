@@ -9,7 +9,7 @@ import { REF, body, gym, session } from './mock.mjs';
 
 const [pwPath, baseUrl, outDir] = process.argv.slice(2);
 const { chromium } = createRequire(import.meta.url)(pwPath);
-const browser = await chromium.launch({ args: ['--autoplay-policy=no-user-gesture-required'] });
+const browser = await chromium.launch({ executablePath: process.env.XS_BROWSER_PATH || undefined, args: ['--autoplay-policy=no-user-gesture-required'] });
 let failures = 0;
 const check = (name, ok, detail = '') => { if (!ok) failures++; console.log(`${ok ? 'ok  ' : 'FAIL'} ${name}${detail ? ` — ${detail}` : ''}`); };
 
