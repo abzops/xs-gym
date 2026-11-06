@@ -6,6 +6,10 @@
 export type RecorderOptions = {
   onLevel?: (level: number) => void;   // 0..1, for the orb animation
   onSpeech?: () => void;               // first time speech is detected
+  // Partial WAV snapshots while speaking, for progressive cloud transcription
+  // when a PWA cannot use the browser's live SpeechRecognition engine.
+  onPartial?: (audioBase64: string) => void;
+  previewEveryMs?: number;             // default ~2.3s; bounded to avoid rate-limit abuse
   silenceMs?: number;                  // stop after this much silence following speech
   maxMs?: number;                      // hard limit
   noSpeechMs?: number;                 // give up if nobody speaks
@@ -59,6 +63,11 @@ export async function startRecording(o: RecorderOptions = {}): Promise<Recording
   const chunks: Float32Array[] = [];
   const start = performance.now();
   let floor = 0.01, heard = false, lastVoice = 0, finished = false;
+  let lastPreviewAt = Number.NEGATIVE_INFINITY, previewCount = 0;
+  // A snapshot is an incremental preview, NOT a second microphone stream.
+  // Avoid charging many Whisper calls for long speech (Groq bills >=10s/call).
+  const previewEveryMs = Math.max(1_500, Math.min(5_000, o.previewEveryMs ?? 2_300));
+  const previewMaxCalls = 5;
   let resolveDone!: (v: string | null) => void;
   const done = new Promise<string | null>((r) => { resolveDone = r; });
 
@@ -88,6 +97,16 @@ export async function startRecording(o: RecorderOptions = {}): Promise<Recording
     if (rms > threshold) {
       if (!heard) { heard = true; o.onSpeech?.(); }
       lastVoice = now;
+    }
+    // Trigger after actual speech has started, never for silence or before
+    // 1.7s of audio. Full-so-far snapshots avoid word-stitching errors.
+    if (o.onPartial && heard && previewCount < previewMaxCalls &&
+        now >= 1_700 && now - lastPreviewAt >= previewEveryMs &&
+        now - lastVoice < 650) {
+      lastPreviewAt = now;
+      previewCount++;
+      try { o.onPartial(toWavBase64(chunks, rate)); }
+      catch { /* preview is best effort; final recording still succeeds */ }
     }
     if ((heard && now - lastVoice > silenceMs) || now > maxMs) end(true);
     else if (!heard && now > noSpeechMs) end(false);
