@@ -215,6 +215,10 @@ for (const [name, viewport, mobile] of [['phone', { width: 390, height: 844 }, t
   check('iPhone Malayalam 403: keyboard dictation is the primary recovery action',
     await help.getByRole('button', { name: 'കീബോർഡ് ഉപയോഗിക്കുക' }).getAttribute('class')?.then((c) => c.includes('primary')));
   await tap(help.getByRole('button', { name: 'കീബോർഡ് ഉപയോഗിക്കുക' }));
+  // React removes the overlay after the tap, then the fallback focus lands in
+  // the next animation frame. Assert the settled state, not a mid-render race.
+  await page.waitForFunction(() => document.activeElement?.getAttribute('aria-label') === 'Message XS AI',
+    { timeout: 1000 });
   check('iPhone Malayalam 403: keyboard fallback receives focus on the user tap',
     await page.evaluate(() => document.activeElement?.getAttribute('aria-label') === 'Message XS AI'));
   await tap(orb(dialog));
