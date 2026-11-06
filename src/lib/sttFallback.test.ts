@@ -91,6 +91,36 @@ describe('XS Gym recorded-voice speech-to-text', () => {
     expect(fetcher).toHaveBeenCalledTimes(2);
   });
 
+  it('previews Malayalam with fast Groq Whisper only, then leaves final accuracy choice unchanged', async () => {
+    const fetcher = vi.fn(async (_url: RequestInfo | URL, _init?: RequestInit) =>
+      new Response(JSON.stringify({ text: 'രാഹുൽ' }), { status: 200 }));
+    const preview = await transcribe({ audio: wav, lang: 'ml', preview: true },
+      { groqKey: 'speech-key', xaiKey: 'backup', fetch: fetcher as typeof fetch });
+    expect(preview).toBe('രാഹുൽ');
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    const [url, init] = fetcher.mock.calls[0];
+    expect(String(url)).toContain('api.groq.com');
+    expect((init?.body as FormData).get('model')).toBe('whisper-large-v3-turbo');
+    expect((init?.body as FormData).get('language')).toBe('ml');
+  });
+
+  it('does not send interim speech snapshots to xAI when Groq preview is not configured', async () => {
+    const fetcher = vi.fn(async () => new Response('{}', { status: 200 }));
+    await expect(transcribe({ audio: wav, lang: 'ml', preview: true },
+      { xaiKey: 'a-valid-chat-key', fetch: fetcher as typeof fetch }))
+      .rejects.toMatchObject({ code: 'speech_not_configured', retryable: false });
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+
+  it('does not fall back to xAI for repeated preview snapshots when Groq returns 403', async () => {
+    const fetcher = vi.fn(async () => new Response('forbidden', { status: 403 }));
+    await expect(transcribe({ audio: wav, lang: 'ml', preview: true },
+      { groqKey: 'bad-groq', xaiKey: 'xai', fetch: fetcher as typeof fetch }))
+      .rejects.toMatchObject({ code: 'speech_access_denied', retryable: false });
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(String(fetcher.mock.calls[0][0])).toContain('api.groq.com');
+  });
+
   it('uses Whisper first when a Groq speech key is available', async () => {
     const fetcher = vi.fn(async (_url: RequestInfo | URL, _init?: RequestInit) =>
       new Response(JSON.stringify({ text: 'രാഹുൽ 1500 UPI ആയി അടച്ചു' }), { status: 200 }));
