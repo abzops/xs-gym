@@ -23,6 +23,7 @@ jobs:
       VITE_SUPABASE_URL: https://knuanihnxtxtyrgvsumq.supabase.co
       VITE_SUPABASE_PUBLISHABLE_KEY: sb_publishable_2NshKjNCOJkokq3z0bezrw_21Dl7t-j
       VITE_BASE_PATH: /xs-gym/
+      XS_BROWSER_PATH: /usr/bin/google-chrome
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v5
@@ -30,10 +31,12 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - name: Install isolated Playwright Chromium runner
+      - name: Use preinstalled Chrome (avoid downloading a duplicate browser)
         run: |
           npm install --no-save --no-package-lock playwright@1.64.1
-          npx playwright install --with-deps chromium
+          test -x /usr/bin/google-chrome
+      - name: Print test browser version
+        run: /usr/bin/google-chrome --version
       - run: npm run build
       - name: Start local GitHub Pages preview
         run: |
