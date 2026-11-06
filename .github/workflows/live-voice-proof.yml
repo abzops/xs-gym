@@ -1,0 +1,58 @@
+# This runs *after* production Pages deployment, against the public URL.
+# Photos are captured by Chromium rendering the deployed XS Gym app with
+# simulated Web Speech output and mocked gym account/data (no private data).
+name: XS AI live website proof
+
+on:
+  workflow_run:
+    workflows: ["Test and deploy"]
+    types: [completed]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  published-website:
+    if: >-
+      ${{ github.event_name == 'workflow_dispatch' ||
+          (github.event.workflow_run.conclusion == 'success' &&
+           github.event.workflow_run.head_branch == 'main') }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      VITE_SUPABASE_URL: https://knuanihnxtxtyrgvsumq.supabase.co
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && github.sha || github.event.workflow_run.head_sha }}
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Install Playwright browser
+        run: |
+          npm install --no-save --no-package-lock playwright@1.64.1
+          npx playwright install --with-deps chromium
+      - name: Verify actual published website has live text-only recognition
+        run: |
+          mkdir -p /tmp/xs-live-proof
+          # Allow the CDN a few moments to expose the new hashed Pages assets.
+          for attempt in 1 2 3; do
+            if node tests/ui/live-voice.mjs "$(pwd)/node_modules/playwright/index.js"               "https://abzops.github.io/xs-gym/" "/tmp/xs-live-proof"; then
+              echo "DEPLOYED SITE VERIFIED: live interim text, auto-send, zero audio uploads"
+              exit 0
+            fi
+            echo "Published assets not verified on attempt ${attempt}"
+            sleep 8
+          done
+          echo "Could not verify the published version of XS Gym"
+          exit 1
+      - name: Upload screenshots and test results from deployed app
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: xs-ai-real-site-live-text-proof
+          path: /tmp/xs-live-proof/
+          retention-days: 21
