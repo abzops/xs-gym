@@ -5,7 +5,7 @@ name: XS AI voice UI
 on:
   workflow_dispatch:
   push:
-    branches: [main, 'fix/malayalam-voice-access', 'fix/live-voice-interim-transcription']
+    branches: [main, 'fix/malayalam-voice-access', 'fix/live-voice-interim-transcription', 'fix/progressive-pwa-voice']
     paths:
       - 'src/features/ai/**'
       - 'tests/ui/ai.mjs'
