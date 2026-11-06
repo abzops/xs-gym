@@ -2,7 +2,7 @@ name: Full XS Gym end-to-end (isolated)
 
 on:
   push:
-    branches: [analytics-onboarding, main]
+    branches: [analytics-onboarding, main, 'fix/text-only-xs-ai-voice']
     paths:
       - 'src/**'
       - 'supabase/migrations/**'
