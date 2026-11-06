@@ -1,19 +1,23 @@
-# Browser-based checks for XS AI permission onboarding. Does not call live
-# Supabase, microphone hardware, NVIDIA or xAI; APIs are mocked in the browser.
+# Real Chromium browser tests, with simulated speech events and gym data.
+# Screenshots are captured by Playwright, not generated artwork.
 name: XS AI voice UI
 
 on:
   workflow_dispatch:
   push:
-    branches: [main, 'fix/malayalam-voice-access', 'fix/live-voice-interim-transcription']
+    branches: [main, 'fix/text-only-live-voice']
     paths:
       - 'src/features/ai/**'
-      - 'tests/ui/ai.mjs'
+      - 'supabase/functions/xs-ai/**'
       - 'tests/ui/live-voice.mjs'
       - '.github/workflows/voice-ui.yml'
 
 permissions:
   contents: read
+
+concurrency:
+  group: xs-text-voice-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   microphone:
@@ -30,12 +34,21 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - name: Install isolated Playwright Chromium runner
+      - name: Verify all XS Gym audio recording and transcription code is gone
+        run: |
+          test ! -e src/features/ai/recorder.ts
+          test ! -e supabase/functions/xs-ai/stt.ts
+          test ! -e src/lib/sttFallback.test.ts
+          if grep -nE 'startRecording|canRecord|MediaRecorder|\.getUserMedia\(|transcribe:' src/features/ai/XsAi.tsx src/features/ai/voice.ts; then
+            echo "Found prohibited audio transport code"
+            exit 1
+          fi
+      - name: Install Playwright Chromium
         run: |
           npm install --no-save --no-package-lock playwright@1.64.1
           npx playwright install --with-deps chromium
       - run: npm run build
-      - name: Start local GitHub Pages preview
+      - name: Start local GitHub Pages build
         run: |
           npm run preview -- --host 127.0.0.1 --port 4173 >/tmp/xs-voice-preview.log 2>&1 &
           for i in $(seq 1 30); do
@@ -44,16 +57,15 @@ jobs:
           done
           cat /tmp/xs-voice-preview.log
           exit 1
-      - name: Check voice permission flow on phone and desktop, light and dark
+      - name: Prove English and Malayalam live text with zero audio requests
         run: |
-          mkdir -p /tmp/xs-voice-screens
-          node tests/ui/live-voice.mjs "$(pwd)/node_modules/playwright/index.js" "http://127.0.0.1:4173/xs-gym/"
-          node tests/ui/ai.mjs "$(pwd)/node_modules/playwright/index.js" "http://127.0.0.1:4173/xs-gym/" "/tmp/xs-voice-screens"
-      - uses: actions/upload-artifact@v4
-        if: failure()
+          node tests/ui/live-voice.mjs "$(pwd)/node_modules/playwright/index.js" "http://127.0.0.1:4173/xs-gym/" "/tmp/xs-voice-proof"
+      - name: Upload actual application screenshots and assertions
+        uses: actions/upload-artifact@v4
+        if: always()
         with:
-          name: xs-voice-debug
+          name: xs-ai-text-only-local-proof
           path: |
-            /tmp/xs-voice-screens/
+            /tmp/xs-voice-proof/
             /tmp/xs-voice-preview.log
-          retention-days: 3
+          retention-days: 14
