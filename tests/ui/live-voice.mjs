@@ -2,13 +2,17 @@
 // installed iPhone PWA when its engine exists. No real gym data/API calls.
 // node tests/ui/live-voice.mjs <playwright-module-path> <base-url>
 import { createRequire } from 'node:module';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { REF, gym, session, body } from './mock.mjs';
 
-const [pwPath, baseUrl] = process.argv.slice(2);
+const [pwPath, baseUrl, proofDir] = process.argv.slice(2);
+if (proofDir) mkdirSync(proofDir, { recursive: true });
 const { chromium } = createRequire(import.meta.url)(pwPath);
 const browser = await chromium.launch({ args: ['--autoplay-policy=no-user-gesture-required'] });
 let failures = 0;
+const assertions = [];
 const check = (label, ok, detail = '') => {
+  assertions.push({ test: label, pass: !!ok, detail });
   if (!ok) failures++;
   console.log((ok ? 'ok   ' : 'FAIL ') + label + (detail ? ' — ' + detail : ''));
 };
@@ -71,6 +75,8 @@ async function setup({ standalone, stt = false, mobile = true, scheme = 'light' 
         body: JSON.stringify({ reply: payload.lang === 'ml' ? 'ശരി, മനസ്സിലായി.' : 'I understood.', actions: [], changed: [] }),
       });
     }
+    // This browser proof never sends recorded microphone data to any API.
+    // Keep the normal gym Data API mock for authenticated screen rendering.
     const accept = req.headers()['accept'] ?? '';
     let data = body(url);
     if (accept.includes('vnd.pgrst.object') && Array.isArray(data)) data = data[0] ?? null;
@@ -106,6 +112,9 @@ for (const [name, mobile, standalone, scheme] of [
   await page.evaluate(() => window.__partial('Who has dues?'));
   check(name + ': English interim text updates on every result',
     (await liveValue(page, 'Who has dues?')) && log.agent.length === 0);
+  if (proofDir && name === 'installed iPhone') {
+    await page.screenshot({ path: proofDir + '/01-english-live-interim.png', fullPage: true });
+  }
   await page.evaluate(() => { window.__ended(); window.__ended(); });
   await dialog.getByText('I understood.').waitFor({ timeout: 5000 });
   check(name + ': stops and automatically sends exactly once',
@@ -123,28 +132,53 @@ for (const [name, mobile, standalone, scheme] of [
   await page.evaluate(() => window.__partial('ഇന്ന് എത്ര രൂപ കിട്ടി?'));
   check(name + ': Malayalam interim text updates immediately',
     (await liveValue(page, 'ഇന്ന് എത്ര രൂപ കിട്ടി?')) && log.agent.length === 1);
+  if (proofDir && name === 'installed iPhone') {
+    await page.screenshot({ path: proofDir + '/02-malayalam-live-interim.png', fullPage: true });
+  }
   await tap(orb()); // User presses stop; browser onend triggers auto-send.
   await dialog.getByText('ശരി, മനസ്സിലായി.').waitFor({ timeout: 5000 });
   check(name + ': Malayalam sends once with selected language',
     log.agent.length === 2 && log.agent[1].lang === 'ml' &&
     log.agent[1].messages.at(-1).content === 'ഇന്ന് എത്ര രൂപ കിട്ടി?' &&
     log.transcribe.length === 0 && errors.length === 0, errors.join(' | '));
+  check(name + ': audio payload prohibited in all AI requests',
+    log.agent.every((item) => !('audio' in item) && !('transcribe' in item) &&
+      Array.isArray(item.messages) && item.messages.every((turn) =>
+        !('audio' in turn) && typeof turn.content === 'string')));
+  if (proofDir && name === 'installed iPhone') {
+    await page.screenshot({ path: proofDir + '/03-malayalam-text-sent.png', fullPage: true });
+  }
   await ctx.close();
 }
 
-// Service is unavailable, not the microphone. Offer WAV recording as a separate
-// opt-in fallback, rather than silently replacing live speech for everyone.
+// Browser recognition may be unavailable or blocked. The user is directed to
+// keyboard dictation; there must never be an opt-in WAV/cloud recording path.
 {
-  const { ctx, page, dialog, log, tap, errors } = await setup({ standalone: true, mobile: true, scheme: 'light', stt: true });
+  const { ctx, page, dialog, log, tap, errors } = await setup({
+    standalone: true, mobile: true, scheme: 'light', stt: true,
+  });
   await tap(dialog.getByRole('group', { name: 'Language' }).getByRole('button', { name: 'മലയാളം' }));
   await tap(dialog.getByRole('button', { name: 'Talk to XS AI' }));
   await page.evaluate(() => window.__serviceError());
   const help = dialog.getByRole('dialog', { name: 'ലൈവ് വോയ്സ് ലഭ്യമല്ല' });
   await help.waitFor({ timeout: 3000 });
-  check('installed iPhone: real-time engine failure offers recorded fallback',
-    await help.getByRole('button', { name: 'റെക്കോർഡ് ചെയ്ത് ശ്രമിക്കുക' }).isVisible() &&
-    log.agent.length === 0 && errors.length === 0, errors.join(' | '));
+  check('iPhone: speech service failure offers keyboard, never a cloud recording',
+    await help.getByRole('button', { name: 'കീബോർഡ് ഉപയോഗിക്കുക' }).isVisible() &&
+    log.transcribe.length === 0 && errors.length === 0, errors.join(' | '));
+  if (proofDir) await page.screenshot({ path: proofDir + '/04-voice-unavailable-keyboard.png', fullPage: true });
+  await tap(help.getByRole('button', { name: 'കീബോർഡ് ഉപയോഗിക്കുക' }));
+  check('iPhone: fallback focuses the original text field',
+    await dialog.getByRole('textbox', { name: 'Message XS AI' })
+      .evaluate((el) => document.activeElement === el));
   await ctx.close();
+}
+if (proofDir) {
+  writeFileSync(proofDir + '/test-results.json', JSON.stringify({
+    source: baseUrl, simulatedRecognition: true,
+    explanation: 'Actual application/browser rendering with simulated Web Speech results and mocked gym API. No raw audio was captured. Physical iPhone not tested.',
+    total: assertions.length, passed: assertions.filter((x) => x.pass).length,
+    failed: failures, assertions,
+  }, null, 2));
 }
 await browser.close();
 console.log(failures ? failures + ' LIVE VOICE FAILURES' : 'LIVE VOICE OK');
