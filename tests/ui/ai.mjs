@@ -59,13 +59,21 @@ async function setup({ viewport, mobile, scheme, standalone = false, stt = true,
   const ctx = await browser.newContext({ viewport, isMobile: mobile, hasTouch: mobile, colorScheme: scheme });
   await ctx.addInitScript(([k, v]) => localStorage.setItem(k, v), [`sb-${REF}-auth-token`, JSON.stringify(session)]);
   await ctx.addInitScript(fakeDevice, { standalone });
-  const log = { transcribe: [], agent: [], rpcs: [], say: 'Rahul paid 1500 by UPI' };
+  const log = { transcribe: [], previews: [], agent: [], rpcs: [], say: 'Rahul paid 1500 by UPI' };
   await ctx.route(`https://${REF}.supabase.co/**`, async (route) => {
     const req = route.request(); const url = req.url();
     if (url.includes('/functions/v1/xs-ai')) {
       if (req.method() === 'GET') return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ configured: true, stt, providers: [] }) });
       const b = JSON.parse(req.postData() ?? '{}');
       if (b.transcribe) {
+        if (b.transcribe.preview) {
+          log.previews.push(b.transcribe);
+          if (!stt) return route.fulfill({ status: 503, contentType: 'application/json',
+            body: JSON.stringify({ error: 'Preview unavailable', code: 'speech_not_configured' }) });
+          await new Promise((r) => setTimeout(r, 90));
+          return route.fulfill({ status: 200, contentType: 'application/json',
+            body: JSON.stringify({ text: b.transcribe.lang === 'ml' ? 'രാഹുൽ' : 'Rahul paid' }) });
+        }
         log.transcribe.push(b.transcribe);
         if (!stt) return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: 'Voice needs a speech key. The gym owner can add GROQ_API_KEY in Supabase. You can type instead.' }) });
         if (sttErrorCode && b.transcribe.lang === 'ml') {
@@ -235,6 +243,39 @@ for (const [name, viewport, mobile] of [['phone', { width: 390, height: 844 }, t
   check('iPhone Malayalam 403: English remains available through its independent provider',
     log.transcribe.length === 2 && log.transcribe.at(-1).lang === 'en' && log.agent.length === 1 && errors.length === 0);
   await page.screenshot({ path: `${outDir}/ai-iphone-malayalam-api-403.png` });
+  await ctx.close();
+}
+
+// Progressive speech is essential for installed iPhone PWAs without native
+// SpeechRecognition. A partial transcript must arrive *before* silence
+// detection ends the microphone recording, then only one final command sends.
+{
+  const { ctx, page, log, tap, entry, dialog, errors } = await setup({
+    viewport: { width: 393, height: 852 }, mobile: true,
+    scheme: 'light', standalone: true, stt: true,
+  });
+  await tap(entry); await dialog.waitFor();
+  await tap(dialog.getByRole('group', { name: 'Language' }).getByRole('button', { name: 'മലയാളം' }));
+  await page.evaluate(() => { window.__mic.speakMs = 3200; });
+  log.say = 'രാഹുൽ 1500 UPI ആയി അടച്ചു';
+  await tap(orb(dialog));
+  const partialVisible = await page.waitForFunction(() =>
+    document.querySelector('input[aria-label="Message XS AI"]')?.value === 'രാഹുൽ' &&
+    !!document.querySelector('.xsai-orb.listening'),
+  { timeout: 6500 }).then(() => true).catch(() => false);
+  check('installed iPhone: Malayalam live draft appears while microphone is still recording',
+    partialVisible && log.previews.length >= 1 && log.transcribe.length === 0 && log.agent.length === 0);
+  check('installed iPhone: preview is an authenticated, bounded WAV snapshot',
+    log.previews.every((r) => r.preview === true && r.lang === 'ml' && wavInfo(r.audio).riff));
+  await dialog.getByText('ശരി. രാഹുൽ').waitFor({ timeout: 12000 });
+  check('installed iPhone: final Malayalam transcript auto-sends once after silence',
+    log.transcribe.length === 1 && log.agent.length === 1 &&
+    log.agent[0].messages.at(-1).content === 'രാഹുൽ 1500 UPI ആയി അടച്ചു' &&
+    (await dialog.getByRole('textbox', { name: 'Message XS AI' }).inputValue()) === '' &&
+    errors.length === 0, errors.join(' | '));
+  const used = await page.evaluate(() => window.__mic);
+  check('installed iPhone: only one microphone stream and all tracks closed',
+    used.opened === 1 && used.stopped === 1);
   await ctx.close();
 }
 
