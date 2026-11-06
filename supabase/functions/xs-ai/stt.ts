@@ -51,9 +51,13 @@ async function withTimeout<T>(ms: number, run: (signal: AbortSignal) => Promise<
   try { return await run(ctl.signal); } finally { clearTimeout(t); }
 }
 
-async function groq(audio: Uint8Array, lang: 'en' | 'ml', key: string, f: typeof fetch): Promise<string> {
-  // Larger Whisper is more reliable for Malayalam and Malayalam-English speech.
-  for (const model of lang === 'ml' ? ['whisper-large-v3', 'whisper-large-v3-turbo'] : ['whisper-large-v3-turbo', 'whisper-large-v3']) {
+async function groq(audio: Uint8Array, lang: 'en' | 'ml', key: string, f: typeof fetch, preview = false): Promise<string> {
+  // Partial results prioritize low latency. The final Malayalam transcription
+  // prioritizes accuracy, then tries the alternate model if retired.
+  const models = preview || lang === 'en'
+    ? ['whisper-large-v3-turbo', 'whisper-large-v3']
+    : ['whisper-large-v3', 'whisper-large-v3-turbo'];
+  for (const model of models) {
     const form = new FormData();
     form.append('file', new Blob([new Uint8Array(audio)], { type: 'audio/wav' }), 'speech.wav');
     form.append('model', model);
@@ -128,9 +132,17 @@ async function gemini(b64: string, lang: 'en' | 'ml', key: string, model: string
 }
 
 /** Returns the transcript ('' when nothing was said). Never logs audio or keys. */
-export async function transcribe(body: { audio?: unknown; lang?: unknown }, env: SttEnv): Promise<string> {
+export async function transcribe(body: { audio?: unknown; lang?: unknown; preview?: unknown }, env: SttEnv): Promise<string> {
   const f = env.fetch ?? fetch;
   const lang = body.lang === 'ml' ? 'ml' : 'en';
+  const preview = body.preview === true;
+  // Progressive speech is available through the low-latency Groq endpoint.
+  // Do not send five snapshots to xAI after it returned a known 403, or to a
+  // slower Gemini model. The final whole utterance still has all fallbacks.
+  if (preview && !env.groqKey) {
+    throw new SpeechUnavailableError('speech_not_configured', lang,
+      'Progressive speech requires a working Groq Whisper API key.');
+  }
   if (!sttConfigured(env, lang)) {
     throw new SpeechUnavailableError('speech_not_configured', lang,
       lang === 'ml'
@@ -149,7 +161,16 @@ export async function transcribe(body: { audio?: unknown; lang?: unknown }, env:
     });
   };
   if (env.groqKey) {
-    try { return await groq(decode(b64), lang, env.groqKey, f); } catch (e) { recordFailure('groq', e); }
+    try { return await groq(decode(b64), lang, env.groqKey, f, preview); } catch (e) { recordFailure('groq', e); }
+  }
+  // A preview is best-effort: do not attempt other APIs or burn credits.
+  // The caller keeps recording and can still send one full final utterance.
+  if (preview) {
+    throw new SpeechUnavailableError(
+      failures.some((e) => [401, 402, 403].includes(e.status ?? 0)) ? 'speech_access_denied' : 'speech_provider_unavailable',
+      lang, 'Progressive voice preview is unavailable; final transcription can still be attempted.',
+      false,
+    );
   }
   // English-only NVIDIA ASR must never be used to guess Malayalam transcripts.
   if (lang === 'en' && env.nvidiaKey) {
