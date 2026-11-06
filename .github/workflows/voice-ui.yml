@@ -47,8 +47,8 @@ jobs:
       - name: Check voice permission flow on phone and desktop, light and dark
         run: |
           mkdir -p /tmp/xs-voice-screens
-          node tests/ui/ai.mjs "$(pwd)/node_modules/playwright/index.js" "http://127.0.0.1:4173/xs-gym/" "/tmp/xs-voice-screens"
           node tests/ui/live-voice.mjs "$(pwd)/node_modules/playwright/index.js" "http://127.0.0.1:4173/xs-gym/"
+          node tests/ui/ai.mjs "$(pwd)/node_modules/playwright/index.js" "http://127.0.0.1:4173/xs-gym/" "/tmp/xs-voice-screens"
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
