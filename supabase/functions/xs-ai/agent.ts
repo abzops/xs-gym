@@ -218,7 +218,10 @@ const TOOLS: Tool[] = [
     description: 'Expenses in a month.',
     parameters: { type: 'object', properties: { month: { type: 'string', description: 'YYYY-MM; default this month' } } },
     run: async (a, c) => {
-      const m = /^\d{4}-\d{2}$/.test(str(a.month)) ? str(a.month) : c.today.slice(0, 7);
+      const requestedMonth = str(a.month);
+      if (requestedMonth && !/^\d{4}-(0[1-9]|1[0-2])$/.test(requestedMonth))
+        throw new ApiError('month must be a real YYYY-MM', 400);
+      const m = requestedMonth || c.today.slice(0, 7);
       const [y, mo] = m.split('-').map(Number); const next = mo === 12 ? `${y + 1}-01-01` : `${y}-${String(mo + 1).padStart(2, '0')}-01`;
       const rows = (await c.rest(`expenses?select=id,amount_paise,expense_date,method,description,expense_categories(name),expense_reversals(reason)&gym_id=eq.${c.gym.id}&expense_date=gte.${m}-01&expense_date=lt.${next}&order=expense_date.desc&limit=${MAX_ROWS}`)) as Json[];
       return { result: rows.map((x) => ({ id: x.id, category: (x.expense_categories as Json)?.name, amount: rupees(x.amount_paise), date: x.expense_date, method: x.method, note: x.description, reversed: Array.isArray(x.expense_reversals) && x.expense_reversals.length > 0 })) };
@@ -240,6 +243,8 @@ const TOOLS: Tool[] = [
     parameters: { type: 'object', properties: { ...MEMBER_PARAMS, plan: { type: 'string', description: 'plan name, e.g. Monthly' }, plan_id: { type: 'string' }, start_date: { type: 'string', description: 'YYYY-MM-DD; omit to continue after the current plan' }, discount: { type: 'number', description: 'rupees' }, discount_reason: { type: 'string' }, admission_fee: { type: 'number', description: 'rupees' } }, required: ['plan'] },
     run: async (a, c) => {
       const who = await resolveMember(a, c); const planId = await resolvePlan(a, c);
+      if (a.start_date != null && a.start_date !== '' && !isDate(a.start_date))
+        throw new ApiError('start_date must be a real YYYY-MM-DD date', 400);
       const disc = a.discount ? toPaise(a.discount) : 0; const adm = a.admission_fee ? toPaise(a.admission_fee) : 0;
       need(!disc || str(a.discount_reason), 'a discount needs a discount_reason');
       const mm = (await c.rpc('sell_membership', { p_gym: c.gym.id, p_member: who.id, p_plan: planId, p_idempotency_key: c.idempotencyKey, p_start_date: isDate(a.start_date) ? a.start_date : null,
@@ -265,6 +270,8 @@ const TOOLS: Tool[] = [
     run: async (a, c) => {
       const name = str(a.full_name, 120); const digits = str(a.phone, 20).replace(/\D/g, '').replace(/^(91|0)(?=\d{10}$)/, '');
       need(name.length >= 2, 'full_name is required'); need(digits.length === 10, 'phone must have 10 digits');
+      if (a.follow_up_date != null && a.follow_up_date !== '' && !isDate(a.follow_up_date))
+        throw new ApiError('follow_up_date must be a real YYYY-MM-DD date', 400);
       const args = { p_gym: c.gym.id, p_full_name: name, p_phone: `+91${digits}`, p_source: str(a.source) || 'walk_in', p_interest: str(a.interest, 120) || null,
         p_notes: str(a.note, 500) || null, p_follow_up_date: isDate(a.follow_up_date) ? a.follow_up_date : null };
       const e = (await c.rpc('save_enquiry', { ...args, p_enquiry: null, p_status: 'new' })) as Json;
@@ -276,6 +283,8 @@ const TOOLS: Tool[] = [
     parameters: { type: 'object', properties: { category: { type: 'string', description: 'e.g. Electricity, Rent, Salaries, Maintenance' }, amount: { type: 'number' }, date: { type: 'string', description: 'YYYY-MM-DD, not in the future; default today' }, method: { type: 'string', enum: METHODS }, note: { type: 'string' } }, required: ['category', 'amount'] },
     run: async (a, c) => {
       const cat = str(a.category, 60); need(cat.length >= 2, 'category is required');
+      if (a.date != null && a.date !== '' && !isDate(a.date))
+        throw new ApiError('date must be a real YYYY-MM-DD date', 400);
       const d = isDate(a.date) ? (a.date as string) : c.today; need(d <= c.today, 'expense date cannot be in the future');
       const x = (await c.rpc('record_expense', { p_gym: c.gym.id, p_category: cat, p_amount_paise: toPaise(a.amount), p_expense_date: d, p_method: a.method ? method(a.method) : 'cash', p_idempotency_key: c.idempotencyKey, p_description: str(a.note, 200) || 'Recorded by XS AI' })) as Json;
       return { result: { expense_id: x.id, amount: rupees(x.amount_paise) }, action: { summary: `${rupees(x.amount_paise)} ${cat} expense saved`, summaryMl: `${rupees(x.amount_paise)} ${cat} ചെലവ് രേഖപ്പെടുത്തി`, undo: { rpc: 'reverse_expense', args: { p_gym: c.gym.id, p_expense: x.id, p_reason: 'Undone in XS AI' } } }, changed: ['expenses', 'dashboard'] };
