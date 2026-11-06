@@ -32,6 +32,8 @@ jobs:
       - run: npm run typecheck
       - run: npm run lint
       - run: npm test
+      - name: XS AI text-only HTTP security contract
+        run: node --experimental-strip-types tests/ai/http.check.mjs
       - run: npm run build
       - name: Secret scan of the published bundle
         run: |
