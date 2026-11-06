@@ -106,7 +106,7 @@ describe('XS Gym recorded-voice speech-to-text', () => {
   });
 
   it('reports the real provider permission problem when Malayalam xAI returns 403', async () => {
-    const fetcher = vi.fn(async () => new Response('forbidden', { status: 403 }));
+    const fetcher = vi.fn(async (_url: RequestInfo | URL, _init?: RequestInit) => new Response('forbidden', { status: 403 }));
     await expect(transcribe({ audio: wav, lang: 'ml' },
       { nvidiaKey: 'nv-english-only', xaiKey: 'bad-key', fetch: fetcher as typeof fetch }))
       .rejects.toMatchObject({
