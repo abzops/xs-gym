@@ -48,7 +48,7 @@ const MIC_COPY: Record<Lang, Record<Exclude<MicDialog, null>, MicCopy>> = {
     unavailable: { title: 'Microphone unavailable', detail: 'This device could not open a microphone. You can still type or use your keyboard’s dictation feature.', button: '' },
     setup: { title: 'Voice needs a transcription service', detail: 'Your gym needs a working cloud speech provider. Supported keys are GROQ_API_KEY, GEMINI_API_KEY and XAI_API_KEY (or Grok). You can still type or use keyboard dictation.', button: '' },
     cloud: { title: 'Voice transcription unavailable', detail: 'Your microphone is working, but the speech provider could not process this recording. You can retry later or use keyboard dictation.', button: 'Try again' },
-    access: { title: 'Malayalam voice service needs access', detail: 'Your microphone works. The configured cloud speech API rejected the request (403). A gym owner must enable API access or connect a Groq Whisper/Gemini key. Repeating the recording will not resolve a blocked key.', button: '' },
+    access: { title: 'Voice provider access denied', detail: 'Your microphone works. The configured cloud speech API rejected the request (403). A gym owner must enable API access or connect a Groq Whisper/Gemini key. Repeating the recording will not resolve a blocked key.', button: '' },
   },
   ml: {
     intro: { title: 'മൈക്രോഫോൺ അനുവദിക്കുക', detail: 'ജിം കാര്യങ്ങൾ സംസാരിച്ച് ചോദിക്കാൻ XS AI-ക്ക് മൈക്രോഫോൺ അനുമതി നൽകൂ. ഫോണിൽ Allow എന്ന പോപ്പപ്പ് വന്നേക്കാം.', button: 'മൈക്രോഫോൺ അനുവദിക്കുക' },
