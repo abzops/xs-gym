@@ -13,6 +13,17 @@ const check = (label, ok, detail = '') => {
   console.log((ok ? 'ok   ' : 'FAIL ') + label + (detail ? ' — ' + detail : ''));
 };
 
+// React commits state updates asynchronously after the speech event handler.
+// Allow one render tick, but never wait for the recording to finish.
+async function liveValue(page, expected) {
+  try {
+    await page.waitForFunction((value) =>
+      document.querySelector('input[aria-label="Message XS AI"]')?.value === value,
+      expected, { timeout: 1500 });
+    return true;
+  } catch { return false; }
+}
+
 const fakeSpeech = ({ standalone }) => {
   if (standalone) Object.defineProperty(navigator, 'standalone', { configurable: true, value: true });
   window.__speech = { started: 0, stopped: 0, last: null };
@@ -91,10 +102,10 @@ for (const [name, mobile, standalone, scheme] of [
   check(name + ': English uses live en-IN interim recognition', en.lang === 'en-IN' && en.interim === true);
   await page.evaluate(() => window.__partial('Who has'));
   check(name + ': English words appear in the composer before stopping',
-    (await input.inputValue()) === 'Who has' && log.agent.length === 0);
+    (await liveValue(page, 'Who has')) && log.agent.length === 0);
   await page.evaluate(() => window.__partial('Who has dues?'));
   check(name + ': English interim text updates on every result',
-    (await input.inputValue()) === 'Who has dues?' && log.agent.length === 0);
+    (await liveValue(page, 'Who has dues?')) && log.agent.length === 0);
   await page.evaluate(() => { window.__ended(); window.__ended(); });
   await dialog.getByText('I understood.').waitFor({ timeout: 5000 });
   check(name + ': stops and automatically sends exactly once',
@@ -108,10 +119,10 @@ for (const [name, mobile, standalone, scheme] of [
   check(name + ': Malayalam uses live ml-IN recognition', ml.lang === 'ml-IN' && ml.interim === true);
   await page.evaluate(() => window.__partial('ഇന്ന് എത്ര'));
   check(name + ': Malayalam letters appear as they are spoken',
-    (await input.inputValue()) === 'ഇന്ന് എത്ര' && log.agent.length === 1);
+    (await liveValue(page, 'ഇന്ന് എത്ര')) && log.agent.length === 1);
   await page.evaluate(() => window.__partial('ഇന്ന് എത്ര രൂപ കിട്ടി?'));
   check(name + ': Malayalam interim text updates immediately',
-    (await input.inputValue()) === 'ഇന്ന് എത്ര രൂപ കിട്ടി?' && log.agent.length === 1);
+    (await liveValue(page, 'ഇന്ന് എത്ര രൂപ കിട്ടി?')) && log.agent.length === 1);
   await tap(orb()); // User presses stop; browser onend triggers auto-send.
   await dialog.getByText('ശരി, മനസ്സിലായി.').waitFor({ timeout: 5000 });
   check(name + ': Malayalam sends once with selected language',
