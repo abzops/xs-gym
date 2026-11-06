@@ -59,7 +59,11 @@ Deno.serve(async (req) => {
     const token = (req.headers.get('authorization') ?? '').replace(/^Bearer\s+/i, '');
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const anonKey = Deno.env.get('SUPABASE_ANON_KEY')!;
-    const body = await req.json();
+    let body: Record<string, unknown>;
+    try { body = await req.json() as Record<string, unknown>; }
+    catch { return json(400, { error: 'Request body must be valid JSON.' }); }
+    if (!body || typeof body !== 'object' || Array.isArray(body))
+      return json(400, { error: 'Request body must be a JSON object.' });
 
     // Reject even legacy clients still holding a stale PWA bundle: no raw
     // microphone audio is accepted or sent to any transcription provider.
