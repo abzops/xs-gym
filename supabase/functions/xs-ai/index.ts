@@ -22,7 +22,9 @@ function configuredProviders(): LlmProvider[] {
     if (!apiKey) return;
     for (const model of uniq(models)) out.push({ name: `${label} / ${model}`, group, apiKey, baseUrl, model });
   };
-  add('groq', 'Groq', env('GROQ_API_KEY'), 'https://api.groq.com/openai/v1',
+  // Legacy 'wisper' was previously configured as a Groq Whisper key. A
+  // valid GroqCloud key may also support fast text inference.
+  add('groq', 'Groq', env('GROQ_API_KEY') ?? env('wisper'), 'https://api.groq.com/openai/v1',
     [env('GROQ_MODEL'), 'openai/gpt-oss-120b', 'llama-3.3-70b-versatile']);
   const legacyBase = env('LLM_BASE_URL');
   if (legacyBase) add('custom', 'Custom', env('LLM_API_KEY'), legacyBase, [env('LLM_MODEL')]);
