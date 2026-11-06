@@ -80,7 +80,10 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
     setTurns(history); setText(''); setState('thinking');
     try {
       const { data, error } = await supabase.functions.invoke('xs-ai', {
-        body: { gym_id: gym.id, lang, messages: history.filter((t) => !t.tone).map(({ role, content: c }) => ({ role, content: c })) },
+        // One UUID per user command lets the database deduplicate a repeated
+        // HTTP request without deduplicating a genuinely new payment command.
+        body: { gym_id: gym.id, lang, request_id: crypto.randomUUID(),
+          messages: history.filter((t) => !t.tone).map(({ role, content: c }) => ({ role, content: c })) },
       });
       if (error) {
         let msg = errorMessage(error);
