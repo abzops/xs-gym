@@ -16,6 +16,9 @@ const check = (name, ok, detail = '') => { if (!ok) failures++; console.log(`${o
 const fakeDevice = ({ standalone }) => {
   window.__mic = { allow: true, speakMs: 700, opened: 0, stopped: 0 };
   window.__spoken = [];
+  // This suite covers the WAV/cloud fallback. Force native Web Speech off in
+  // every simulated browser; tests/ui/live-voice.mjs covers live recognition.
+  delete window.SpeechRecognition; delete window.webkitSpeechRecognition;
   if (standalone) {
     Object.defineProperty(navigator, 'standalone', { value: true });
     Object.defineProperty(navigator, 'userAgent', { value: 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148' });
