@@ -41,7 +41,7 @@ describe('XS Gym recorded-voice speech-to-text', () => {
     const fetcher = vi.fn(async () => new Response('{}', { status: 200 }));
     await expect(transcribe({ audio: wav, lang: 'ml' },
       { nvidiaKey: 'english-only', fetch: fetcher as typeof fetch }))
-      .rejects.toThrow('Malayalam needs Groq, xAI or Gemini');
+      .rejects.toThrow('Malayalam voice needs a speech provider');
     expect(fetcher).not.toHaveBeenCalled();
   });
 
@@ -99,6 +99,43 @@ describe('XS Gym recorded-voice speech-to-text', () => {
     expect(result).toContain('രാഹുൽ');
     expect(fetcher).toHaveBeenCalledTimes(1);
     expect(String(fetcher.mock.calls[0][0])).toContain('api.groq.com');
+    const fields = fetcher.mock.calls[0][1]?.body as FormData;
+    expect(fields.get('model')).toBe('whisper-large-v3');
+    expect(String(fields.get('prompt'))).toContain('മലയാളം');
+    expect(fields.get('language')).toBe('ml');
+  });
+
+  it('reports the real provider permission problem when Malayalam xAI returns 403', async () => {
+    const fetcher = vi.fn(async () => new Response('forbidden', { status: 403 }));
+    await expect(transcribe({ audio: wav, lang: 'ml' },
+      { nvidiaKey: 'nv-english-only', xaiKey: 'bad-key', fetch: fetcher as typeof fetch }))
+      .rejects.toMatchObject({
+        code: 'speech_access_denied',
+        lang: 'ml',
+        retryable: false,
+        status: 503,
+      });
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(String(fetcher.mock.calls[0][0])).toContain('api.x.ai');
+  });
+
+  it('reports temporary provider outages as retryable instead of invalid microphone permissions', async () => {
+    const fetcher = vi.fn(async () => new Response('upstream unavailable', { status: 502 }));
+    await expect(transcribe({ audio: wav, lang: 'ml' },
+      { xaiKey: 'key', fetch: fetcher as typeof fetch }))
+      .rejects.toMatchObject({ code: 'speech_provider_unavailable', retryable: true });
+  });
+
+  it('classifies provider rate limits separately from revoked access', async () => {
+    const fetcher = vi.fn(async () => new Response('rate limit', { status: 429 }));
+    await expect(transcribe({ audio: wav, lang: 'ml' },
+      { xaiKey: 'key', fetch: fetcher as typeof fetch }))
+      .rejects.toMatchObject({ code: 'speech_rate_limited', retryable: true });
+  });
+
+  it('never claims speech is configured when the selected language has no supported provider', async () => {
+    await expect(transcribe({ audio: wav, lang: 'ml' }, { nvidiaKey: 'english-only' }))
+      .rejects.toMatchObject({ code: 'speech_not_configured', retryable: false, lang: 'ml' });
   });
 
   it('rejects malformed or oversized recordings before any provider call', async () => {
