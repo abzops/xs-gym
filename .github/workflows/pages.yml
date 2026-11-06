@@ -5,7 +5,7 @@ name: Test and deploy
 
 on:
   push:
-    branches: [main, analytics-onboarding, 'fix/malayalam-voice-access', 'fix/live-voice-interim-transcription']
+    branches: [main, analytics-onboarding, 'fix/text-only-live-voice']
   workflow_dispatch:
 
 concurrency:
