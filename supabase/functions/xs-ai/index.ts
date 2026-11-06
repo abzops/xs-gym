@@ -11,7 +11,7 @@
 //   NVIDIA_API_KEY                     NVIDIA NIM
 //   XAI_API_KEY / GROK_API_KEY / Grok  xAI Grok (also voice transcription)
 import { ApiError, runAgent, type LlmProvider } from './agent.ts';
-import { sttConfigured, transcribe, type SttEnv } from './stt.ts';
+import { SpeechUnavailableError, sttConfigured, transcribe, type SttEnv } from './stt.ts';
 
 const ALLOWED_ORIGINS = ['https://abzops.github.io', 'http://localhost:5173', 'http://localhost:4173', 'http://localhost:4185'];
 const env = (k: string) => Deno.env.get(k)?.trim() || undefined;
@@ -95,6 +95,11 @@ Deno.serve(async (req) => {
   } catch (e) {
     const status = e instanceof ApiError ? e.status : 500;
     console.error('xs-ai', status, e instanceof Error ? e.message : e);
-    return json(status, { error: e instanceof ApiError ? e.message : 'XS AI ran into a problem. Please try again.' });
+    return json(status, {
+      error: e instanceof ApiError ? e.message : 'XS AI ran into a problem. Please try again.',
+      ...(e instanceof SpeechUnavailableError
+        ? { code: e.code, language: e.lang, retryable: e.retryable }
+        : {}),
+    });
   }
 });
