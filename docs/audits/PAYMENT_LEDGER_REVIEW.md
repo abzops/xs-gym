@@ -1,7 +1,7 @@
 # XS Gym — Payment Ledger and Membership Correctness Review
 
 **Prepared:** 2026-11-11 | **Environment:** source review and disposable synthetic test database only  
-**Production billing changes:** NONE | **Owner decision required:** paid-charge void semantics
+**Production billing changes:** NONE | **Owner decision confirmed 2026-11-11:** paid charge void does not cancel membership
 
 ## 1. Ledger model (observed)
 
@@ -20,14 +20,14 @@ Authoritative values are integer **paise** in PostgreSQL. Browser/UI/AI output m
 | Renew | `sell_membership` extends from old end when within grace, else starts today, unless explicit authorized start override | Tests cover renewal from prior period and inclusive date rules |
 | Reports | `daily_report`, `dashboard_summary`, `gym_analytics` present collection/reversal/net totals | Tests compare reporting totals to raw nonreversed payment sums |
 
-## 2. High-priority business-policy ambiguity (NOT RESOLVED)
+## 2. Owner-confirmed business policy (RESOLVED 2026-11-11)
 
 **Observed code behavior:** A member pays for a plan, the charge is subsequently voided, and the existing membership remains active. The allocated payment is released as credit. This is independently asserted in the new synthetic regression test on `feature/pilot-safety-audit`.
 
-**Owner decision required — select one explicitly:**
+**Owner has selected option 3 below (separate operations):**
 1. **Preserve access (current):** voiding financial charge leaves membership active; requires a clear warning that service remains active.
 2. **Cancel membership too:** void charge and end access together, with reason and an auditable membership cancellation event.
-3. **Separate actions (recommended for review):** void charge changes only ledger; owner must separately cancel/adjust membership access with an explicit confirmation and status display.
+3. **Separate actions (APPROVED POLICY):** void charge changes only ledger; an authorized user must separately cancel/adjust membership access with an explicit confirmation and status display.
 
 Do **not** change this behavior automatically or reinterpret historical customer records to match a new rule.
 
@@ -63,4 +63,4 @@ Do **not** change this behavior automatically or reinterpret historical customer
 
 Only a **proposed** code/test change may live on a feature branch. Changes to ledger, money, membership access, financial retention or live corrections require owner approval, a restorable backup and a tested rollback/forward-fix.
 
-**Release recommendation: HOLD; next work is synthetic tests and policy decision.**
+**Release recommendation: HOLD; policy resolved. Next work is further isolated concurrency tests and review of a future UI warning, not an automatic backend membership cancellation.**
