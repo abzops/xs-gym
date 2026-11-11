@@ -10,19 +10,19 @@
 |---|---|
 | Phase | **P0 core operations built and deployed** (Phases 3–4 compressed at owner's request) |
 | Live app | <https://abzops.github.io/xs-gym/> — served from `gh-pages`, updated by CI on every push to `main` |
-| Backend | Supabase project `xs-gym`, ref `knuanihnxtxtyrgvsumq`, region `ap-south-1`, Free plan |
-| Database | 4 live migrations applied, 17 public tables; RLS on all exposed tables |
+| Backend | Supabase project `xs-gym`, ref `knuanihnxtxtyrgvsumq`, region `ap-south-1`; current plan requires Dashboard verification |
+| Database | 7 live migrations applied, 17 public tables; RLS on all exposed tables (verified 2026-11-11) |
 | CI | `.github/workflows/pages.yml`: typecheck, lint, unit tests, DB tests on PG16, secret scan → `gh-pages` |
 | Remote | `https://github.com/abzops/xs-gym`, branch `main`; commits authored as `abzops` |
-| Last updated | 06 Nov 2026 |
+| Last updated | 11 Nov 2026 — feature-branch pilot-safety audit, NOT deployed |
 
 ## 2. Rules for whoever continues
 
 1. The spec is `docs/source/XS_Gym_End_to_End_Engineering_Blueprint.md`. Follow its §0 instructions.
 2. Small commits, `type: summary`. No attribution or tool trailers in commits. Author is `abzops <87251316+abzops@users.noreply.github.com>`.
-3. Push after every few commits. Update this file in the same commit as the work.
+3. Push only to dedicated `feature/*` branches. Open a PR for review; never merge or deploy without explicit owner approval. Update this file alongside the work.
 4. Never commit secrets, `.env*` (except `.env.example`), dumps or real member data.
-5. Every database change: new migration file → run `PG_RUN_AS=<non-root user> bash tests/db/run.sh` → apply to Supabase → run security advisors.
+5. For database changes: write a feature-branch migration, run synthetic tests, review security advisors read-only, and request owner approval. **Never apply to production or change live customer data automatically.**
 6. All writes go through command functions (ADR-0002). Money is integer paise (ADR-0003).
 
 ## 3. Blockers and owner actions
@@ -61,6 +61,17 @@
 6. Phases 6–7 (AI text and voice) only after the pilot uses the core daily.
 
 ## 6. Session log
+
+### 2026-11-11 — Pilot protection audit and isolated development (NOT DEPLOYED)
+
+- Owner supplied XS Gym Agent Development & Pilot Protection Guide v1.0. Its explicit approval gates supersede older automatic-deployment instructions in this log.
+- Started `feature/pilot-safety-audit` from production `main` commit `9b8da8b`. **No production writes, migrations, main merges or deployments.**
+- Read-only baseline: 17/17 RLS-enabled public tables; 7 migrations; 24 authenticated SECURITY DEFINER warnings; separate Auth password-protection warning; production `main` is unprotected and auto-publishes.
+- CHAOS COMBAT aggregate count: 26 active members, zero archived, zero recorded payments and zero membership records at inspection. Exact per-record onboarding reconciliation not authorized or performed.
+- Urgent gap: current private roster-backup table returned zero snapshots. A previously asserted backup cannot be treated as confirmed. No real customer data was read/exported.
+- Added source-linked audit documents under `docs/audits/`, operations runbooks and the synthetic-finance regression test. New dedicated isolated CI/restore evidence is tracked on the feature branch.
+- Payment void policy remains open: current code releases paid-charge allocation to credit while leaving membership active. No policy change made.
+- Release posture: **HOLD**. Seek owner-reviewed PR, isolated test evidence, recovered-backup plan and explicit `APPROVE DEPLOY` before any future production release.
 
 ### 2026-11-06 — Text-only voice input: remove WAV/cloud transcription
 
