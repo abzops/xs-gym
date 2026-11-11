@@ -1,5 +1,5 @@
 import { useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, Pencil, Phone, RefreshCw, Wallet } from 'lucide-react';
+import { ArrowLeft, Pencil, Phone, RefreshCw, Trash2, Wallet } from 'lucide-react';
 import { useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router';
 import { useGym } from '../../app/gym';
@@ -8,13 +8,14 @@ import { formatDate, formatDateTime } from '../../lib/dates';
 import { errorMessage } from '../../lib/errors';
 import { formatINR } from '../../lib/money';
 import { rpc } from '../../lib/supabase';
-import { METHOD_LABEL } from '../../lib/types';
+import { METHOD_LABEL, type Payment } from '../../lib/types';
+import { EditPaymentSheet } from '../payments/EditPaymentSheet';
 import { PaymentSheet, ReasonSheet, SellPlanSheet } from './actions';
 import { useMember, useMemberHistory } from './api';
 import { MemberForm } from './MemberForm';
 import { WhatsAppButton, reminderFor } from '../../components/WhatsApp';
 
-type Dialog = null | 'sell' | 'pay' | 'edit' | { reverse: string } | { voidCharge: string } | 'archive';
+type Dialog = null | 'sell' | 'pay' | 'edit' | { reverse: string } | { editPayment: Payment } | { voidCharge: string } | 'archive';
 
 export function MemberDetail() {
   const { memberId = '' } = useParams();
@@ -37,6 +38,10 @@ export function MemberDetail() {
     qc.invalidateQueries({ queryKey: ['member-history', gym.id, memberId] }),
     qc.invalidateQueries({ queryKey: ['members', gym.id] }),
     qc.invalidateQueries({ queryKey: ['dashboard', gym.id] }),
+    qc.invalidateQueries({ queryKey: ['payments', gym.id] }),
+    qc.invalidateQueries({ queryKey: ['payments-archive', gym.id] }),
+    qc.invalidateQueries({ queryKey: ['receipt', gym.id] }),
+    qc.invalidateQueries({ queryKey: ['analytics', gym.id] }),
   ]);
 
   if (member.isPending) return <Loading />;
@@ -75,18 +80,21 @@ export function MemberDetail() {
           <div className="row">
             {can('memberships.sell') && <button className="btn" onClick={() => setDialog('sell')}><RefreshCw size={18} /> {m.valid_until ? 'Renew' : 'Sell plan'}</button>}
             {can('payments.record') && <button className="btn" onClick={() => setDialog('pay')}><Wallet size={18} /> Payment</button>}
-            {can('members.write') && <button className="btn ghost" onClick={() => setDialog('edit')}><Pencil size={18} /> Edit</button>}
+            {can('members.write') && <button className="btn ghost" onClick={() => setDialog('edit')}><Pencil size={18} /> Edit member</button>}
+            {can('members.archive') && <button className="btn ghost danger" onClick={() => setDialog('archive')}><Trash2 size={18} /> Delete member</button>}
             <a className="btn ghost" href={`tel:${m.phone}`}><Phone size={18} /> Call</a>
             <WhatsAppButton small={false} phone={m.phone} {...reminderFor(m, canMoney)} />
           </div>
         )}
-        {archived && can('members.archive') && (
-          <button className="btn" style={{ justifySelf: 'start' }}
-            onClick={() => rpc('set_member_status', { p_gym: gym.id, p_member: m.id, p_status: 'active', p_reason: 'Restored' })
+        {archived && <div className="row">
+          {can('members.archive') && <button className="btn" onClick={() =>
+            rpc('set_member_status', { p_gym: gym.id, p_member: m.id, p_status: 'active', p_reason: 'Restored from archive' })
               .then(refresh).then(() => toast('Member restored')).catch((e) => toast(errorMessage(e), 'bad'))}>
             Restore member
-          </button>
-        )}
+          </button>}
+          {can('members.write') && <button className="btn ghost" onClick={() => setDialog('edit')}><Pencil size={16} /> Edit member</button>}
+          <Link className="btn ghost" to={`${base}/members?filter=archived`}>Archived members</Link>
+        </div>}
       </div>
 
       {history.isPending ? <Loading rows={3} /> : history.error ? <Notice tone="bad">{errorMessage(history.error)}</Notice> : (
@@ -107,8 +115,15 @@ export function MemberDetail() {
                         </span>
                         <span className="end-col">
                           <PushLink className="btn small ghost" to={`${base}/receipts/${p.id}`}>Receipt</PushLink>
-                          {reversed ? <span className="badge bad">Reversed</span> : can('payments.reverse') && (
-                            <button className="btn small ghost" onClick={() => setDialog({ reverse: p.id })}>Reverse</button>
+                          {reversed ? <span className="badge bad">Archived / reversed</span> : (
+                            <span className="row" style={{ gap: 6 }}>
+                              {can('payments.reverse') && can('payments.record') && (
+                                <button className="btn small ghost" onClick={() => setDialog({ editPayment: p })}><Pencil size={14} /> Edit</button>
+                              )}
+                              {can('payments.reverse') && (
+                                <button className="btn small ghost danger" onClick={() => setDialog({ reverse: p.id })}><Trash2 size={14} /> Delete</button>
+                              )}
+                            </span>
                           )}
                         </span>
                       </li>
@@ -161,9 +176,9 @@ export function MemberDetail() {
         </div>
       )}
 
-      {can('members.archive') && !archived && (
-        <button className="btn ghost small danger" style={{ justifySelf: 'start' }} onClick={() => setDialog('archive')}>Archive member</button>
-      )}
+      {archived && <Link className="btn ghost small" to={`${base}/members?filter=archived`} style={{ justifySelf: 'start' }}>
+        View Archived members
+      </Link>}
 
       {dialog === 'sell' && <SellPlanSheet member={m} onClose={close} onSold={(due) => setDialog(due && can('payments.record') ? 'pay' : null)} />}
       {dialog === 'pay' && <PaymentSheet member={m} onClose={close} />}
@@ -171,15 +186,18 @@ export function MemberDetail() {
         <Sheet title="Edit member" onClose={close}><MemberForm member={m} onDone={close} /></Sheet>
       )}
       {dialog === 'archive' && (
-        <ReasonSheet title="Archive member" confirmLabel="Archive" onClose={close}
-          warning="Archived members are hidden from lists. Their history is kept and they can be restored."
+        <ReasonSheet title="Delete member (archive)" confirmLabel="Delete / archive member" onClose={close}
+          warning="This moves the member to Members → Archived. Plans and payment history remain intact, and the member can be restored."
           onConfirm={(reason) => rpc('set_member_status', { p_gym: gym.id, p_member: m.id, p_status: 'archived', p_reason: reason }).then(refresh)} />
       )}
       {dialog && typeof dialog === 'object' && 'reverse' in dialog && (
-        <ReasonSheet title="Reverse payment" confirmLabel="Reverse payment" onClose={close}
-          warning="The payment stays in history marked as reversed, and the member's dues are recalculated."
+        <ReasonSheet title="Delete payment (archive)" confirmLabel="Delete / reverse payment" onClose={close}
+          warning="The payment moves to Payments → Archive (reversed). The receipt remains for audit and dues are recalculated."
           onConfirm={(reason) => rpc('reverse_payment', { p_gym: gym.id, p_payment: dialog.reverse, p_reason: reason })
             .then(refresh).then(() => qc.invalidateQueries({ queryKey: ['payments', gym.id] })).then(() => toast('Payment reversed'))} />
+      )}
+      {dialog && typeof dialog === 'object' && 'editPayment' in dialog && (
+        <EditPaymentSheet payment={dialog.editPayment} onClose={close} />
       )}
       {dialog && typeof dialog === 'object' && 'voidCharge' in dialog && (
         <ReasonSheet title="Void charge" confirmLabel="Void charge" onClose={close}

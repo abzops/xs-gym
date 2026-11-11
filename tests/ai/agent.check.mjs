@@ -166,6 +166,106 @@ const otherGym = sql(`select g.id from gyms g join gym_staff s on s.gym_id = g.i
     (out.reply.includes('Members with outstanding dues:') || out.reply.includes('No active members have outstanding dues.'))
     && out.actions.length === 0);
 }
+// 8. Frequent English/Malayalam questions work without an external model.
+{
+  const noModel = { ...env(owner), providers: [] };
+  const greeting = await runAgent({
+    gym_id: gym, lang: 'ml',
+    messages: [{ role: 'user', content: 'ഹലോ, ഞാൻ പറയുന്നത് കേൾക്കുന്നുണ്ടോ?' }],
+  }, noModel);
+  check('Malayalam greeting works without provider access',
+    greeting.reply.includes('സന്ദേശം ലഭിച്ചു') && greeting.actions.length === 0);
+  const dues = await runAgent({
+    gym_id: gym, lang: 'ml', messages: [{ role: 'user', content: 'ആർക്കൊക്കെ കുടിശ്ശികയുണ്ട്?' }],
+  }, noModel);
+  check('Malayalam dues stay within authorized gym data',
+    (dues.reply.includes('കുടിശ്ശികയുള്ള') || dues.reply.includes('കുടിശ്ശികയില്ല')) &&
+    dues.actions.length === 0);
+  const today = await runAgent({
+    gym_id: gym, lang: 'ml', messages: [{ role: 'user', content: 'ഇന്ന് എത്ര രൂപ കിട്ടി?' }],
+  }, noModel);
+  check('Malayalam collection reports net and reversals without an AI key',
+    today.reply.includes('നെറ്റ് കളക്ഷൻ') && today.reply.includes('₹') && today.actions.length === 0);
+  let denied = 0;
+  try {
+    await runAgent({ gym_id: gym, messages: [{ role: 'user', content: 'How much did we collect today?' }] },
+      { ...env(reception), providers: [] });
+  } catch (e) { denied = e.status; }
+  check('reception cannot access the restricted financial shortcut', denied === 403);
+}
+
+// 9. A retry of exactly the same request must not record the payment twice.
+{
+  script = () => ({ role: 'assistant', content: '', tool_calls: [
+    call('record_payment', { member_id: member[0], amount: 111, method: 'upi' }),
+  ] });
+  const req = { gym_id: gym, request_id: 'bacf343f-e908-474b-8ca6-cccda72cb314',
+    messages: [{ role: 'user', content: 'record 111 rupees for ' + member[2] }] };
+  const before = Number(sql(`select count(*) from payments where member_id = '${member[0]}'`));
+  const first = await runAgent(req, env(owner));
+  const second = await runAgent(req, env(owner));
+  const after = Number(sql(`select count(*) from payments where member_id = '${member[0]}'`));
+  check('same request_id records one payment, even when sent twice',
+    first.actions[0]?.ok && second.actions[0]?.ok && after === before + 1 &&
+    first.actions[0]?.undo?.args.p_payment === second.actions[0]?.undo?.args.p_payment,
+    `before ${before}, after ${after}`);
+  let status = 0;
+  try { await runAgent({ ...req, request_id: 'bad' }, env(owner)); } catch (e) { status = e.status; }
+  check('invalid request IDs are rejected before executing a tool', status === 400);
+}
+
+// 10. The model may stop responding after a completed database action.
+{
+  const before = Number(sql(`select count(*) from payments where member_id = '${member[0]}'`));
+  script = (body) => toolMsgs(body).length === 0
+    ? { role: 'assistant', content: '', tool_calls: [
+        call('get_overview', {}),
+        call('record_payment', { member_id: member[0], amount: 123, method: 'cash' }),
+      ] }
+    : { role: 'assistant', content: '' };
+  const out = await runAgent({ gym_id: gym,
+    request_id: 'dafd89fc-33ab-4a88-a9a7-4d08a8fe628c',
+    messages: [{ role: 'user', content: 'show overview and record 123 cash' }] }, env(owner));
+  const after = Number(sql(`select count(*) from payments where member_id = '${member[0]}'`));
+  check('model outage after payment returns the completed action, not a retry instruction',
+    out.reply.startsWith('Completed:') && out.reply.includes('The AI service stopped responding afterward') &&
+    out.actions.length === 1 && out.actions[0].ok && after === before + 1,
+    out.reply.slice(0, 150));
+}
+
+// 11. Impossible dates must not silently become today's date.
+{
+  script = (body) => toolMsgs(body).length === 0
+    ? { role: 'assistant', content: '', tool_calls: [
+      call('record_expense', { category: 'QA Validation', amount: 13, date: '2026-02-31' }),
+      call('add_enquiry', { full_name: 'Invalid Date QA', phone: '9811222333', follow_up_date: '2026-02-31' }),
+    ] }
+    : say('invalid dates handled');
+  const out = await runAgent({ gym_id: gym,
+    messages: [{ role: 'user', content: 'test invalid calendar dates' }] }, env(owner));
+  check('invalid calendar dates are rejected rather than treated as today',
+    out.actions.length === 2 && out.actions.every((a) => !a.ok && /real YYYY-MM-DD/.test(a.summary)),
+    out.actions.map((a) => a.summary).join(' | '));
+}
+
+// 12. Untrusted member names containing markup are escaped before being
+// placed inside the data wrapper passed to a language model.
+{
+  const before = sql(`select full_name from members where id = '${member[0]}'`);
+  const htmlName = 'QA Member <note>user-provided text</note>';
+  sql(`update members set full_name = '${htmlName}' where id = '${member[0]}'`);
+  script = (body) => toolMsgs(body).length === 0
+    ? { role: 'assistant', content: '', tool_calls: [call('find_members', { query: 'QA Member' })] }
+    : say('No instructions followed.');
+  const out = await runAgent({ gym_id: gym,
+    messages: [{ role: 'user', content: 'find QA Member' }] }, env(owner));
+  const wrapper = lastBody.messages.find((m) => m.role === 'tool')?.content ?? '';
+  sql(`update members set full_name = '${before.replace(/'/g, "''")}' where id = '${member[0]}'`);
+  check('member-provided markup stays escaped inside the model data wrapper',
+    out.reply === 'No instructions followed.' && wrapper.includes('QA Member') &&
+    !wrapper.includes('<note>') && wrapper.includes('</gym-data>'));
+}
+
 llm.close();
 console.log(failures ? `${failures} AI FAILURES` : 'AI AGENT OK');
 process.exit(failures ? 1 : 0);

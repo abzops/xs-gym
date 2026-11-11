@@ -1,17 +1,16 @@
 // Supabase Edge Function: /functions/v1/xs-ai
 //   POST { gym_id, messages, lang }         → agent reply (reads/changes data as the user)
-//   POST { gym_id, transcribe: { audio, lang } } → { text } for authenticated gym staff
+//   Audio transcription/upload is disabled. Only text requests are accepted.
 //   GET                                     → which providers are configured (no gym data)
 // Credentials only live in Supabase Edge Function Secrets.
 //
 // Providers, fastest first. Requests are hedged: if one is slow, the next
 // provider starts after 5 s and the first answer wins (see agent.ts).
-//   GROQ_API_KEY                       Groq (fast; also Whisper speech-to-text)
+//   GROQ_API_KEY                       Groq LLM
 //   GEMINI_API_KEY or LLM_API_KEY      Google Gemini (LLM_BASE_URL switches LLM_API_KEY to any OpenAI-compatible service)
 //   NVIDIA_API_KEY                     NVIDIA NIM
-//   XAI_API_KEY / GROK_API_KEY / Grok  xAI Grok (also voice transcription)
-import { ApiError, runAgent, type LlmProvider } from './agent.ts';
-import { SpeechUnavailableError, sttConfigured, transcribe, type SttEnv } from './stt.ts';
+//   XAI_API_KEY / GROK_API_KEY / Grok  xAI Grok LLM
+import { ApiError, runAgent, type AgentRequest, type LlmProvider } from './agent.ts';
 
 const ALLOWED_ORIGINS = ['https://abzops.github.io', 'http://localhost:5173', 'http://localhost:4173', 'http://localhost:4185'];
 const env = (k: string) => Deno.env.get(k)?.trim() || undefined;
@@ -23,7 +22,9 @@ function configuredProviders(): LlmProvider[] {
     if (!apiKey) return;
     for (const model of uniq(models)) out.push({ name: `${label} / ${model}`, group, apiKey, baseUrl, model });
   };
-  add('groq', 'Groq', env('GROQ_API_KEY'), 'https://api.groq.com/openai/v1',
+  // Legacy 'wisper' was previously configured as a Groq Whisper key. A
+  // valid GroqCloud key may also support fast text inference.
+  add('groq', 'Groq', env('GROQ_API_KEY') ?? env('wisper'), 'https://api.groq.com/openai/v1',
     [env('GROQ_MODEL'), 'openai/gpt-oss-120b', 'llama-3.3-70b-versatile']);
   const legacyBase = env('LLM_BASE_URL');
   if (legacyBase) add('custom', 'Custom', env('LLM_API_KEY'), legacyBase, [env('LLM_MODEL')]);
@@ -36,16 +37,6 @@ function configuredProviders(): LlmProvider[] {
     [env('XAI_MODEL'), 'grok-4.3']);
   return out;
 }
-
-const sttEnv = (): SttEnv => ({
-  // 'wisper' is the exact name of the existing Supabase secret.
-  // Prefer the standard key name if it is added later.
-  groqKey: env('GROQ_API_KEY') ?? env('wisper'),
-  geminiKey: env('GEMINI_API_KEY') ?? (env('LLM_BASE_URL') ? undefined : env('LLM_API_KEY')),
-  geminiModel: env('GEMINI_STT_MODEL'),
-  xaiKey: env('XAI_API_KEY') ?? env('GROK_API_KEY') ?? env('Grok'),
-  nvidiaKey: env('NVIDIA_API_KEY'),
-});
 
 Deno.serve(async (req) => {
   const origin = req.headers.get('origin') ?? '';
@@ -62,36 +53,24 @@ Deno.serve(async (req) => {
     const providers = configuredProviders();
     if (req.method === 'GET') return json(200, {
       configured: providers.length > 0,
-      stt: sttConfigured(sttEnv()),
-      stt_languages: { en: sttConfigured(sttEnv(), 'en'), ml: sttConfigured(sttEnv(), 'ml') },
+      audio_uploads: false,
+      input: 'text_only',
       providers: providers.map((p) => ({ name: p.name })),
     });
     if (req.method !== 'POST') return json(405, { error: 'GET or POST only' });
     const token = (req.headers.get('authorization') ?? '').replace(/^Bearer\s+/i, '');
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const anonKey = Deno.env.get('SUPABASE_ANON_KEY')!;
-    const body = await req.json();
+    let body: AgentRequest & { transcribe?: unknown; audio?: unknown };
+    try { body = await req.json() as typeof body; }
+    catch { return json(400, { error: 'Request body must be valid JSON.' }); }
+    if (!body || typeof body !== 'object' || Array.isArray(body))
+      return json(400, { error: 'Request body must be a JSON object.' });
 
-    if (body?.transcribe) {
-      // Speech is a billable server resource: verify both authentication and
-      // ACTIVE gym membership with the caller's own JWT (never service-role).
-      const authHeaders = { apikey: anonKey, authorization: `Bearer ${token}` };
-      const who = await fetch(`${supabaseUrl}/auth/v1/user`, { headers: authHeaders });
-      if (!who.ok) throw new ApiError('Sign in to use voice.', 401);
-      const user = await who.json() as { id?: string };
-      const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-      const gymId = body.gym_id;
-      if (!uuid.test(user.id ?? '') || typeof gymId !== 'string' || !uuid.test(gymId)) {
-        throw new ApiError('Choose your gym before using voice.', 400);
-      }
-      const staff = await fetch(
-        `${supabaseUrl}/rest/v1/gym_staff?select=role&gym_id=eq.${gymId}&user_id=eq.${user.id}&status=eq.active&limit=1`,
-        { headers: authHeaders },
-      );
-      if (!staff.ok) throw new ApiError('Voice access could not be verified.', 403);
-      const rows = await staff.json() as { role?: string }[];
-      if (!Array.isArray(rows) || rows.length === 0) throw new ApiError('Voice is available only to staff in this gym.', 403);
-      return json(200, { text: await transcribe(body.transcribe, sttEnv()) });
+    // Reject even legacy clients still holding a stale PWA bundle: no raw
+    // microphone audio is accepted or sent to any transcription provider.
+    if (body?.transcribe || body?.audio) {
+      return json(410, { error: 'Recorded-audio uploads have been disabled. Use live text recognition or keyboard dictation.', code: 'audio_disabled' });
     }
     return json(200, await runAgent(body, { supabaseUrl, anonKey, userToken: token, providers }));
   } catch (e) {
@@ -99,9 +78,6 @@ Deno.serve(async (req) => {
     console.error('xs-ai', status, e instanceof Error ? e.message : e);
     return json(status, {
       error: e instanceof ApiError ? e.message : 'XS AI ran into a problem. Please try again.',
-      ...(e instanceof SpeechUnavailableError
-        ? { code: e.code, language: e.lang, retryable: e.retryable }
-        : {}),
     });
   }
 });

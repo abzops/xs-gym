@@ -1,124 +1,82 @@
-# XS AI
+# XS AI — text-only voice input
 
-Voice and text assistant inside XS Gym. Speaks and understands **English and Malayalam**,
-reads the gym's data and makes changes for the signed-in user.
+XS AI is the English/Malayalam gym assistant inside XS Gym. It can answer questions,
+perform permission-checked actions, and optionally speak responses on devices that
+provide a suitable synthetic voice.
 
-## How it works
+## Voice: one tap, words appear while speaking
 
-| Part | Where | Notes |
-|---|---|---|
-| Listening | The app records the microphone itself (Web Audio), detects the end of speech, sends 16 kHz WAV to the `xs-ai` function for **speech-to-text** | Works in installed iPhone home-screen apps, where the browser's own speech recognition is blocked. Speech-to-text: Groq Whisper (`GROQ_API_KEY`); for English, NVIDIA Riva ASR (`NVIDIA_API_KEY`); then xAI Grok STT (`XAI_API_KEY` / `Grok`), then Gemini (`GEMINI_API_KEY` / `LLM_API_KEY`). Without a speech key, browsers that have built-in recognition (Chrome, Android, Safari in a tab) use it; the installed iPhone app explains in-app that voice is not set up and offers the keyboard. |
-| Speaking | Browser speech synthesis | Free. Malayalam needs a Malayalam voice on the device; otherwise replies are shown as text. |
-| Thinking | Supabase Edge Function `xs-ai` | Providers fastest first: Groq → Gemini → NVIDIA NIM → xAI Grok. **Hedged**: if one has not answered in 5 s a different provider starts in parallel and the first answer wins; a timeout or key error skips that provider's other models; the user never waits more than 30 s. |
-| Data | Supabase, **as the signed-in user** | Every query and change uses the user's own access token, so row-level security and the command functions' permission checks apply exactly as in the app. The service role key is never used. |
+- **Live input:** The client calls the browser's `SpeechRecognition` /
+  `webkitSpeechRecognition` with `interimResults = true`. English is `en-IN`;
+  Malayalam is `ml-IN`. As the recognition service produces interim words,
+  the same words appear immediately in the message input field.
+- **Automatic send:** When the recognizer ends, the app submits **only the
+  recognized text**, exactly once. Manual Stop also completes recognition.
+- **No WAV/audio uploads:** The client no longer records audio, encodes WAV,
+  or calls a transcription API. Obsolete `recorder.ts` and server `stt.ts`
+  have been deleted. The Supabase `xs-ai` function rejects legacy audio
+  requests with **HTTP 410**, even when an older PWA bundle submits them.
+  The API accepts text-based conversations only.
+- **When unsupported:** If the browser or installed iPhone app lacks working
+  live recognition, XS AI offers an in-app **Use keyboard instead** action,
+  focusing the message input. The user can tap their phone keyboard's own
+  microphone to dictate in Malayalam or English, then send the text.
+  Web applications cannot programmatically start iOS keyboard dictation.
+- **Important privacy boundary:** Although XS Gym itself uploads no audio, a
+  browser/platform's built-in Web Speech recognition may send audio to its own
+  speech service. It is not guaranteed to be offline or device-only. The
+  app never has raw audio bytes and cannot control the browser vendor's
+  recognition processing.
 
-Speed: tools take members and plans **by name** ("Rahul", "XS-0012", phone digits, "Monthly"),
-so a command like "Rahul paid 1500 by UPI" needs **one** model call; when every change in a step
-succeeds the confirmation is written directly, without another model call.
+**Do not reintroduce an automatic recorder fallback.** If live browser speech
+fails, disclose that and offer keyboard dictation without uploading audio.
 
-Code: `supabase/functions/xs-ai/agent.ts` (agent, tools, failover), `stt.ts` (speech-to-text),
-`index.ts` (HTTP), `src/features/ai/` (panel, recorder, voice).
+## AI and backend
 
-## Setup (owner)
+| Part | Implementation |
+|---|---|
+| Live recognition | Browser SpeechRecognition; words appear as interim text |
+| Voice replies | Browser speechSynthesis where a suitable voice is installed |
+| AI reasoning | Supabase Edge Function `xs-ai`, with Groq / Gemini / NVIDIA / Grok model failover |
+| Database | Supabase requests as the **signed-in user**, governed by RLS and command permissions |
+| Audio API | Disabled; `transcribe` and raw `audio` requests return HTTP 410 |
 
-Supabase Dashboard → project `xs-gym` → **Edge Functions → Secrets**. Keys stay server-side only.
+Supabase secrets (`GROQ_API_KEY`, `GEMINI_API_KEY`, `NVIDIA_API_KEY`,
+`XAI_API_KEY` / `Grok`) are used for **text AI inference only**. Speech
+input needs no special XS AI server key. A model provider may still receive
+the recognized text and relevant gym records needed to process the request.
 
-| Secret | Gives | Notes |
-|---|---|---|
-| `GROQ_API_KEY` | **Voice (speech-to-text) and the fastest replies** | Free at console.groq.com. Recommended first key. `GROQ_MODEL` optional. |
-| `GEMINI_API_KEY` (or `LLM_API_KEY`) | Voice fallback and replies | Google AI Studio key. `GEMINI_MODEL` optional. If `LLM_BASE_URL` is set, `LLM_API_KEY` is used for that OpenAI-compatible service instead. |
-| `NVIDIA_API_KEY` | Replies **and English speech-to-text** | Uses NVIDIA's documented Parakeet 1.1B Riva hosted ASR preview endpoint for English. It does **not** support Malayalam. NIM chat endpoints had timed out during prior testing; service availability is not guaranteed. |
-| `XAI_API_KEY` / `GROK_API_KEY` / `Grok` | Replies **and cloud speech-to-text** | Uses xAI's documented `/v1/stt` endpoint with `grok-voice-transcribe-2.0`. Chat returned 403 earlier (check API permissions, credits). Malayalam is **not explicitly included in xAI's formatting-language list**; automatic detection is attempted, not guaranteed. `XAI_MODEL` optionally selects the chat model. |
+## Operations
 
-`GET /functions/v1/xs-ai` reports which providers and whether speech-to-text are configured,
-without exposing keys. Provider failures are written to the function log for the owner;
-users only see a plain message.
+The assistant can read overview, members, plans, payments, expenses, Analytics
+and Enquiries, and can carry out permission-checked member, billing, enquiry
+and navigation actions. Successful reversible changes show an Undo action.
+The exact "Who has dues?" question uses an authorized direct database read.
 
-## Malayalam speech provider access (6 November 2026)
+A command such as “Rahul paid 1500 by UPI” is recognized as text, then sent
+to the AI along with the signed-in gym context; no browser audio recording
+is submitted. Backend operations retain their original validation,
+permission checks, and idempotency safeguards.
 
-Production incident: XS AI successfully recorded Malayalam audio on an
-installed iPhone Home Screen app, but the xAI speech endpoint returned **403**.
-The Edge Function logged `xAI speech service 403` and responded with 503 at
-10:46 IST. A second `NVIDIA_API_KEY` is configured, but that Parakeet endpoint
-accepts **English only**. No authorized Malayalam transcription model was
-available. This is **not** a microphone permission failure.
+## QA
 
-The `xs-ai` function now returns a typed, non-sensitive failure code:
+- `tests/ui/live-voice.mjs`: simulated installed iPhone, phone browser and
+  desktop; English/Malayalam interim text, automatic single send, and the
+  absence of audio recording/uploads.
+- The same test covers recognition-service failures, unsupported live speech,
+  keyboard focus and text-only requests.
+- GitHub Action `.github/workflows/voice-ui.yml` runs the browser tests.
+- `tests/ai/agent.check.mjs` covers real-schema operations and permissions,
+  while the application build and PostgreSQL tests run in the release pipeline.
 
-- `speech_access_denied`: every configured applicable provider denied API
-  access (401/402/403); not retryable without fixing the key/credits.
-- `speech_not_configured`: no compatible provider for the chosen language.
-- `speech_rate_limited` or `speech_provider_unavailable`: transient errors
-  where trying later may succeed.
+These tests simulate Web Speech support. **A real installed-iPhone test remains
+necessary**, because Apple and individual browsers decide whether live
+SpeechRecognition works. A browser that lacks recognition cannot be made to
+provide instant interim transcription by JavaScript alone.
 
-The iPhone UI distinguishes permanent provider-access failures from temporary
-outages. After access is denied, the current language stops uploading the same
-recording repeatedly; it opens a recovery dialog with **Use keyboard instead**.
-The fallback focuses the input *synchronously in the tap event*, allowing
-the user to invoke iOS keyboard dictation (including Malayalam if enabled on
-their keyboard) without visiting Safari or browser Settings. English uses its
-own provider and can still work even when Malayalam is blocked.
+## Release safety
 
-For normal one-tap Malayalam voice operation a functioning STT key is required:
-add `GROQ_API_KEY` from [GroqCloud](https://console.groq.com/keys) in the
-Supabase Edge Function Secrets screen. Groq's free tier offers
-`whisper-large-v3` within rate limits; the Malayalam flow tries that
-higher-accuracy model first and supplies a Malayalam script/context prompt.
-`GEMINI_API_KEY` is another supported provider. The previously configured xAI
-secret can instead be repaired by enabling speech model access/credits in the
-xAI account. No client app can override a server-side 403 or create a usable
-third-party API credential itself. Never put API secrets in browser code,
-GitHub or a user-facing message.
-
-## Microphone
-
-One tap on the orb starts local recording in a home-screen iPhone app; the phone
-can show its own Allow microphone dialog. A short WAV is uploaded only to the
-authenticated Supabase Edge Function, and transcription requires **active gym
-staff membership**, not just an arbitrary signed-in account. The voice API key
-never reaches the browser. If cloud transcription is rejected (e.g. xAI 403) an
-in-app explanation provides a retry and keyboard fallback.
-
-A permanently denied iOS microphone permission cannot be overridden by any
-website. The keyboard (including its dictation key) remains usable. This is a
-real recorded-audio path, not a simulated Web Speech permission dialog.
-
-For reliable Malayalam recognition, prefer Groq Whisper or a separate Gemini
-key if available. NVIDIA's hosted Parakeet model is English-only. xAI's speech
-model may transcribe Malayalam using automatic language detection, but its
-published formatting-language table does not list Malayalam. Do not promise
-Malayalam transcription accuracy without field testing.
-
-## What it can do
-
-The exact question **Who has dues?** reads the current gym's outstanding balances
-via the signed-in user's permission checks, without requiring an AI provider.
-The response lists up to 25 active members with dues.
-
-Read: today's overview, member search and details, plans, payments by day, totals for a date range, expenses by month,
-analytics by month (revenue, profit, members joined/lost, renewals, plans, methods, dues by age, enquiries).
-Change: record payment, sell/renew plan (with discount reason and admission fee), add member, record expense,
-save an enquiry (lead), reverse payment, archive/restore member, open any screen including Analytics and Enquiries.
-(Check-in was removed from the web app.)
-
-Each role only gets the tools its permissions allow (reception has no reversals or financial reports).
-
-## Safety
-
-- **No confirmation step** (owner's choice). Instead every change appears as a card with **Undo**,
-  payments are marked "Recorded by XS AI", and every change is in the audit log under the user.
-- At most **6 changes per request**; requests to change many members at once are refused.
-- Amounts are validated (positive, ≤ ₹1 crore, 2 decimals); methods and dates are checked; future expenses refused.
-- Database contents are passed to the model labelled as untrusted data, so a member name or note
-  cannot instruct the assistant.
-- Privacy: requests and gym data necessary for answers may be sent to more than one configured AI
-  provider when failover occurs. Verify providers' data-use terms before using real member data.
-
-## Tests
-
-`tests/ai/agent.check.mjs` runs the agent against the local real-schema stack with a scripted model
-(payments in paise, undo, role tool filtering, cross-gym refusal, limits, validation, untrusted data,
-Malayalam). `tests/ui/ai.mjs` checks the panel with a simulated microphone and speaker on phone and laptop.
-Both run in `tests/e2e/run.sh`. `src/lib/sttFallback.test.ts` also checks
-xAI STT form upload, authentication headers, Malayalam auto-detection,
-provider failover and malformed input locally with mocked providers.
+Production builds deploy to GitHub Pages from `main`. Edge Function `xs-ai`
+must also be deployed without the deleted audio module to reject stale-client
+audio uploads. No changes to gyms, memberships, payments, or other database
+schema are needed for this voice-only release.

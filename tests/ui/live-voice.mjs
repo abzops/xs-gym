@@ -24,8 +24,22 @@ async function liveValue(page, expected) {
   } catch { return false; }
 }
 
-const fakeSpeech = ({ standalone }) => {
+const fakeSpeech = ({ standalone, noSpeech }) => {
   if (standalone) Object.defineProperty(navigator, 'standalone', { configurable: true, value: true });
+  window.__micCaptureCalls = 0;
+  if (navigator.mediaDevices) {
+    const original = navigator.mediaDevices.getUserMedia?.bind(navigator.mediaDevices);
+    navigator.mediaDevices.getUserMedia = (...args) => {
+      window.__micCaptureCalls++;
+      if (original) return original(...args);
+      return Promise.reject(new Error('Unexpected microphone capture'));
+    };
+  }
+  if (noSpeech) {
+    window.SpeechRecognition = undefined;
+    window.webkitSpeechRecognition = undefined;
+    return;
+  }
   window.__speech = { started: 0, stopped: 0, last: null };
   class FakeSpeechRecognition {
     lang = ''; continuous = false; interimResults = false; maxAlternatives = 1;
@@ -43,14 +57,14 @@ const fakeSpeech = ({ standalone }) => {
     window.__speech.last?.onend?.();
   };
 };
-async function setup({ standalone, stt = false, mobile = true, scheme = 'light' }) {
+async function setup({ standalone, stt = false, mobile = true, scheme = 'light', noSpeech = false }) {
   const ctx = await browser.newContext({
     viewport: mobile ? { width: 393, height: 852 } : { width: 1366, height: 860 },
     isMobile: mobile, hasTouch: mobile, colorScheme: scheme,
   });
   await ctx.addInitScript(([key, value]) => localStorage.setItem(key, value),
     ['sb-' + REF + '-auth-token', JSON.stringify(session)]);
-  await ctx.addInitScript(fakeSpeech, { standalone });
+  await ctx.addInitScript(fakeSpeech, { standalone, noSpeech });
   const log = { agent: [], transcribe: [] };
   await ctx.route('https://' + REF + '.supabase.co/**', async (route) => {
     const req = route.request(), url = req.url();
@@ -111,7 +125,8 @@ for (const [name, mobile, standalone, scheme] of [
   check(name + ': stops and automatically sends exactly once',
     log.agent.length === 1 && log.agent[0].messages.at(-1).content === 'Who has dues?');
   check(name + ': no whole-recording upload or cloud STT dependency',
-    log.transcribe.length === 0 && (await input.inputValue()) === '');
+    log.transcribe.length === 0 && (await input.inputValue()) === '' &&
+    (await page.evaluate(() => window.__micCaptureCalls)) === 0);
 
   await tap(dialog.getByRole('group', { name: 'Language' }).getByRole('button', { name: 'മലയാളം' }));
   await tap(orb());
@@ -128,24 +143,58 @@ for (const [name, mobile, standalone, scheme] of [
   check(name + ': Malayalam sends once with selected language',
     log.agent.length === 2 && log.agent[1].lang === 'ml' &&
     log.agent[1].messages.at(-1).content === 'ഇന്ന് എത്ര രൂപ കിട്ടി?' &&
-    log.transcribe.length === 0 && errors.length === 0, errors.join(' | '));
+    log.transcribe.length === 0 && (await page.evaluate(() => window.__micCaptureCalls)) === 0 &&
+    errors.length === 0, errors.join(' | '));
   await ctx.close();
 }
 
-// Service is unavailable, not the microphone. Offer WAV recording as a separate
-// opt-in fallback, rather than silently replacing live speech for everyone.
+// The engine can reject the request even after exposing its API. Never
+// switch to capturing WAV/audio or uploading it to Supabase.
 {
-  const { ctx, page, dialog, log, tap, errors } = await setup({ standalone: true, mobile: true, scheme: 'light', stt: true });
+  const { ctx, page, dialog, log, tap, errors } = await setup({ standalone: true, mobile: true, stt: true });
   await tap(dialog.getByRole('group', { name: 'Language' }).getByRole('button', { name: 'മലയാളം' }));
   await tap(dialog.getByRole('button', { name: 'Talk to XS AI' }));
   await page.evaluate(() => window.__serviceError());
   const help = dialog.getByRole('dialog', { name: 'ലൈവ് വോയ്സ് ലഭ്യമല്ല' });
   await help.waitFor({ timeout: 3000 });
-  check('installed iPhone: real-time engine failure offers recorded fallback',
-    await help.getByRole('button', { name: 'റെക്കോർഡ് ചെയ്ത് ശ്രമിക്കുക' }).isVisible() &&
-    log.agent.length === 0 && errors.length === 0, errors.join(' | '));
+  check('iPhone: speech service failure offers keyboard, not cloud recording',
+    await help.getByRole('button', { name: 'കീബോർഡ് ഉപയോഗിക്കുക' }).isVisible() &&
+    await help.getByRole('button', { name: 'വീണ്ടും ശ്രമിക്കുക' }).isVisible() &&
+    log.transcribe.length === 0 && errors.length === 0, errors.join(' | '));
+  await tap(help.getByRole('button', { name: 'കീബോർഡ് ഉപയോഗിക്കുക' }));
+  check('iPhone: keyboard dictation fallback focuses the composer',
+    await dialog.getByRole('textbox', { name: 'Message XS AI' }).evaluate((el) => document.activeElement === el));
+  check('iPhone: no getUserMedia capture happened in the failure path',
+    await page.evaluate(() => window.__micCaptureCalls === 0));
+  await ctx.close();
+}
+
+// An iOS Home Screen app without the browser SpeechRecognition API must
+// never silently record and upload to a different server-side speech service.
+{
+  const { ctx, page, dialog, log, tap, errors } = await setup({
+    standalone: true, mobile: true, noSpeech: true, stt: true,
+  });
+  await tap(dialog.getByRole('group', { name: 'Language' }).getByRole('button', { name: 'മലയാളം' }));
+  await tap(dialog.getByRole('button', { name: 'Talk to XS AI' }));
+  const help = dialog.getByRole('dialog', { name: 'കീബോർഡ് ഡിക്റ്റേഷൻ ഉപയോഗിക്കുക' });
+  await help.waitFor({ timeout: 3000 });
+  check('iPhone without live recognizer: offers dictation rather than audio upload',
+    await help.getByRole('button', { name: 'കീബോർഡ് ഉപയോഗിക്കുക' }).isVisible() &&
+    log.transcribe.length === 0);
+  await tap(help.getByRole('button', { name: 'കീബോർഡ് ഉപയോഗിക്കുക' }));
+  const input = dialog.getByRole('textbox', { name: 'Message XS AI' });
+  check('iPhone without live recognizer: keyboard is focused',
+    await input.evaluate((el) => document.activeElement === el));
+  await input.fill('ഹലോ, ഞാൻ പറയുന്നത് കേൾക്കുന്നുണ്ടോ?');
+  await tap(dialog.getByRole('button', { name: 'Send' }));
+  await dialog.getByText('ശരി, മനസ്സിലായി.').waitFor({ timeout: 5000 });
+  check('iPhone text-only: sends the dictated text, never an audio blob',
+    log.agent.length === 1 && log.agent[0].messages.at(-1).content === 'ഹലോ, ഞാൻ പറയുന്നത് കേൾക്കുന്നുണ്ടോ?' &&
+    log.transcribe.length === 0 && await page.evaluate(() => window.__micCaptureCalls === 0) &&
+    errors.length === 0, errors.join(' | '));
   await ctx.close();
 }
 await browser.close();
-console.log(failures ? failures + ' LIVE VOICE FAILURES' : 'LIVE VOICE OK');
+console.log(failures ? failures + ' LIVE VOICE FAILURES' : 'TEXT-ONLY VOICE OK');
 process.exit(failures ? 1 : 0);

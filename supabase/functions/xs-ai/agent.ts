@@ -15,7 +15,7 @@
 //   came from XS AI; every change lands in the audit log under the user.
 
 export type ChatMessage = { role: 'user' | 'assistant'; content: string };
-export type AgentRequest = { gym_id: string; messages: ChatMessage[]; lang?: 'en' | 'ml' };
+export type AgentRequest = { gym_id: string; messages: ChatMessage[]; lang?: 'en' | 'ml'; request_id?: string };
 export type Action = { tool: string; ok: boolean; summary: string; summaryMl?: string; undo?: { rpc: string; args: Record<string, unknown> }; error?: string };
 export type AgentResponse = { reply: string; actions: Action[]; navigate?: string; changed: string[] };
 export type LlmProvider = {
@@ -45,6 +45,7 @@ type Ctx = {
   role: string; perms: Set<string>; today: string;
   rest: (path: string, init?: RequestInit) => Promise<unknown>;
   rpc: (fn: string, args: Json) => Promise<unknown>;
+  idempotencyKey: string; // stable across retries of the same client request
 };
 
 // ---------- helpers ----------
@@ -54,8 +55,17 @@ class ApiError extends Error {
 }
 const str = (v: unknown, max = 200) => (typeof v === 'string' ? v.trim().slice(0, max) : v == null ? '' : String(v).slice(0, max));
 const isUuid = (v: unknown) => typeof v === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v);
-const isDate = (v: unknown) => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v) && !Number.isNaN(Date.parse(v));
+const isDate = (v: unknown) => {
+  if (typeof v !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(v)) return false;
+  const date = new Date(`${v}T00:00:00.000Z`);
+  return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === v;
+};
 const uuid = () => crypto.randomUUID();
+/** Stable UUID per request/write slot; prevents a repeated network request
+ * from charging the same member twice when a payment RPC already succeeded.
+ * A fresh request always gets its own random UUID. */
+const writeKey = (requestId: string, slot: number) =>
+  requestId.slice(0, -12) + (BigInt('0x' + requestId.slice(-12)) ^ BigInt(slot)).toString(16).padStart(12, '0');
 const rupees = (paise: unknown) => `₹${(Number(paise) / 100).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
 function toPaise(v: unknown): number {
   const n = typeof v === 'number' ? v : Number(String(v ?? '').replace(/[₹,\s]/g, ''));
@@ -208,7 +218,10 @@ const TOOLS: Tool[] = [
     description: 'Expenses in a month.',
     parameters: { type: 'object', properties: { month: { type: 'string', description: 'YYYY-MM; default this month' } } },
     run: async (a, c) => {
-      const m = /^\d{4}-\d{2}$/.test(str(a.month)) ? str(a.month) : c.today.slice(0, 7);
+      const requestedMonth = str(a.month);
+      if (requestedMonth && !/^\d{4}-(0[1-9]|1[0-2])$/.test(requestedMonth))
+        throw new ApiError('month must be a real YYYY-MM', 400);
+      const m = requestedMonth || c.today.slice(0, 7);
       const [y, mo] = m.split('-').map(Number); const next = mo === 12 ? `${y + 1}-01-01` : `${y}-${String(mo + 1).padStart(2, '0')}-01`;
       const rows = (await c.rest(`expenses?select=id,amount_paise,expense_date,method,description,expense_categories(name),expense_reversals(reason)&gym_id=eq.${c.gym.id}&expense_date=gte.${m}-01&expense_date=lt.${next}&order=expense_date.desc&limit=${MAX_ROWS}`)) as Json[];
       return { result: rows.map((x) => ({ id: x.id, category: (x.expense_categories as Json)?.name, amount: rupees(x.amount_paise), date: x.expense_date, method: x.method, note: x.description, reversed: Array.isArray(x.expense_reversals) && x.expense_reversals.length > 0 })) };
@@ -221,7 +234,7 @@ const TOOLS: Tool[] = [
     run: async (a, c) => {
       const paise = toPaise(a.amount); const pm = method(a.method);
       const who = await resolveMember(a, c);
-      const p = (await c.rpc('record_payment', { p_gym: c.gym.id, p_member: who.id, p_amount_paise: paise, p_method: pm, p_idempotency_key: uuid(), p_reference: str(a.reference, 80) || null, p_notes: 'Recorded by XS AI' })) as Json;
+      const p = (await c.rpc('record_payment', { p_gym: c.gym.id, p_member: who.id, p_amount_paise: paise, p_method: pm, p_idempotency_key: c.idempotencyKey, p_reference: str(a.reference, 80) || null, p_notes: 'Recorded by XS AI' })) as Json;
       return { result: { payment_id: p.id, amount: rupees(p.amount_paise), method: p.method }, action: { summary: `${rupees(p.amount_paise)} ${String(p.method).toUpperCase()} recorded for ${who.name}`, summaryMl: `${who.name}: ${rupees(p.amount_paise)} ${String(p.method).toUpperCase()} രേഖപ്പെടുത്തി`, undo: { rpc: 'reverse_payment', args: { p_gym: c.gym.id, p_payment: p.id, p_reason: 'Undone in XS AI' } } }, navigate: `receipts/${p.id}`, changed: ['dashboard', 'payments', 'member', 'members'] };
     } },
 
@@ -230,9 +243,11 @@ const TOOLS: Tool[] = [
     parameters: { type: 'object', properties: { ...MEMBER_PARAMS, plan: { type: 'string', description: 'plan name, e.g. Monthly' }, plan_id: { type: 'string' }, start_date: { type: 'string', description: 'YYYY-MM-DD; omit to continue after the current plan' }, discount: { type: 'number', description: 'rupees' }, discount_reason: { type: 'string' }, admission_fee: { type: 'number', description: 'rupees' } }, required: ['plan'] },
     run: async (a, c) => {
       const who = await resolveMember(a, c); const planId = await resolvePlan(a, c);
+      if (a.start_date != null && a.start_date !== '' && !isDate(a.start_date))
+        throw new ApiError('start_date must be a real YYYY-MM-DD date', 400);
       const disc = a.discount ? toPaise(a.discount) : 0; const adm = a.admission_fee ? toPaise(a.admission_fee) : 0;
       need(!disc || str(a.discount_reason), 'a discount needs a discount_reason');
-      const mm = (await c.rpc('sell_membership', { p_gym: c.gym.id, p_member: who.id, p_plan: planId, p_idempotency_key: uuid(), p_start_date: isDate(a.start_date) ? a.start_date : null,
+      const mm = (await c.rpc('sell_membership', { p_gym: c.gym.id, p_member: who.id, p_plan: planId, p_idempotency_key: c.idempotencyKey, p_start_date: isDate(a.start_date) ? a.start_date : null,
         p_discount_paise: disc, p_discount_reason: str(a.discount_reason) || null, p_admission_fee_paise: adm })) as Json;
       return { result: { membership_id: mm.id, plan: mm.plan_name, start: mm.start_date, end: mm.end_date }, action: { summary: `${mm.plan_name} for ${who.name}: ${mm.start_date} – ${mm.end_date}`, summaryMl: `${who.name}: ${mm.plan_name} (${mm.start_date} – ${mm.end_date})`, undo: { rpc: 'cancel_membership', args: { p_gym: c.gym.id, p_membership: mm.id, p_reason: 'Undone in XS AI' } } }, changed: ['dashboard', 'member', 'members'] };
     } },
@@ -255,6 +270,8 @@ const TOOLS: Tool[] = [
     run: async (a, c) => {
       const name = str(a.full_name, 120); const digits = str(a.phone, 20).replace(/\D/g, '').replace(/^(91|0)(?=\d{10}$)/, '');
       need(name.length >= 2, 'full_name is required'); need(digits.length === 10, 'phone must have 10 digits');
+      if (a.follow_up_date != null && a.follow_up_date !== '' && !isDate(a.follow_up_date))
+        throw new ApiError('follow_up_date must be a real YYYY-MM-DD date', 400);
       const args = { p_gym: c.gym.id, p_full_name: name, p_phone: `+91${digits}`, p_source: str(a.source) || 'walk_in', p_interest: str(a.interest, 120) || null,
         p_notes: str(a.note, 500) || null, p_follow_up_date: isDate(a.follow_up_date) ? a.follow_up_date : null };
       const e = (await c.rpc('save_enquiry', { ...args, p_enquiry: null, p_status: 'new' })) as Json;
@@ -266,8 +283,10 @@ const TOOLS: Tool[] = [
     parameters: { type: 'object', properties: { category: { type: 'string', description: 'e.g. Electricity, Rent, Salaries, Maintenance' }, amount: { type: 'number' }, date: { type: 'string', description: 'YYYY-MM-DD, not in the future; default today' }, method: { type: 'string', enum: METHODS }, note: { type: 'string' } }, required: ['category', 'amount'] },
     run: async (a, c) => {
       const cat = str(a.category, 60); need(cat.length >= 2, 'category is required');
+      if (a.date != null && a.date !== '' && !isDate(a.date))
+        throw new ApiError('date must be a real YYYY-MM-DD date', 400);
       const d = isDate(a.date) ? (a.date as string) : c.today; need(d <= c.today, 'expense date cannot be in the future');
-      const x = (await c.rpc('record_expense', { p_gym: c.gym.id, p_category: cat, p_amount_paise: toPaise(a.amount), p_expense_date: d, p_method: a.method ? method(a.method) : 'cash', p_idempotency_key: uuid(), p_description: str(a.note, 200) || 'Recorded by XS AI' })) as Json;
+      const x = (await c.rpc('record_expense', { p_gym: c.gym.id, p_category: cat, p_amount_paise: toPaise(a.amount), p_expense_date: d, p_method: a.method ? method(a.method) : 'cash', p_idempotency_key: c.idempotencyKey, p_description: str(a.note, 200) || 'Recorded by XS AI' })) as Json;
       return { result: { expense_id: x.id, amount: rupees(x.amount_paise) }, action: { summary: `${rupees(x.amount_paise)} ${cat} expense saved`, summaryMl: `${rupees(x.amount_paise)} ${cat} ചെലവ് രേഖപ്പെടുത്തി`, undo: { rpc: 'reverse_expense', args: { p_gym: c.gym.id, p_expense: x.id, p_reason: 'Undone in XS AI' } } }, changed: ['expenses', 'dashboard'] };
     } },
 
@@ -416,8 +435,13 @@ export async function requestLlmWithFailover(
 // ---------- main ----------
 export async function runAgent(req: AgentRequest, env: AgentEnv): Promise<AgentResponse> {
   const f = env.fetch ?? fetch;
-  if (!isUuid(req.gym_id)) throw new ApiError('gym_id is required', 400);
-  const messages = (req.messages ?? []).filter((m) => (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string').slice(-12)
+  if (!req || typeof req !== 'object' || !isUuid(req.gym_id))
+    throw new ApiError('gym_id is required', 400);
+  if (!Array.isArray(req.messages)) throw new ApiError('messages must be an array', 400);
+  if (req.request_id !== undefined && !isUuid(req.request_id))
+    throw new ApiError('request_id must be a UUID', 400);
+  const requestId = req.request_id ?? uuid();
+  const messages = req.messages.filter((m) => m && typeof m === 'object' && (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string').slice(-12)
     .map((m) => ({ role: m.role, content: m.content.slice(0, 2000) }));
   if (!messages.length || messages[messages.length - 1].role !== 'user') throw new ApiError('the last message must be from the user', 400);
   const lang = req.lang === 'ml' ? 'ml' : 'en';
@@ -432,24 +456,64 @@ export async function runAgent(req: AgentRequest, env: AgentEnv): Promise<AgentR
   const rpc = (fn: string, args: Json) => rest(`rpc/${fn}`, { method: 'POST', body: JSON.stringify(args) });
 
   // Who is asking, in which gym — all through RLS with the user's token.
-  const user = (await (await f(`${env.supabaseUrl}/auth/v1/user`, { headers })).json()) as Json;
-  if (!isUuid(user?.id)) throw new ApiError('not signed in', 401);
+  const auth = await f(`${env.supabaseUrl}/auth/v1/user`, { headers });
+  if (!auth.ok) throw new ApiError('not signed in', 401);
+  const user = (await auth.json().catch(() => null)) as Json | null;
+  const userId = typeof user?.id === 'string' ? user.id : '';
+  if (!isUuid(userId)) throw new ApiError('not signed in', 401);
   const gyms = (await rest(`gyms?select=id,name,slug,timezone,grace_days&id=eq.${req.gym_id}`)) as Ctx['gym'][];
-  const staff = (await rest(`gym_staff?select=role,status&gym_id=eq.${req.gym_id}&user_id=eq.${user.id}`)) as Json[];
+  const staff = (await rest(`gym_staff?select=role,status&gym_id=eq.${req.gym_id}&user_id=eq.${userId}`)) as Json[];
   if (!gyms[0] || !staff[0] || staff[0].status !== 'active') throw new ApiError('you are not staff in this gym', 403);
   const role = String(staff[0].role);
   const perms = new Set(((await rest(`role_permissions?select=permission&role=eq.${role}`)) as Json[]).map((p) => String(p.permission)));
-  const ctx: Ctx = { gym: gyms[0], role, perms, today: gymToday(gyms[0].timezone, env.now?.() ?? new Date()), rest, rpc };
+  const ctx: Ctx = { gym: gyms[0], role, perms, today: gymToday(gyms[0].timezone, env.now?.() ?? new Date()), rest, rpc, idempotencyKey: requestId };
 
-  // Direct, role-checked read-only answer during model outages.
-  const question = messages[messages.length - 1].content.toLowerCase().trim().replace(/[?.!]+$/, '');
-  if (question === 'who has dues') {
+  // Deterministic answers to the most common gym questions. These are
+  // authorization checked, use the caller's JWT/RLS, and work even when
+  // every external LLM provider is unavailable.
+  const q = messages[messages.length - 1].content.toLocaleLowerCase().trim()
+    .replace(/[?!.।؟]+$/gu, '').replace(/[,，]/gu, ' ').replace(/\s+/gu, ' ');
+  const greeting = ['hello', 'hi', 'hey', 'can you hear me', 'hello can you hear me',
+    'ഹലോ', 'നമസ്കാരം', 'ഹലോ ഞാൻ പറയുന്നത് കേൾക്കുന്നുണ്ടോ'].includes(q);
+  if (greeting) {
+    return { reply: lang === 'ml' || /[\u0d00-\u0d7f]/u.test(q)
+      ? 'നിങ്ങളുടെ സന്ദേശം ലഭിച്ചു. ജിം കാര്യങ്ങളിൽ എന്ത് സഹായം വേണം?'
+      : 'I received your message. What can I help you with in your gym?', actions: [], changed: [] };
+  }
+
+  const dues = ['who has dues', 'who has outstanding dues', 'show members with dues',
+    'list members with dues', 'show me members with dues',
+    'ആർക്കൊക്കെ കുടിശ്ശികയുണ്ട്', 'ആർക്കൊക്കെ കുടിശ്ശിക ഉണ്ട്', 'ആർക്കാണ് കുടിശ്ശിക'].includes(q);
+  if (dues) {
     if (!perms.has('members.read')) throw new ApiError('You cannot view members.', 403);
-    const data = (await rest('member_overview?select=full_name,member_no,due_paise&gym_id=eq.' + req.gym_id + '&status=eq.active&due_paise=gt.0&order=due_paise.desc&limit=25')) as Json[];
+    const data = (await rest(`member_overview?select=full_name,member_no,due_paise&gym_id=eq.${req.gym_id}&status=eq.active&due_paise=gt.0&order=due_paise.desc&limit=25`)) as Json[];
     const lines = data.map((m) => str(m.full_name, 100) + ' (' + str(m.member_no, 30) + '): ' + rupees(m.due_paise));
-    const reply = lines.length ? ['Members with outstanding dues:', ...lines, ...(lines.length === 25 ? ['Showing first 25; there may be more.'] : [])].join('\n') : 'No active members have outstanding dues.';
+    const ml = lang === 'ml' || /[\u0d00-\u0d7f]/u.test(q);
+    const reply = lines.length
+      ? [ml ? 'കുടിശ്ശികയുള്ള അംഗങ്ങൾ:' : 'Members with outstanding dues:', ...lines,
+        ...(lines.length === 25 ? [ml ? 'ആദ്യ 25 പേരെയാണ് കാണിക്കുന്നത്; കൂടുതൽ പേരുണ്ടാകാം.' : 'Showing first 25; there may be more.'] : [])].join('\n')
+      : ml ? 'നിലവിൽ സജീവ അംഗങ്ങൾക്ക് കുടിശ്ശികയില്ല.' : 'No active members have outstanding dues.';
     return { reply, actions: [], changed: [] };
   }
+
+  const todayCollections = ['how much did we collect today', 'how much have we collected today',
+    'how much collected today', "today's collections", 'today collections',
+    'ഇന്ന് എത്ര രൂപ കിട്ടി', 'ഇന്ന് എത്ര പണം കിട്ടി', 'ഇന്നത്തെ കളക്ഷൻ എത്രയാണ്',
+    'ഇന്ന് എത്ര കളക്ഷൻ കിട്ടി'].includes(q);
+  if (todayCollections) {
+    if (!perms.has('reports.financial')) throw new ApiError('You cannot view financial reports.', 403);
+    const summary = (await rpc('dashboard_summary', { p_gym: req.gym_id })) as Json;
+    const fin = summary.financial as Json | null;
+    if (!fin) throw new ApiError('Financial summary is not available for this role.', 403);
+    const gross = Number(fin.collections_today ?? 0);
+    const reversals = Number(fin.reversals_today ?? 0);
+    const ml = lang === 'ml' || /[\u0d00-\u0d7f]/u.test(q);
+    return { reply: ml
+      ? `ഇന്ന് ലഭിച്ചത് ${rupees(gross)}. റിവേഴ്സ് ചെയ്തത് ${rupees(reversals)}. നെറ്റ് കളക്ഷൻ ${rupees(gross - reversals)}.`
+      : `Today received ${rupees(gross)}; reversed ${rupees(reversals)}. Net collection: ${rupees(gross - reversals)}.`,
+      actions: [], changed: [] };
+  }
+
   const tools = TOOLS.filter((t) => !t.perm || perms.has(t.perm));
   const byName = new Map(tools.map((t) => [t.name, t]));
   const llmTools = tools.map((t) => ({ type: 'function', function: { name: t.name, description: t.description, parameters: t.parameters } }));
@@ -462,7 +526,21 @@ export async function runAgent(req: AgentRequest, env: AgentEnv): Promise<AgentR
   const actions: Action[] = []; const changed = new Set<string>(); let navigate: string | undefined; let writes = 0;
 
   for (let turn = 0; turn < MAX_TURNS; turn++) {
-    const msg = await requestLlmWithFailover(providers, convo, llmTools, f);
+    let msg: Json;
+    try {
+      msg = await requestLlmWithFailover(providers, convo, llmTools, f);
+    } catch (e) {
+      const completed = actions.filter((a) => a.ok);
+      if (!completed.length) throw e;
+      // A failed *follow-up* model request must never tell the user to repeat
+      // a payment or other change that the database has already committed.
+      const summaries = completed.map((a) => (lang === 'ml' ? a.summaryMl ?? a.summary : a.summary)).join('. ');
+      const warning = lang === 'ml'
+        ? 'AI സേവനം പിന്നീട് തടസ്സപ്പെട്ടു. ബാക്കി പ്രവർത്തനങ്ങൾ പൂർത്തിയായോ എന്ന് പരിശോധിച്ച ശേഷം മാത്രം വീണ്ടും ശ്രമിക്കൂ.'
+        : 'The AI service stopped responding afterward. Check the remaining requested steps before retrying.';
+      return { reply: `${lang === 'ml' ? 'പൂർത്തിയായത്:' : 'Completed:'} ${summaries}. ${warning}`,
+        actions, navigate, changed: [...changed] };
+    }
     const calls = (msg.tool_calls as { id: string; function: { name: string; arguments: string } }[] | undefined) ?? [];
     if (!calls.length) return { reply: str(msg.content, 1200) || 'Done.', actions, navigate, changed: [...changed] };
     convo.push({ role: 'assistant', content: msg.content ?? '', tool_calls: calls });
@@ -473,7 +551,10 @@ export async function runAgent(req: AgentRequest, env: AgentEnv): Promise<AgentR
       if (!tool?.write) allWritesOk = false;
       try {
         if (!tool) throw new ApiError(`you cannot use ${call.function.name}`, 403);
-        if (tool.write && ++writes > MAX_WRITES) throw new ApiError(`limit of ${MAX_WRITES} changes per request reached; ask the user to continue in the app`, 429);
+        if (tool.write) {
+          if (++writes > MAX_WRITES) throw new ApiError(`limit of ${MAX_WRITES} changes per request reached; ask the user to continue in the app`, 429);
+          ctx.idempotencyKey = writeKey(requestId, writes);
+        }
         const args = JSON.parse(call.function.arguments || '{}') as Json;
         const res = await tool.run(args, ctx);
         out = res.result;
@@ -486,7 +567,7 @@ export async function runAgent(req: AgentRequest, env: AgentEnv): Promise<AgentR
         allWritesOk = false;
         if (tool?.write) actions.push({ tool: tool.name, ok: false, summary: message, error: message });
       }
-      convo.push({ role: 'tool', tool_call_id: call.id, content: `<gym-data untrusted="true">${JSON.stringify(out).slice(0, 6000)}</gym-data>` });
+      convo.push({ role: 'tool', tool_call_id: call.id, content: `<gym-data untrusted="true">${JSON.stringify(out).replace(/</g, '\\u003c').replace(/>/g, '\\u003e').slice(0, 6000)}</gym-data>` });
     }
     // Every change in this step worked: confirm it directly instead of a
     // further model round trip (saves 1–5 s on every spoken command).
