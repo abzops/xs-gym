@@ -237,9 +237,15 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
     if (state === 'listening') { stopRef.current(); return; }
     if (state === 'speaking') { stopSpeaking(); return; }
     if (requestBusy.current || listeningBusy.current) return;
-    if (lang === 'ml' && localMalayalamReady()) { void beginOfflineMalayalam(); return; }
+    // Never invoke Web Speech for Malayalam: its service may be cloud-backed
+    // and the iPhone does not consistently support ml-IN. Opt in to local ML.
+    if (lang === 'ml') {
+      if (localMalayalamReady()) void beginOfflineMalayalam();
+      else setMicDialog('offline');
+      return;
+    }
     if (canListen()) { void beginListening(); return; }
-    setMicDialog(lang === 'ml' ? 'offline' : 'unavailable');
+    setMicDialog('unavailable');
   }
 
   async function undo(turn: number, i: number) {
@@ -264,7 +270,8 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
     : state === 'thinking' ? (lang === 'ml' ? 'ആലോചിക്കുന്നു…' : 'Thinking…')
     : state === 'speaking' ? (lang === 'ml' ? 'സംസാരിക്കുന്നു…' : 'Speaking…')
       : lang === 'ml' && offlineAvailable ? 'മലയാളം സംസാരിക്കാൻ ടാപ്പ് ചെയ്യൂ (പരമാവധി 12 സെക്കൻഡ്)'
-      : voiceOk ? (lang === 'ml' ? 'സംസാരിക്കാൻ ടാപ്പ് ചെയ്യൂ' : 'Tap to talk')
+      : lang === 'ml' ? 'മലയാളം വോയ്സ് മോഡൽ ഉപയോഗിക്കാൻ ടാപ്പ് ചെയ്യൂ'
+      : voiceOk ? 'Tap to talk'
       : (lang === 'ml' ? 'കീബോർഡിലെ മൈക്ക് ഉപയോഗിക്കൂ' : 'Use keyboard dictation');
 
   return (
