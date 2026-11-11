@@ -505,6 +505,55 @@ with sync_playwright() as p:
             tap(page.get_by_role('button', name=tab)); page.wait_for_timeout(500)
             if page.locator('main .notice.bad, main [class*="bad"]').filter(has_text=re.compile('error|wrong', re.I)).count(): note('BUG', f'reports {tab} shows an error')
         tap(page.get_by_role('group', name='View').get_by_role('button', name='Dues')); page.wait_for_timeout(500)
+        if PLATFORM == 'phone':
+            nav_rect = page.locator('nav.tabbar').bounding_box()
+            assert nav_rect is not None, 'phone tab bar missing'
+            assert nav_rect['x'] >= -1 and nav_rect['x'] + nav_rect['width'] <= 394, f'phone tab bar is offscreen: {nav_rect}'
+            report_scroller = page.locator('main .table-wrap')
+            assert report_scroller.count() == 1, 'Dues report table wrapper missing'
+            assert report_scroller.evaluate('(e) => getComputedStyle(e).overflowX') == 'auto', 'Dues table does not support horizontal scroll'
+            sizes = page.evaluate('() => ({ content: document.documentElement.scrollWidth, viewport: document.documentElement.clientWidth })')
+            if sizes['content'] > sizes['viewport'] + 1:
+                geometry = page.evaluate("""() => {
+                    const selectors = ['html', 'body', '.shell', '.content', '.main',
+                        '.stack.lg', '.card.table-wrap', '.data'];
+                    return selectors.map(selector => {
+                        const el = document.querySelector(selector);
+                        if (!el) return {selector, missing:true};
+                        const rect = el.getBoundingClientRect();
+                        return {selector, left:Math.round(rect.left), width:Math.round(rect.width),
+                            right:Math.round(rect.right), scrollWidth:el.scrollWidth,
+                            clientWidth:el.clientWidth, overflowX:getComputedStyle(el).overflowX};
+                    });
+                }""")
+                print('OVERFLOW_GEOMETRY ' + json.dumps(geometry, separators=(',', ':')), flush=True)
+                extra = page.evaluate("""() => {
+                    const w = document.documentElement.clientWidth;
+                    const root = document.documentElement;
+                    const pseudoNames = ['::before', '::after', '::view-transition',
+                        '::view-transition-group(page)', '::view-transition-old(page)',
+                        '::view-transition-new(page)'];
+                    const pseudos = pseudoNames.map(p => {
+                        const s = getComputedStyle(root,p);
+                        return {pseudo:p,display:s.display,width:s.width,position:s.position,
+                            transform:s.transform,animation:s.animationName,opacity:s.opacity};
+                    });
+                    const beyond = [...document.body.querySelectorAll('*')].map(el => {
+                        const rect = el.getBoundingClientRect();
+                        const style = getComputedStyle(el);
+                        return {element:el.tagName.toLowerCase() + '.' + String(el.className?.baseVal ?? el.className ?? '').slice(0,35),
+                            right:Math.round(rect.right), width:Math.round(rect.width),
+                            position:style.position,overflowX:style.overflowX};
+                    }).filter(o => o.right > w + 2).sort((a,b)=>b.right-a.right).slice(0,16);
+                    const animations = root.getAnimations({subtree:true}).slice(0,10).map(a=>({
+                        state:a.playState, duration:a.effect?.getTiming().duration,
+                        pseudo:a.effect?.pseudoElement ?? null
+                    }));
+                    return {scrollX:scrollX,viewTransitions:document.startViewTransition != null,
+                        pseudos,beyond,animations};
+                }""")
+                print('OVERFLOW_EXTRA ' + json.dumps(extra, separators=(',', ':')), flush=True)
+                raise AssertionError(f'Analytics Dues exceeds phone viewport: {sizes}')
         remind = page.get_by_role('button', name=re.compile('^Remind'))
         if remind.count():
             tap(remind.first)
