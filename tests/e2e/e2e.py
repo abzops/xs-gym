@@ -318,11 +318,11 @@ with sync_playwright() as p:
     def _():
         page.reload(); page.wait_for_load_state('networkidle')
         rows = page.locator('main li', has_text='600')
-        tap(rows.first.get_by_role('button', name='Reverse'))
+        tap(rows.first.get_by_role('button', name='Delete'))
         d = dialog()
-        assert d.get_by_role('button', name='Reverse payment').is_disabled(), 'reverse allowed without a reason'
+        assert d.get_by_role('button', name='Delete / reverse payment').is_disabled(), 'payment delete allowed without a reason'
         d.get_by_label('Reason (required)').fill('Wrong amount')
-        tap(d.get_by_role('button', name='Reverse payment')); toast('Payment reversed')
+        tap(d.get_by_role('button', name='Delete / reverse payment')); toast('Payment reversed')
         row = sql(f"select due_paise, credit_paise from member_overview where id = '{state['member']}'")[0]
         assert row == ['40000', '0'], f'after reversing ₹600 expected due 40000 / credit 0, got {row}'
 
