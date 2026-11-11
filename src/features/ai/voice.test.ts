@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { MicrophoneAccessError, requestMicrophone } from './voice';
+import { MicrophoneAccessError, canListen, listen, requestMicrophone, speechLocale } from './voice';
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -43,4 +43,59 @@ describe('XS AI microphone permission', () => {
       name: 'MicrophoneAccessError', reason: 'unsupported',
     });
   });
+});
+
+describe('browser-only Malayalam recognition (no STT model)', () => {
+  function mockBrowser() {
+    let active: FakeRecognition | null = null;
+    class FakeRecognition {
+      lang = ''; interimResults = false; continuous = true; maxAlternatives = 0;
+      onresult: ((event: { results: ArrayLike<ArrayLike<{ transcript: string }> & { isFinal: boolean }> }) => void) | null = null;
+      onerror: ((event: { error: string }) => void) | null = null;
+      onend: (() => void) | null = null;
+      start() { active = this; }
+      stop() { this.onend?.(); }
+      abort() { this.onend?.(); }
+    }
+    vi.stubGlobal('window', { webkitSpeechRecognition: FakeRecognition });
+    return () => active;
+  }
+
+  it('rechecks the Web Speech constructor when the browser adds it later', () => {
+    vi.stubGlobal('window', {});
+    expect(canListen()).toBe(false);
+    const active = mockBrowser();
+    expect(canListen()).toBe(true);
+    const result = listen('ml', vi.fn());
+    expect(active()?.lang).toBe('ml-IN');
+    active()?.onend?.();
+    return expect(result.done).resolves.toBe('');
+  });
+
+  it('offers a second browser-only Malayalam tag without affecting English', async () => {
+    const active = mockBrowser();
+    expect(speechLocale('en', true)).toBe('en-IN');
+    expect(speechLocale('ml')).toBe('ml-IN');
+    expect(speechLocale('ml', true)).toBe('ml');
+    const onText = vi.fn();
+    const result = listen('ml', onText, true);
+    expect(active()?.lang).toBe('ml');
+    expect(active()?.interimResults).toBe(true);
+    active()?.onresult?.({ results: [{ 0: { transcript: 'ഇന്ന് എത്ര രൂപ' }, length: 1, isFinal: false }] });
+    expect(onText).toHaveBeenLastCalledWith('ഇന്ന് എത്ര രൂപ');
+    active()?.onend?.();
+    await expect(result.done).resolves.toBe('ഇന്ന് എത്ര രൂപ');
+  });
+
+  it.each(['language-not-supported', 'service-not-allowed', 'network'])(
+    'preserves real browser error code %s instead of generic microphone error', async (code) => {
+      const active = mockBrowser();
+      const result = listen('ml', vi.fn());
+      active()?.onerror?.({ error: code });
+      active()?.onend?.();
+      await expect(result.done).rejects.toMatchObject({
+        name: 'SpeechListenError', locale: 'ml-IN', browserCode: code,
+      });
+    }
+  );
 });
