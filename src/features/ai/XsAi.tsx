@@ -205,8 +205,12 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
       cancelOfflineRef.current = () => {};
       if (closingRef.current) return;
       setState('idle');
-      if (heard) await ask(heard);
-      else toast('ഒന്നും കേട്ടില്ല. വീണ്ടും ശ്രമിക്കൂ.');
+      // Tiny multilingual models can misread names and rupee amounts. Show
+      // the recognised phrase for confirmation before any AI tool action.
+      if (heard) {
+        setText(heard);
+        toast('മലയാളം ടെക്സ്റ്റ് പരിശോധിച്ച് Send അമർത്തൂ.');
+      } else toast('ഒന്നും കേട്ടില്ല. വീണ്ടും ശ്രമിക്കൂ.');
     } catch (e) {
       if (!closingRef.current) {
         setState('idle');
