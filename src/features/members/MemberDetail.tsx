@@ -1,7 +1,7 @@
 import { useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, Pencil, Phone, RefreshCw, Trash2, Wallet } from 'lucide-react';
+import { Archive, ArrowLeft, Pencil, Phone, RefreshCw, Trash2, Wallet } from 'lucide-react';
 import { useState } from 'react';
-import { Link, useParams, useSearchParams } from 'react-router';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router';
 import { useGym } from '../../app/gym';
 import { BackLink, Empty, Loading, Notice, PushLink, Sheet, StatusBadge, initials, useToast } from '../../components/ui';
 import { formatDate, formatDateTime } from '../../lib/dates';
@@ -13,13 +13,15 @@ import { EditPaymentSheet } from '../payments/EditPaymentSheet';
 import { PaymentSheet, ReasonSheet, SellPlanSheet } from './actions';
 import { useMember, useMemberHistory } from './api';
 import { MemberForm } from './MemberForm';
+import { PermanentDeleteMemberSheet } from './PermanentDeleteMemberSheet';
 import { WhatsAppButton, reminderFor } from '../../components/WhatsApp';
 
-type Dialog = null | 'sell' | 'pay' | 'edit' | { reverse: string } | { editPayment: Payment } | { voidCharge: string } | 'archive';
+type Dialog = null | 'sell' | 'pay' | 'edit' | { reverse: string } | { editPayment: Payment } | { voidCharge: string } | 'archive' | 'delete';
 
 export function MemberDetail() {
   const { memberId = '' } = useParams();
-  const { gym, can } = useGym();
+  const { gym, can, role } = useGym();
+  const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
   const qc = useQueryClient();
   const toast = useToast();
@@ -81,7 +83,8 @@ export function MemberDetail() {
             {can('memberships.sell') && <button className="btn" onClick={() => setDialog('sell')}><RefreshCw size={18} /> {m.valid_until ? 'Renew' : 'Sell plan'}</button>}
             {can('payments.record') && <button className="btn" onClick={() => setDialog('pay')}><Wallet size={18} /> Payment</button>}
             {can('members.write') && <button className="btn ghost" onClick={() => setDialog('edit')}><Pencil size={18} /> Edit member</button>}
-            {can('members.archive') && <button className="btn ghost danger" onClick={() => setDialog('archive')}><Trash2 size={18} /> Delete member</button>}
+            {can('members.archive') && <button className="btn ghost" onClick={() => setDialog('archive')}><Archive size={18} /> Archive member</button>}
+            {role === 'owner' && <button className="btn ghost danger" onClick={() => setDialog('delete')}><Trash2 size={18} /> Delete member permanently</button>}
             <a className="btn ghost" href={`tel:${m.phone}`}><Phone size={18} /> Call</a>
             <WhatsAppButton small={false} phone={m.phone} {...reminderFor(m, canMoney)} />
           </div>
@@ -93,6 +96,7 @@ export function MemberDetail() {
             Restore member
           </button>}
           {can('members.write') && <button className="btn ghost" onClick={() => setDialog('edit')}><Pencil size={16} /> Edit member</button>}
+          {role === 'owner' && <button className="btn ghost danger" onClick={() => setDialog('delete')}><Trash2 size={16} /> Delete member permanently</button>}
           <Link className="btn ghost" to={`${base}/members?filter=archived`}>Archived members</Link>
         </div>}
       </div>
@@ -186,9 +190,17 @@ export function MemberDetail() {
         <Sheet title="Edit member" onClose={close}><MemberForm member={m} onDone={close} /></Sheet>
       )}
       {dialog === 'archive' && (
-        <ReasonSheet title="Delete member (archive)" confirmLabel="Delete / archive member" onClose={close}
+        <ReasonSheet title="Archive member" confirmLabel="Archive member" onClose={close}
           warning="This moves the member to Members → Archived. Plans and payment history remain intact, and the member can be restored."
           onConfirm={(reason) => rpc('set_member_status', { p_gym: gym.id, p_member: m.id, p_status: 'archived', p_reason: reason }).then(refresh)} />
+      )}
+      {dialog === 'delete' && role === 'owner' && (
+        <PermanentDeleteMemberSheet member={m} onClose={close}
+          onDeleted={async () => {
+            await refresh();
+            toast('Member profile permanently deleted');
+            navigate(`${base}/members`, { replace: true });
+          }} />
       )}
       {dialog && typeof dialog === 'object' && 'reverse' in dialog && (
         <ReasonSheet title="Delete payment (archive)" confirmLabel="Delete / reverse payment" onClose={close}
