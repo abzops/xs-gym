@@ -749,7 +749,7 @@ with sync_playwright() as p:
         go(base() + '/members/import')
         before = sql(f"select count(*) from members where gym_id='{state['gym']}'")[0][0]
         page.locator('input[type=file]').set_input_files({'name': 'retry.csv', 'mimeType': 'text/csv',
-            'buffer': b'name,phone\\nAnjali Import,9847000001\\n'})
+            'buffer': b'name,phone\nAnjali Import,9847000001\n'})
         expect(page.locator('main')).to_contain_text('0 ready', timeout=12000)
         assert page.get_by_role('checkbox', name=re.compile('I reviewed this dry-run preview')).is_disabled()
         assert sql(f"select count(*) from members where gym_id='{state['gym']}'")[0][0] == before
@@ -762,7 +762,7 @@ with sync_playwright() as p:
         page.route('**/rest/v1/members*', fail_lookup)
         try:
             page.locator('input[type=file]').set_input_files({'name': 'new.csv', 'mimeType': 'text/csv',
-                'buffer': b'name,phone\\nShould Not Insert,9847000099\\n'})
+                'buffer': b'name,phone\nShould Not Insert,9847000099\n'})
             expect(page.locator('main')).to_contain_text('Import is blocked', timeout=12000)
             assert page.get_by_role('button', name='Add 1 member').count() == 0
             assert sql(f"select count(*) from members where gym_id='{state['gym']}'")[0][0] == before
