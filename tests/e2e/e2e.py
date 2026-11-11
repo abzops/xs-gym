@@ -384,6 +384,26 @@ with sync_playwright() as p:
         toast('Member updated')
         assert sql(f"select full_name from members where id = '{state['member']}'")[0][0] == 'Rahul QA Edited'
 
+    @step('editing Joining date persists and leaves membership period unchanged')
+    def _():
+        member_id = state['member']
+        before = sql(f"select join_date from members where id='{member_id}'")[0][0]
+        membership_periods = sql(f"select start_date,end_date from member_memberships where member_id='{member_id}' order by start_date,id")
+        tap(page.locator('main').get_by_role('button', name='Edit member'))
+        d = dialog()
+        joining = d.get_by_label('Joining date')
+        assert joining.input_value() == before, f'Joining date not prefilled: expected {before}, got {joining.input_value()}'
+        joining.fill('2026-03-12')
+        tap(d.get_by_role('button', name='Save changes'))
+        expect(dialog()).to_have_count(0, timeout=10000)
+        assert sql(f"select join_date from members where id='{member_id}'")[0][0] == '2026-03-12', 'Joining date did not save'
+        assert sql(f"select start_date,end_date from member_memberships where member_id='{member_id}' order by start_date,id") == membership_periods, 'Joining date edit changed membership dates'
+        page.reload(); page.wait_for_load_state('networkidle')
+        tap(page.locator('main').get_by_role('button', name='Edit member'))
+        d = dialog()
+        assert d.get_by_label('Joining date').input_value() == '2026-03-12', 'Joining date did not survive page reload'
+        tap(d.get_by_role('button', name='Close'))
+
     @step('refresh on a deep link keeps the user on the same screen')
     def _():
         page.reload(); page.wait_for_load_state('networkidle')
