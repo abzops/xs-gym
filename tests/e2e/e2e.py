@@ -520,7 +520,8 @@ with sync_playwright() as p:
                             clientWidth:el.clientWidth, overflowX:getComputedStyle(el).overflowX};
                     });
                 }""")
-                raise AssertionError(f'Analytics Dues exceeds phone viewport: {sizes}; element widths: {geometry}')
+                print('OVERFLOW_GEOMETRY ' + json.dumps(geometry, separators=(',', ':')), flush=True)
+                raise AssertionError(f'Analytics Dues exceeds phone viewport: {sizes}')
         remind = page.get_by_role('button', name=re.compile('^Remind'))
         if remind.count():
             tap(remind.first)
