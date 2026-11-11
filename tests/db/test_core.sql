@@ -336,6 +336,24 @@ select t.eq((select count(*) from public.payment_allocations
 select t.eq((select count(*) from public.audit_logs
   where entity_id=t.id('pilotVoidCharge') and action='charge.voided')::int,
   1, 'paid void has an audit record');
+-- The owner has selected SEPARATE access cancellation.
+-- A void does not silently alter the membership period; cancellation is
+-- its own permission-checked, reasoned, auditable command.
+select public.cancel_membership(t.id('gymA'), t.id('pilotVoidMembership'),
+  'Separate membership cancellation after finance correction');
+select t.eq((select status from public.member_memberships
+  where id=t.id('pilotVoidMembership')), 'cancelled',
+  'separate explicit command cancels membership access');
+select t.eq((select credit_paise from public.member_overview
+  where id=t.id('pilotVoidMember')), 100000::bigint,
+  'separate membership cancellation preserves existing member credit');
+select t.eq((select count(*) from public.payments
+  where member_id=t.id('pilotVoidMember'))::int, 1,
+  'separate membership cancellation does not reverse the original payment');
+select t.eq((select count(*) from public.audit_logs
+  where entity_id=t.id('pilotVoidMembership') and action='membership.cancelled')::int,
+  1, 'separate membership cancellation is audited');
+
 
 -- Expired subscription: read-only
 reset role;
