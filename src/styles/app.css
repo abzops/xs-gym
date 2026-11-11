@@ -401,7 +401,7 @@ button.item:disabled { cursor: default; }
    horizontally without widening the fixed mobile navigation. */
 .card.flush.table-wrap { overflow-x: auto; }
 table.data { width: 100%; border-collapse: collapse; font-size: var(--t-base); }
-table.data th { text-align: left; font-size: var(--t-sm); font-weight: 600; color: var(--graphite); padding: 12px 14px; border-bottom: 1px solid var(--hair); white-space: nowrap; background: var(--paper); }
+table.data th { position: relative; text-align: left; font-size: var(--t-sm); font-weight: 600; color: var(--graphite); padding: 12px 14px; border-bottom: 1px solid var(--hair); white-space: nowrap; background: var(--paper); }
 table.data td { padding: 12px 14px; border-bottom: 1px solid var(--hair); white-space: nowrap; }
 table.data td.r, table.data th.r { text-align: right; }
 @media (hover: hover) and (pointer: fine) { table.data tbody tr:hover td { background: var(--paper-2); } }
