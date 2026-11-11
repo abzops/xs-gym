@@ -1,17 +1,17 @@
 import { useQueryClient } from '@tanstack/react-query';
-import { Archive, Pencil, Plus, RotateCcw, Search, Trash2, Upload } from 'lucide-react';
-import { useDeferredValue, useState } from 'react';
+import { Archive, Plus, Search, Upload } from 'lucide-react';
+import { useDeferredValue, useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router';
 import { useGym } from '../../app/gym';
-import { Empty, Loading, Notice, PushLink, Segmented, Sheet, StatusBadge, initials, useToast } from '../../components/ui';
-import { formatDate } from '../../lib/dates';
+import { Empty, Loading, Notice, Segmented, Sheet, useToast } from '../../components/ui';
 import { errorMessage } from '../../lib/errors';
-import { formatINR } from '../../lib/money';
 import { rpc } from '../../lib/supabase';
 import type { MemberOverview } from '../../lib/types';
 import { ReasonSheet } from './actions';
 import { useMembers, type MemberFilter } from './api';
 import { MemberForm } from './MemberForm';
+import { PermanentDeleteMemberSheet } from './PermanentDeleteMemberSheet';
+import { SwipeMemberItem } from './SwipeMemberItem';
 
 const FILTERS: { value: MemberFilter; label: string }[] = [
   { value: 'all', label: 'All' },
@@ -23,7 +23,7 @@ const FILTERS: { value: MemberFilter; label: string }[] = [
 ];
 
 export function MembersPage() {
-  const { gym, can } = useGym();
+  const { gym, can, role } = useGym();
   const qc = useQueryClient();
   const toast = useToast();
   const [params, setParams] = useSearchParams();
@@ -32,9 +32,12 @@ export function MembersPage() {
   const deferred = useDeferredValue(search);
   const members = useMembers(gym.id, deferred, filter, gym.timezone);
   const [editing, setEditing] = useState<MemberOverview | null>(null);
-  const [deleting, setDeleting] = useState<MemberOverview | null>(null);
+  const [archiving, setArchiving] = useState<MemberOverview | null>(null);
+  const [permanentlyDeleting, setPermanentlyDeleting] = useState<MemberOverview | null>(null);
+  const [openRowId, setOpenRowId] = useState<string | null>(null);
   const [restoring, setRestoring] = useState<string | null>(null);
   const base = `/g/${gym.slug}`;
+  useEffect(() => { setOpenRowId(null); }, [filter, search]);
 
   const refresh = async () => {
     await Promise.all([
@@ -42,6 +45,7 @@ export function MembersPage() {
       qc.invalidateQueries({ queryKey: ['member', gym.id] }),
       qc.invalidateQueries({ queryKey: ['dashboard', gym.id] }),
       qc.invalidateQueries({ queryKey: ['analytics', gym.id] }),
+      qc.invalidateQueries({ queryKey: ['enquiries', gym.id] }),
     ]);
   };
   const restore = async (m: MemberOverview) => {
@@ -73,7 +77,7 @@ export function MembersPage() {
       <div className="row" style={{ justifyContent: 'space-between' }}>
         <p className="muted">{filter === 'archived'
           ? 'Archived members are kept here with their plans, payments and history. They can be restored.'
-          : 'Edit or delete members below. Deleted members move to Archived; no history is lost.'}</p>
+          : 'Swipe left for Archive or permanent Delete. Archiving preserves all history and can be undone.'}</p>
         <Link className="btn small" to={filter === 'archived' ? `${base}/members` : `${base}/members?filter=archived`}>
           <Archive size={16} /> {filter === 'archived' ? 'Active members' : 'Archived members'}
         </Link>
@@ -102,41 +106,17 @@ export function MembersPage() {
           </Empty>
         </div>
       ) : (
-        <ul className="list card flush">
+        <ul className="list card flush member-list">
           {members.data.map((m) => (
-            <li key={m.id}>
-              <div className="item">
-                <span className="avatar" aria-hidden>{initials(m.full_name)}</span>
-                <PushLink className="main-col" to={`${base}/members/${m.id}`}>
-                  <span className="title">{m.full_name}</span>
-                  <span className="meta">
-                    <span className="mono">{m.member_no}</span>
-                    {m.valid_until && <span>Till {formatDate(m.valid_until)}</span>}
-                  </span>
-                </PushLink>
-                <span className="end-col">
-                  {m.status === 'archived' ? <span className="badge neutral">Archived</span> : (
-                    <StatusBadge status={m.membership_status} />
-                  )}
-                  {m.due_paise > 0 && <span className="num amount-due">{formatINR(m.due_paise)} due</span>}
-                  <span className="row" style={{ gap: 6, justifyContent: 'flex-end' }}>
-                    {can('members.write') && (
-                      <button type="button" className="btn small ghost" onClick={() => setEditing(m)}
-                        aria-label={`Edit member ${m.full_name}`}><Pencil size={15} /> Edit</button>
-                    )}
-                    {m.status === 'archived' ? can('members.archive') && (
-                      <button type="button" className="btn small" disabled={restoring === m.id}
-                        onClick={() => void restore(m)} aria-label={`Restore member ${m.full_name}`}>
-                        <RotateCcw size={15} /> Restore</button>
-                    ) : can('members.archive') && (
-                      <button type="button" className="btn small ghost danger" onClick={() => setDeleting(m)}
-                        aria-label={`Delete member ${m.full_name}`}>
-                        <Trash2 size={15} /> Delete</button>
-                    )}
-                  </span>
-                </span>
-              </div>
-            </li>
+            <SwipeMemberItem key={m.id} member={m} base={base}
+              open={openRowId === m.id} onOpen={setOpenRowId}
+              canEdit={can('members.write')} canArchive={can('members.archive')}
+              canDelete={role === 'owner' && can('members.archive')}
+              restoring={restoring === m.id}
+              onEdit={() => setEditing(m)}
+              onArchive={() => setArchiving(m)}
+              onDelete={() => setPermanentlyDeleting(m)}
+              onRestore={() => void restore(m)} />
           ))}
         </ul>
       )}
@@ -145,12 +125,17 @@ export function MembersPage() {
       {editing && <Sheet title="Edit member" onClose={() => setEditing(null)}>
         <MemberForm member={editing} onDone={() => setEditing(null)} />
       </Sheet>}
-      {deleting && <ReasonSheet title="Delete member (archive)" confirmLabel="Delete / archive member"
-        warning="Deleting moves this member to Members → Archived. Their membership, payment history and receipts stay intact. You can restore them later."
-        onClose={() => setDeleting(null)}
+      {archiving && <ReasonSheet title="Archive member" confirmLabel="Archive member"
+        warning="Archiving hides this member from the active list. Memberships, payments and receipts are preserved, and the member can be restored."
+        onClose={() => setArchiving(null)}
         onConfirm={(reason) => rpc('set_member_status', {
-          p_gym: gym.id, p_member: deleting.id, p_status: 'archived', p_reason: reason,
-        }).then(refresh).then(() => toast('Member moved to Archived members'))} />}
+          p_gym: gym.id, p_member: archiving.id, p_status: 'archived', p_reason: reason,
+        }).then(refresh).then(() => toast('Member archived'))} />}
+      {permanentlyDeleting && (
+        <PermanentDeleteMemberSheet member={permanentlyDeleting}
+          onClose={() => setPermanentlyDeleting(null)}
+          onDeleted={async () => { await refresh(); toast('Member profile permanently deleted'); }} />
+      )}
     </div>
   );
 }
