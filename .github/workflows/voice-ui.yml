@@ -5,7 +5,7 @@ name: XS AI voice UI
 on:
   workflow_dispatch:
   push:
-    branches: [main, 'fix/malayalam-voice-access', 'fix/live-voice-interim-transcription', 'fix/text-only-xs-ai-voice', 'fix/member-payment-edit-delete-archive']
+    branches: [main, 'fix/malayalam-voice-access', 'fix/live-voice-interim-transcription', 'fix/text-only-xs-ai-voice', 'fix/member-payment-edit-delete-archive', 'fix/browser-malayalam-speech-20261112']
     paths:
       - 'src/features/ai/**'
       - 'tests/ui/live-voice.mjs'
@@ -32,7 +32,7 @@ jobs:
       - name: Install isolated Playwright Chromium runner
         run: |
           npm install --no-save --no-package-lock playwright@1.64.1
-          npx playwright install --with-deps chromium
+          npx playwright install chromium
       - run: npm run build
       - name: Start local GitHub Pages preview
         run: |
