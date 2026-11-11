@@ -191,6 +191,51 @@ select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000a2
 select t.fails($$select public.gym_analytics(t.id('gymA'), 6)$$, 'XS403', 'reception cannot see analytics');
 select t.fails($$select public.complete_onboarding(t.id('gymA'))$$, 'XS403', 'reception cannot finish onboarding');
 
+-- Member delete is reversible archive; history and receipt are preserved.
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000a1', false);
+select public.set_member_status(t.id('gymA'), t.id('m1'), 'archived', 'Duplicate account');
+select t.eq((select status from public.member_overview where id=t.id('m1')), 'archived', 'deleted member lives in archive');
+select t.eq((select count(*) from public.payments where member_id=t.id('m1'))::int > 0, true, 'member archive preserves payments');
+select public.set_member_status(t.id('gymA'), t.id('m1'), 'active', 'Restore');
+select t.eq((select status from public.member_overview where id=t.id('m1')), 'active', 'archived member can be restored');
+
+-- Payment edits must be atomic reversal + replacement, not an UPDATE/DELETE.
+insert into t.ids
+  select 'editOriginal', p.id from public.payments p
+  where p.gym_id=t.id('gymA') and p.amount_paise=50000
+    and not exists (select 1 from public.payment_reversals r where r.payment_id=p.id)
+  limit 1;
+insert into t.ids values ('editKey', gen_random_uuid());
+insert into t.ids
+  select 'editNew', p.id from public.correct_payment(
+    t.id('gymA'), t.id('editOriginal'), 40000, 'card',
+    'Wrong amount entered', t.id('editKey'), 'CARD-REPLACEMENT', 'Card confirmed') p;
+select t.eq((select count(*) from public.payment_reversals where payment_id=t.id('editOriginal'))::int,
+  1, 'payment edit archives the old receipt');
+select t.eq((select amount_paise from public.payments where id=t.id('editNew')),
+  40000::bigint, 'payment edit records corrected amount');
+select t.eq((select method from public.payments where id=t.id('editNew')),
+  'card', 'payment edit records corrected method');
+select t.eq((select notes like ('Correction of ' || t.id('editOriginal')::text || '.%')
+    from public.payments where id=t.id('editNew')), true, 'payment edit links original for audit');
+select t.eq((select id from public.correct_payment(t.id('gymA'),
+  t.id('editOriginal'), 40000, 'card', 'Wrong amount entered',
+  t.id('editKey'), 'CARD-REPLACEMENT', 'Card confirmed')),
+  t.id('editNew'), 'payment edit is idempotent');
+select t.eq((select count(*) from public.payments where idempotency_key=t.id('editKey'))::int,
+  1, 'payment correction retry creates no duplicates');
+select t.fails($select public.correct_payment(t.id('gymA'),t.id('editOriginal'),50000,'cash','Another try',gen_random_uuid())$,
+  'XS409', 'already reversed payment cannot be corrected again');
+select t.fails($select public.correct_payment(t.id('gymA'),t.id('editNew'),45000,'upi','',gen_random_uuid())$,
+  'XS422', 'payment correction requires a reason');
+select t.fails($select public.correct_payment(t.id('gymB'),t.id('editNew'),40000,'card','Wrong gym',gen_random_uuid())$,
+  'XS403', 'payment edit cannot cross tenant');
+
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000a2', false);
+select t.fails($select public.correct_payment(t.id('gymA'),t.id('editNew'),40000,'upi','Should fail',gen_random_uuid())$,
+  'XS403', 'reception cannot edit financial ledger');
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000a1', false);
+
 -- Expired subscription: read-only
 reset role;
 update public.gym_subscriptions set trial_ends_at = now() - interval '1 minute' where gym_id = t.id('gymA');
