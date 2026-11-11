@@ -224,15 +224,15 @@ select t.eq((select id from public.correct_payment(t.id('gymA'),
   t.id('editNew'), 'payment edit is idempotent');
 select t.eq((select count(*) from public.payments where idempotency_key=t.id('editKey'))::int,
   1, 'payment correction retry creates no duplicates');
-select t.fails($select public.correct_payment(t.id('gymA'),t.id('editOriginal'),50000,'cash','Another try',gen_random_uuid())$,
+select t.fails($sql$select public.correct_payment(t.id('gymA'),t.id('editOriginal'),50000,'cash','Another try',gen_random_uuid())$sql$,
   'XS409', 'already reversed payment cannot be corrected again');
-select t.fails($select public.correct_payment(t.id('gymA'),t.id('editNew'),45000,'upi','',gen_random_uuid())$,
+select t.fails($sql$select public.correct_payment(t.id('gymA'),t.id('editNew'),45000,'upi','',gen_random_uuid())$sql$,
   'XS422', 'payment correction requires a reason');
-select t.fails($select public.correct_payment(t.id('gymB'),t.id('editNew'),40000,'card','Wrong gym',gen_random_uuid())$,
+select t.fails($sql$select public.correct_payment(t.id('gymB'),t.id('editNew'),40000,'card','Wrong gym',gen_random_uuid())$sql$,
   'XS403', 'payment edit cannot cross tenant');
 
 select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000a2', false);
-select t.fails($select public.correct_payment(t.id('gymA'),t.id('editNew'),40000,'upi','Should fail',gen_random_uuid())$,
+select t.fails($sql$select public.correct_payment(t.id('gymA'),t.id('editNew'),40000,'upi','Should fail',gen_random_uuid())$sql$,
   'XS403', 'reception cannot edit financial ledger');
 select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000a1', false);
 
