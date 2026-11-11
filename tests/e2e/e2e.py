@@ -424,6 +424,7 @@ with sync_playwright() as p:
         d = dialog()
         d.get_by_label('Reason (required)').fill('Temporarily inactive')
         tap(d.get_by_role('button', name='Archive member'))
+        expect(dialog()).to_have_count(0, timeout=10000)  # wait for the async RPC and sheet close
         assert sql(f"select status from members where id='{new_id}'")[0][0] == 'archived', 'Archive must be reversible'
         go(base() + '/members?filter=archived')
         row = page.locator('main li.member-swipe', has_text='Swipe Delete QA')
