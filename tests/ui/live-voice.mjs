@@ -6,7 +6,7 @@ import { REF, gym, session, body } from './mock.mjs';
 
 const [pwPath, baseUrl] = process.argv.slice(2);
 const { chromium } = createRequire(import.meta.url)(pwPath);
-const browser = await chromium.launch({ args: ['--autoplay-policy=no-user-gesture-required'] });
+const browser = await chromium.launch({ args: ['--autoplay-policy=no-user-gesture-required', '--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream'] });
 let failures = 0;
 const check = (label, ok, detail = '') => {
   if (!ok) failures++;
@@ -27,6 +27,27 @@ async function liveValue(page, expected) {
 const fakeSpeech = ({ standalone, noSpeech }) => {
   if (standalone) Object.defineProperty(navigator, 'standalone', { configurable: true, value: true });
   window.__micCaptureCalls = 0;
+  // Mock only the local model worker. Real CI exercises the integration
+  // hand-off and browser microphone path, not the 90 MB model download.
+  window.__offlineWorker = { loads: 0, transcribes: 0, lastLanguage: null };
+  const NativeWorker = window.Worker;
+  window.Worker = class MockLocalWorker {
+    onmessage = null; onerror = null;
+    constructor(url, options) {
+      if (!String(url).includes('malayalam.worker')) return new NativeWorker(url, options);
+    }
+    postMessage(data) {
+      if (data.type === 'load') {
+        window.__offlineWorker.loads++;
+        queueMicrotask(() => this.onmessage?.({ data: { type: 'ready' } }));
+      } else if (data.type === 'transcribe') {
+        window.__offlineWorker.transcribes++;
+        queueMicrotask(() => this.onmessage?.({ data: { type: 'result', id: data.id, text: 'ഇന്ന് എത്ര രൂപ കിട്ടി?' } }));
+      }
+    }
+    terminate() {}
+  };
+
   if (navigator.mediaDevices) {
     const original = navigator.mediaDevices.getUserMedia?.bind(navigator.mediaDevices);
     navigator.mediaDevices.getUserMedia = (...args) => {
@@ -155,17 +176,31 @@ for (const [name, mobile, standalone, scheme] of [
   await tap(dialog.getByRole('group', { name: 'Language' }).getByRole('button', { name: 'മലയാളം' }));
   await tap(dialog.getByRole('button', { name: 'Talk to XS AI' }));
   await page.evaluate(() => window.__serviceError());
-  const help = dialog.getByRole('dialog', { name: 'ലൈവ് വോയ്സ് ലഭ്യമല്ല' });
+  const help = dialog.getByRole('dialog', { name: 'ഫോണിൽ തന്നെ മലയാളം വോയ്സ്' });
   await help.waitFor({ timeout: 3000 });
-  check('iPhone: speech service failure offers keyboard, not cloud recording',
+  check('iPhone: unsupported ml-IN offers local model instead of cloud recording',
+    await help.getByRole('button', { name: 'മലയാളം മോഡൽ ലോഡ് ചെയ്യുക' }).isVisible() &&
     await help.getByRole('button', { name: 'കീബോർഡ് ഉപയോഗിക്കുക' }).isVisible() &&
-    await help.getByRole('button', { name: 'വീണ്ടും ശ്രമിക്കുക' }).isVisible() &&
     log.transcribe.length === 0 && errors.length === 0, errors.join(' | '));
-  await tap(help.getByRole('button', { name: 'കീബോർഡ് ഉപയോഗിക്കുക' }));
-  check('iPhone: keyboard dictation fallback focuses the composer',
-    await dialog.getByRole('textbox', { name: 'Message XS AI' }).evaluate((el) => document.activeElement === el));
-  check('iPhone: no getUserMedia capture happened in the failure path',
-    await page.evaluate(() => window.__micCaptureCalls === 0));
+  // Explicit user opt-in must be required before any model download.
+  check('iPhone: model is not downloaded on microphone or language selection',
+    await page.evaluate(() => window.__offlineWorker.loads === 0));
+  await tap(help.getByRole('button', { name: 'മലയാളം മോഡൽ ലോഡ് ചെയ്യുക' }));
+  await help.waitFor({ state: 'hidden', timeout: 3000 });
+  check('iPhone: one deliberate opt-in loads only browser-local worker',
+    await page.evaluate(() => window.__offlineWorker.loads === 1) &&
+    log.transcribe.length === 0);
+  await tap(dialog.getByRole('button', { name: 'Talk to XS AI' }));
+  await dialog.getByRole('button', { name: 'Stop listening' }).waitFor({ timeout: 6000 });
+  await page.waitForTimeout(850); // local microphone must collect >0.2s of PCM
+  await tap(dialog.getByRole('button', { name: 'Stop listening' }));
+  await dialog.getByText('ശരി, മനസ്സിലായി.').waitFor({ timeout: 12000 });
+  check('iPhone: local Malayalam text is submitted once; no audio upload',
+    log.agent.length === 1 && log.agent[0].lang === 'ml' &&
+    log.agent[0].messages.at(-1).content === 'ഇന്ന് എത്ര രൂപ കിട്ടി?' &&
+    log.transcribe.length === 0 &&
+    await page.evaluate(() => window.__offlineWorker.transcribes === 1 &&
+      window.__micCaptureCalls === 1) && errors.length === 0, errors.join(' | '));
   await ctx.close();
 }
 
@@ -177,9 +212,9 @@ for (const [name, mobile, standalone, scheme] of [
   });
   await tap(dialog.getByRole('group', { name: 'Language' }).getByRole('button', { name: 'മലയാളം' }));
   await tap(dialog.getByRole('button', { name: 'Talk to XS AI' }));
-  const help = dialog.getByRole('dialog', { name: 'കീബോർഡ് ഡിക്റ്റേഷൻ ഉപയോഗിക്കുക' });
+  const help = dialog.getByRole('dialog', { name: 'ഫോണിൽ തന്നെ മലയാളം വോയ്സ്' });
   await help.waitFor({ timeout: 3000 });
-  check('iPhone without live recognizer: offers dictation rather than audio upload',
+  check('iPhone without live recognizer: offers local model and keyboard rather than audio upload',
     await help.getByRole('button', { name: 'കീബോർഡ് ഉപയോഗിക്കുക' }).isVisible() &&
     log.transcribe.length === 0);
   await tap(help.getByRole('button', { name: 'കീബോർഡ് ഉപയോഗിക്കുക' }));
