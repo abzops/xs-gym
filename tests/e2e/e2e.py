@@ -349,7 +349,7 @@ with sync_playwright() as p:
     @step('edit member name and email')
     def _():
         if dialog().count(): tap(dialog().get_by_role('button', name='Close'))
-        tap(page.locator('main').get_by_role('button', name='Edit'))
+        tap(page.locator('main').get_by_role('button', name='Edit member'))
         d = dialog(); d.get_by_label('Full name').fill('Rahul QA Edited')
         tap(d.get_by_role('button', name=re.compile('More details'))) if d.get_by_role('button', name=re.compile('More details')).count() else None
         d.get_by_label('Email').fill('not-an-email')
@@ -370,12 +370,15 @@ with sync_playwright() as p:
 
     @step('archive then restore member')
     def _():
-        tap(page.get_by_role('button', name='Archive member'))
+        tap(page.locator('main').get_by_role('button', name='Delete member'))
         d = dialog(); d.get_by_label('Reason (required)').fill('Moved away')
-        tap(d.get_by_role('button', name='Archive')); page.wait_for_timeout(1200)
+        tap(d.get_by_role('button', name='Delete / archive member')); page.wait_for_timeout(950)
         assert sql(f"select status from members where id = '{state['member']}'")[0][0] == 'archived'
-        tap(page.locator('main').get_by_role('button', name=re.compile('Restore')))
-        toast('Member restored')
+        nav('Members')
+        tap(page.get_by_role('link', name='Archived members'))
+        expect(page.locator('main')).to_contain_text('Rahul QA Edited', timeout=8000)
+        tap(page.locator('main').get_by_role('button', name='Restore member Rahul QA Edited'))
+        toast('Rahul QA Edited restored')
         assert sql(f"select status from members where id = '{state['member']}'")[0][0] == 'active'
 
     # ---------------- Member search ----------------
@@ -411,6 +414,40 @@ with sync_playwright() as p:
         main = page.locator('main').inner_text()
         if '1,600' in main: note('BUG', 'reversed payment is included in the day total on Payments')
         page.screenshot(path=f'{OUT}/06-payments.png', full_page=True)
+
+    @step('payment Edit creates an audited replacement; Delete sends it to Archive')
+    def _():
+        nav('Payments')
+        active = sql(f"""select p.id from payments p where p.gym_id='{state['gym']}'
+             and not exists (select 1 from payment_reversals r where r.payment_id=p.id)
+             order by p.received_at desc limit 1""")
+        assert active, 'no active payment to correct'
+        old_id = active[0][0]
+        tap(page.locator('main').get_by_role('button', name=re.compile('Edit payment for')).first)
+        d = dialog()
+        expect(d).to_contain_text('Financial records cannot be overwritten')
+        d.get_by_label('Correct amount received').fill('1100')
+        d.get_by_label('Reason for correction (required)').fill('Wrong amount entered')
+        tap(d.get_by_role('button', name=re.compile('Save corrected')))
+        page.wait_for_url(re.compile('/receipts/'), timeout=10000)
+        replacement = sql(f"""select id,amount_paise from payments
+            where gym_id='{state['gym']}' and notes like 'Correction of {old_id}.%'
+            order by received_at desc limit 1""")
+        assert replacement and replacement[0][1] == '110000', f'payment correction missing: {replacement}'
+        new_id = replacement[0][0]
+        assert sql(f"select count(*) from payment_reversals where payment_id='{old_id}'")[0][0] == '1', 'old payment was not archived'
+        # The corrected receipt has a Delete action. It MUST reverse, not erase.
+        tap(page.locator('main').get_by_role('button', name='Delete'))
+        d = dialog(); d.get_by_label('Reason (required)').fill('Test archive flow')
+        tap(d.get_by_role('button', name='Delete / reverse payment'))
+        page.wait_for_timeout(850)
+        assert sql(f"select count(*) from payment_reversals where payment_id='{new_id}'")[0][0] == '1', 'corrected payment was not reversed'
+        assert sql(f"select count(*) from payments where id='{new_id}'")[0][0] == '1', 'receipt was hard deleted'
+        nav('Payments')
+        tap(page.locator('main').get_by_role('button', name='Archive (reversed)'))
+        expect(page.locator('main')).to_contain_text('Wrong amount entered', timeout=8000)
+        expect(page.locator('main')).to_contain_text('Test archive flow', timeout=8000)
+        page.screenshot(path=f'{OUT}/06-payments-archive.png', full_page=True)
 
     @step('add expense ₹2,500 Electricity, future date blocked, then reverse it')
     def _():
@@ -651,7 +688,7 @@ with sync_playwright() as p:
         rev = sql("select p.id, (p.received_at at time zone 'Asia/Kolkata')::date from payment_reversals r join payments p on p.id = r.payment_id join gyms g on g.id=p.gym_id where g.slug='xs-fitness-studio' limit 1")
         if not rev: note('INFO', 'no reversed payment in demo data'); return
         go(f'g/xs-fitness-studio/receipts/{rev[0][0]}')
-        expect(page.locator('main')).to_contain_text('Reversed', timeout=8000)
+        expect(page.locator('main')).to_contain_text(re.compile('reversed', re.I), timeout=8000)
 
     @step('demo owner: every screen loads without errors')
     def _():
