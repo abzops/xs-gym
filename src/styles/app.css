@@ -288,7 +288,7 @@ html[data-vt="tab"]::view-transition-new(page) { animation: vt-settle 110ms ease
 .icon-btn { width: 42px; height: 42px; min-height: 42px; padding: 0; border-radius: 50%; }
 .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 .row.end { justify-content: flex-end; }
-.stack { display: grid; gap: 12px; }
+.stack { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; }
 .stack.lg { gap: 20px; }
 .stack.xl { gap: 28px; }
 
