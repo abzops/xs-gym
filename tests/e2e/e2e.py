@@ -507,7 +507,20 @@ with sync_playwright() as p:
         tap(page.get_by_role('group', name='View').get_by_role('button', name='Dues')); page.wait_for_timeout(500)
         if PLATFORM == 'phone':
             sizes = page.evaluate('() => ({ content: document.documentElement.scrollWidth, viewport: document.documentElement.clientWidth })')
-            assert sizes['content'] <= sizes['viewport'] + 1, f'Analytics Dues exceeds phone viewport: {sizes}'
+            if sizes['content'] > sizes['viewport'] + 1:
+                geometry = page.evaluate("""() => {
+                    const selectors = ['html', 'body', '.shell', '.content', '.main',
+                        '.stack.lg', '.card.table-wrap', '.data'];
+                    return selectors.map(selector => {
+                        const el = document.querySelector(selector);
+                        if (!el) return {selector, missing:true};
+                        const rect = el.getBoundingClientRect();
+                        return {selector, left:Math.round(rect.left), width:Math.round(rect.width),
+                            right:Math.round(rect.right), scrollWidth:el.scrollWidth,
+                            clientWidth:el.clientWidth, overflowX:getComputedStyle(el).overflowX};
+                    });
+                }""")
+                raise AssertionError(f'Analytics Dues exceeds phone viewport: {sizes}; element widths: {geometry}')
         remind = page.get_by_role('button', name=re.compile('^Remind'))
         if remind.count():
             tap(remind.first)
