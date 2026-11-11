@@ -158,6 +158,9 @@ for (const [name, mobile, standalone, scheme] of [
     await page.evaluate(() => window.__speech.started === 1 && window.__offlineWorker.loads === 0) &&
     log.transcribe.length === 0);
   await tap(offer.getByRole('button', { name: 'കീബോർഡ് ഉപയോഗിക്കുക' }));
+  // The browser may focus the clicked button until the next animation frame.
+  // The app's iOS fallback restores input focus on that frame.
+  await page.waitForTimeout(130);
   const declined = await page.evaluate(() => ({
     focused: document.activeElement?.getAttribute('aria-label') === 'Message XS AI',
     micCalls: window.__micCaptureCalls,
