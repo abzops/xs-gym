@@ -98,7 +98,10 @@ jobs:
         run: |
           python3 -m venv /tmp/xs-pilot-python
           /tmp/xs-pilot-python/bin/pip install --disable-pip-version-check playwright
-          /tmp/xs-pilot-python/bin/python -m playwright install --with-deps chromium
+          # Hosted Ubuntu runners already include Chromium system libraries.
+          # Avoid apt install-deps (external Ubuntu mirrors can be DNS-blocked);
+          # still install and launch an actual Playwright Chromium browser.
+          /tmp/xs-pilot-python/bin/python -m playwright install chromium
       - name: Run full synthetic user flows (no live API access)
         run: |
           export PATH="/tmp/xs-pilot-python/bin:$PATH"
