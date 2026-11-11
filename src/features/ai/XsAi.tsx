@@ -272,7 +272,7 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
       : lang === 'ml' && offlineAvailable ? 'മലയാളം സംസാരിക്കാൻ ടാപ്പ് ചെയ്യൂ (പരമാവധി 12 സെക്കൻഡ്)'
       : lang === 'ml' ? 'മലയാളം വോയ്സ് മോഡൽ ഉപയോഗിക്കാൻ ടാപ്പ് ചെയ്യൂ'
       : voiceOk ? 'Tap to talk'
-      : (lang === 'ml' ? 'കീബോർഡിലെ മൈക്ക് ഉപയോഗിക്കൂ' : 'Use keyboard dictation');
+      : 'Use keyboard dictation';
 
   return (
     <Sheet title="XS AI" onClosing={stopInteraction} onClose={() => { stopInteraction(); onClose(); }}>
