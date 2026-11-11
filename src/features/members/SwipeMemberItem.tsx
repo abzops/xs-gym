@@ -21,8 +21,7 @@ type Props = {
 };
 
 type Gesture = { x: number; y: number; initial: number; horizontal: boolean };
-const ACTION_WIDTH = 176;
-const clamp = (value: number) => Math.max(-ACTION_WIDTH, Math.min(0, value));
+const clamp = (value: number, width: number) => Math.max(-width, Math.min(0, value));
 
 /** iOS-style reveal, not a destructive swipe-to-delete gesture. Actions require a tap. */
 export function SwipeMemberItem({
@@ -32,7 +31,7 @@ export function SwipeMemberItem({
   const [dragOffset, setDragOffset] = useState<number | null>(null);
   const gesture = useRef<Gesture | null>(null);
   const suppressClick = useRef(false);
-  const visibleActions = (m.status === 'archived' ? canArchive : canArchive) || canDelete;
+  const visibleActions = canArchive || canDelete;
   const width = (canArchive ? 88 : 0) + (canDelete ? 88 : 0);
   const offset = dragOffset ?? (open ? -width : 0);
 
@@ -58,14 +57,14 @@ export function SwipeMemberItem({
       g.horizontal = true;
     }
     suppressClick.current = true;
-    setDragOffset(clamp(g.initial + dx));
+    setDragOffset(clamp(g.initial + dx, width));
   };
   const pointerUp = (event: PointerEvent<HTMLDivElement>) => {
     const g = gesture.current;
     gesture.current = null;
     if (!g) return;
     if (g.horizontal) {
-      const next = clamp(g.initial + event.clientX - g.x);
+      const next = clamp(g.initial + event.clientX - g.x, width);
       onOpen(next <= -width * 0.45 ? m.id : null);
       // A swipe must never accidentally navigate to the member or click a button.
       window.setTimeout(() => { suppressClick.current = false; }, 350);
