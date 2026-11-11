@@ -294,6 +294,20 @@ select t.fails($sql$select public.correct_payment(t.id('gymA'),t.id('editNew'),4
   'XS403', 'reception cannot edit financial ledger');
 select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000a1', false);
 
+-- ---------------------------------------------------------------- privileged API inventory (isolated PG16)
+-- Fails closed when new SECURITY DEFINER API functions are introduced without review.
+select t.eq((select count(*) from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+  where n.nspname='public' and p.prosecdef)::int, 24,
+  'inventory: 24 privileged public API function overloads require review');
+select t.eq((select count(*) from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+  where n.nspname='public' and p.prosecdef
+    and has_function_privilege('anon',p.oid,'EXECUTE'))::int, 0,
+  'none of the privileged public API functions callable by anon');
+select t.eq((select count(*) from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+  where n.nspname='public' and p.prosecdef
+    and coalesce(array_to_string(p.proconfig,','),'') like 'search_path=%')::int, 24,
+  'all privileged API functions declare an explicit search_path');
+
 -- ---------------------------------------------------------------- pilot ledger safety regression (synthetic data ONLY)
 -- Capture current behavior without deciding whether access should be cancelled.
 -- A paid membership charge can be voided; the payment remains immutable,
