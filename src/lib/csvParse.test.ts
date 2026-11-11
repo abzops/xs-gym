@@ -46,11 +46,11 @@ describe('Indian phone validation and duplicate key', () => {
     expect(phoneKey(value)).toBe(expected);
   });
   it('rejects duplicates in two different international/India notation formats', () => {
-    const rows = toImportRows(parseCSV('name,phone\\nFirst,+91 9847000031\\nSecond,09847000031\\n')).rows;
+    const rows = toImportRows(parseCSV('name,phone\nFirst,+91 9847000031\nSecond,09847000031\n')).rows;
     expect(rows[0].problems).toEqual([]);
     expect(rows[1].problems).toContain('same phone as line 2');
   });
   it('blocks an unterminated quoted CSV row', () => {
-    expect(() => parseCSV('name,phone\\n"First,9847000031')).toThrow('unclosed quoted field');
+    expect(() => parseCSV('name,phone\n"First,9847000031')).toThrow('unclosed quoted field');
   });
 });
