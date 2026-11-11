@@ -1,6 +1,6 @@
-// Free, on-device-or-browser speech: Web Speech API for listening and speaking.
-// Chrome/Edge/Android and iOS Safari 14.5+ support recognition; Firefox does not
-// (XS AI then works by typing).
+// Browser SpeechRecognition API only: no recorder, no STT model, no uploads
+// to XS Gym. Support for an individual language is provided by the browser/OS,
+// not by XS Gym. English support does not imply Malayalam support.
 
 export type Lang = 'en' | 'ml';
 const LOCALE: Record<Lang, string> = { en: 'en-IN', ml: 'ml-IN' };
@@ -14,10 +14,18 @@ type Recognition = {
 };
 type RecognitionCtor = new () => Recognition;
 
-const Ctor = (typeof window !== 'undefined'
-  ? (window as unknown as { SpeechRecognition?: RecognitionCtor; webkitSpeechRecognition?: RecognitionCtor }).SpeechRecognition
-    ?? (window as unknown as { webkitSpeechRecognition?: RecognitionCtor }).webkitSpeechRecognition
-  : undefined);
+// Read the constructor on each tap, not at module import time. iOS installed
+// PWAs and in-browser tabs may expose recognition at different times.
+function recognitionCtor(): RecognitionCtor | undefined {
+  if (typeof window === 'undefined') return undefined;
+  const browser = window as unknown as {
+    SpeechRecognition?: RecognitionCtor; webkitSpeechRecognition?: RecognitionCtor;
+  };
+  return browser.SpeechRecognition ?? browser.webkitSpeechRecognition;
+}
+
+export const speechLocale = (lang: Lang, shortMalayalam = false): string =>
+  lang === 'ml' && shortMalayalam ? 'ml' : LOCALE[lang];
 
 export type MicIssue = 'denied' | 'missing' | 'busy' | 'unsupported' | 'unknown';
 
@@ -33,10 +41,15 @@ export class MicrophoneAccessError extends Error {
 
 export class SpeechListenError extends Error {
   readonly reason: 'denied' | 'service' | 'network' | 'audio' | 'unsupported' | 'unknown';
-  constructor(reason: SpeechListenError['reason'], message: string) {
+  // Machine-readable browser result, not a guessed "microphone" explanation.
+  readonly browserCode: string;
+  readonly locale: string;
+  constructor(reason: SpeechListenError['reason'], message: string, browserCode = 'unknown', locale = '') {
     super(message);
     this.name = 'SpeechListenError';
     this.reason = reason;
+    this.browserCode = browserCode;
+    this.locale = locale;
   }
 }
 
@@ -65,14 +78,17 @@ export async function requestMicrophone(): Promise<void> {
   }
 }
 
-export const canListen = () => !!Ctor;
+export const canListen = () => !!recognitionCtor();
 export const canSpeak = () => typeof window !== 'undefined' && 'speechSynthesis' in window;
 
 /** Listens once; calls onText with live text, resolves with the final text ('' if nothing heard). */
-export function listen(lang: Lang, onText: (text: string) => void): { done: Promise<string>; stop: () => void } {
-  if (!Ctor) return { done: Promise.reject(new Error('Voice input is not supported in this browser. Type instead.')), stop: () => {} };
+export function listen(lang: Lang, onText: (text: string) => void, shortMalayalam = false): { done: Promise<string>; stop: () => void } {
+  const Ctor = recognitionCtor();
+  const locale = speechLocale(lang, shortMalayalam);
+  if (!Ctor) return { done: Promise.reject(new SpeechListenError('unsupported',
+    'This browser does not expose speech recognition.', 'api-unavailable', locale)), stop: () => {} };
   const r = new Ctor();
-  r.lang = LOCALE[lang]; r.interimResults = true; r.continuous = false; r.maxAlternatives = 1;
+  r.lang = locale; r.interimResults = true; r.continuous = false; r.maxAlternatives = 1;
   let text = '';
   const done = new Promise<string>((resolve, reject) => {
     r.onresult = (e) => {
@@ -82,22 +98,23 @@ export function listen(lang: Lang, onText: (text: string) => void): { done: Prom
     r.onerror = (e) => {
       if (e.error === 'no-speech' || e.error === 'aborted') return;
       if (e.error === 'not-allowed') {
-        reject(new SpeechListenError('denied', 'Speech recognition was not allowed by this device.'));
+        reject(new SpeechListenError('denied', 'The browser denied speech recognition.', e.error, locale));
       } else if (e.error === 'service-not-allowed') {
-        reject(new SpeechListenError('service', 'Speech recognition is unavailable in this app.'));
+        reject(new SpeechListenError('service', 'The browser speech service rejected this request.', e.error, locale));
       } else if (e.error === 'language-not-supported') {
-        reject(new SpeechListenError('unsupported', 'This voice recognition service does not support the selected language.'));
+        reject(new SpeechListenError('unsupported', 'The browser speech service does not support this locale.', e.error, locale));
       } else if (e.error === 'audio-capture') {
-        reject(new SpeechListenError('audio', 'Speech recognition could not open the microphone.'));
+        reject(new SpeechListenError('audio', 'The browser could not open its microphone.', e.error, locale));
       } else if (e.error === 'network') {
-        reject(new SpeechListenError('network', 'Voice recognition needs an internet connection.'));
+        reject(new SpeechListenError('network', 'The browser speech service reported a network error.', e.error, locale));
       } else {
-        reject(new SpeechListenError('unknown', `Voice recognition could not start (${e.error}).`));
+        reject(new SpeechListenError('unknown', `Speech recognition failed (${e.error}).`, e.error, locale));
       }
     };
     r.onend = () => resolve(text);
-    try { r.start(); } catch {
-      reject(new SpeechListenError('denied', 'Speech recognition could not start on this device.'));
+    try { r.start(); } catch (error) {
+      const code = error instanceof Error ? error.name : 'start-exception';
+      reject(new SpeechListenError('unknown', 'The browser could not start speech recognition.', code, locale));
     }
   });
   return { done, stop: () => r.stop() };
