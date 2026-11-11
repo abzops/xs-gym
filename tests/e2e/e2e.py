@@ -415,7 +415,6 @@ with sync_playwright() as p:
         toast('Member added')
         page.wait_for_url(re.compile(r'/members/[0-9a-f-]{36}'), timeout=8000)
         new_id = re.search(r'/members/([0-9a-f-]{36})', page.url).group(1)
-        number = sql(f"select member_no from members where id='{new_id}'")[0][0]
         if dialog().count(): tap(dialog().get_by_role('button', name='Close'))
         go(base() + '/members')
         row = page.locator('main li.member-swipe', has_text='Swipe Delete QA')
@@ -436,13 +435,16 @@ with sync_playwright() as p:
         reveal_member_actions(row)
         tap(row.get_by_role('button', name='Permanently delete member Swipe Delete QA'))
         d = dialog()
-        expect(d).to_contain_text('Delete is permanent')
-        assert d.get_by_role('button', name='Delete member permanently').is_disabled(), 'Delete allowed without confirmation'
-        d.get_by_label('Member number (required)').fill('INCORRECT')
-        d.get_by_label('Reason for permanent deletion (required)').fill('Duplicate test profile')
-        assert d.get_by_role('button', name='Delete member permanently').is_disabled(), 'Wrong member number accepted'
-        d.get_by_label('Member number (required)').fill(number)
-        tap(d.get_by_role('button', name='Delete member permanently'))
+        expect(d).to_contain_text('cannot be undone')
+        assert d.locator('input').count() == 0, 'Delete unexpectedly requires a form'
+        tap(d.get_by_role('button', name='Cancel'))
+        expect(dialog()).to_have_count(0, timeout=5000)
+        assert sql(f"select count(*) from members where id='{new_id}'")[0][0] == '1', 'Cancel deleted member'
+        row = page.locator('main li.member-swipe', has_text='Swipe Delete QA')
+        reveal_member_actions(row)
+        tap(row.get_by_role('button', name='Permanently delete member Swipe Delete QA'))
+        d = dialog()
+        tap(d.get_by_role('button', name='Delete permanently'))
         expect(dialog()).to_have_count(0, timeout=10000)
         assert sql(f"select count(*) from members where id='{new_id}'")[0][0] == '0', 'Hard delete did not remove member'
 
@@ -451,10 +453,8 @@ with sync_playwright() as p:
         reveal_member_actions(row)
         tap(row.get_by_role('button', name='Permanently delete member Rahul QA Edited'))
         d = dialog()
-        original_number = sql(f"select member_no from members where id='{state['member']}'")[0][0]
-        d.get_by_label('Member number (required)').fill(original_number)
-        d.get_by_label('Reason for permanent deletion (required)').fill('Must protect receipts')
-        tap(d.get_by_role('button', name='Delete member permanently'))
+        assert d.locator('input').count() == 0, 'Delete unexpectedly requires a form'
+        tap(d.get_by_role('button', name='Delete permanently'))
         expect(d).to_contain_text('Archive the member instead', timeout=8000)
         assert sql(f"select count(*) from payments where member_id='{state['member']}'")[0][0] != '0', 'Payments lost after blocked delete'
         tap(d.get_by_role('button', name='Close'))
