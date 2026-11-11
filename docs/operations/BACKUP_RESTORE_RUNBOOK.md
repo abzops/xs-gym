@@ -18,6 +18,18 @@
 
 Neither option has yet been approved or enabled by this session.
 
+## 1A. Lowest-cost encrypted off-site options (researched 11 Nov 2026)
+
+**Recommended pilot architecture for owner review:** a small scheduled logical dump from an approved read-only connection, encrypted **before off-site upload**, written to a private bucket with object versioning, restricted credentials, retention and monitor alerts. This is **not configured or running**.
+
+- **[Cloudflare R2 Standard](https://developers.cloudflare.com/r2/pricing/)**: as of its Oct 2026 published schedule, includes 10 GB-month/month plus 1 million Class A and 10 million Class B operations free; Standard usage beyond that is billed. The free allowance does not apply to Infrequent Access; account/subscription setup may require billing details. Suitable small backup candidate after approval.
+- **[Backblaze B2](https://help.backblaze.com/hc/en-us/articles/217667478-Understanding-B2-Pricing-Structure)**: first 10 GB stored is free under its published plan, with paid capacity beyond. Compare availability, restore fees, minimum retention/lifecycle, billing account requirements and regional data location before choosing.
+- **[Supabase managed Pro backups](https://supabase.com/docs/guides/platform/backups)**: daily backups with 7-day Pro retention, but this may cost more than the low-volume encrypted-object approach. Managed backups also **do not restore deleted Storage objects**. Recovery guarantees differ between methods and should not be equated.
+
+**Encryption in the future approved pipeline:** use [age authenticated file encryption](https://github.com/FiloSottile/age) with an off-line/secret-managed recipient key; upload only `.age` ciphertext over TLS. The decrypting private key must remain outside GitHub and outside the backup storage account, with two-person recovery and tested emergency key availability. Confirm what the Supabase CLI dump covers (schema, roles, data) and separately protect external Storage files, Supabase Auth settings and Edge Functions.
+
+**Do not configure GitHub Actions cron or production secrets now.** Those actions would create a live-data export and require explicit separate approval, including the off-site provider, access permissions and data-processing terms.
+
 ## 2. Proposed service levels — for owner approval
 
 | Decision | Proposed pilot starting point | Final |
@@ -49,9 +61,9 @@ These are proposals, **not** service guarantees.
 - Starts throwaway local PostgreSQL 16 with a Unix socket, no externally listening address.
 - Loads the repository's Supabase shim and all migration files.
 - Runs `tests/db/test_core.sql` to seed/test **two fake gym tenants** and synthetic payments.
-- Executes local `pg_dump`, restores into a second local database and compares aggregate row counts, integer-paíse totals, RLS-enabled table count and anonymous payment EXECUTE privilege.
+- Executes local `pg_dump`, authenticates an **ephemeral AES-256-GCM encryption/decryption round trip** (tamper detection and SHA-256 equality), removes the original plaintext, restores the recovered copy into a second local database, and compares aggregate row counts, integer-paise totals, RLS-enabled table count and anonymous payment EXECUTE privilege.
 - Deletes the temporary database and dump on exit, leaving no stored artifact.
-- **Does not test** live customer backup recoverability, PITR, Auth service configuration or remote file storage.
+- **Does not test** live customer backup recoverability, production age key management, off-site storage, PITR or Auth service configuration. The synthetic key is generated in RAM and discarded; it cannot recover a real backup.
 
 **Drill evidence:** To be populated from the isolated CI workflow in the feature PR after completion. A local drill cannot be called production recovery readiness.
 
