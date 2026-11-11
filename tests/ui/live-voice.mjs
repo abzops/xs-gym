@@ -151,21 +151,16 @@ for (const [name, mobile, standalone, scheme] of [
 
   await tap(dialog.getByRole('group', { name: 'Language' }).getByRole('button', { name: 'മലയാളം' }));
   await tap(orb());
-  const ml = await page.evaluate(() => ({ lang: window.__speech.last?.lang, interim: window.__speech.last?.interimResults }));
-  check(name + ': Malayalam uses live ml-IN recognition', ml.lang === 'ml-IN' && ml.interim === true);
-  await page.evaluate(() => window.__partial('ഇന്ന് എത്ര'));
-  check(name + ': Malayalam letters appear as they are spoken',
-    (await liveValue(page, 'ഇന്ന് എത്ര')) && log.agent.length === 1);
-  await page.evaluate(() => window.__partial('ഇന്ന് എത്ര രൂപ കിട്ടി?'));
-  check(name + ': Malayalam interim text updates immediately',
-    (await liveValue(page, 'ഇന്ന് എത്ര രൂപ കിട്ടി?')) && log.agent.length === 1);
-  await tap(orb()); // User presses stop; browser onend triggers auto-send.
-  await dialog.getByText('ശരി, മനസ്സിലായി.').waitFor({ timeout: 5000 });
-  check(name + ': Malayalam sends once with selected language',
-    log.agent.length === 2 && log.agent[1].lang === 'ml' &&
-    log.agent[1].messages.at(-1).content === 'ഇന്ന് എത്ര രൂപ കിട്ടി?' &&
-    log.transcribe.length === 0 && (await page.evaluate(() => window.__micCaptureCalls)) === 0 &&
-    errors.length === 0, errors.join(' | '));
+  const offer = dialog.getByRole('dialog', { name: 'ഫോണിൽ തന്നെ മലയാളം വോയ്സ്' });
+  await offer.waitFor({ timeout: 3000 });
+  check(name + ': Malayalam requires consent for on-device engine, never the browser cloud service',
+    await offer.getByRole('button', { name: 'മലയാളം മോഡൽ ലോഡ് ചെയ്യുക' }).isVisible() &&
+    await page.evaluate(() => window.__speech.started === 1 && window.__offlineWorker.loads === 0) &&
+    log.transcribe.length === 0);
+  await tap(offer.getByRole('button', { name: 'കീബോർഡ് ഉപയോഗിക്കുക' }));
+  check(name + ': offline setup can be declined without microphone capture',
+    await input.evaluate((el) => document.activeElement === el) &&
+    await page.evaluate(() => window.__micCaptureCalls === 0));
   await ctx.close();
 }
 
@@ -175,10 +170,9 @@ for (const [name, mobile, standalone, scheme] of [
   const { ctx, page, dialog, log, tap, errors } = await setup({ standalone: true, mobile: true, stt: true });
   await tap(dialog.getByRole('group', { name: 'Language' }).getByRole('button', { name: 'മലയാളം' }));
   await tap(dialog.getByRole('button', { name: 'Talk to XS AI' }));
-  await page.evaluate(() => window.__serviceError());
   const help = dialog.getByRole('dialog', { name: 'ഫോണിൽ തന്നെ മലയാളം വോയ്സ്' });
   await help.waitFor({ timeout: 3000 });
-  check('iPhone: unsupported ml-IN offers local model instead of cloud recording',
+  check('iPhone: Malayalam offers local model without trying a remote speech service',
     await help.getByRole('button', { name: 'മലയാളം മോഡൽ ലോഡ് ചെയ്യുക' }).isVisible() &&
     await help.getByRole('button', { name: 'കീബോർഡ് ഉപയോഗിക്കുക' }).isVisible() &&
     log.transcribe.length === 0 && errors.length === 0, errors.join(' | '));
