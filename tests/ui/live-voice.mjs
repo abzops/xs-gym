@@ -158,9 +158,13 @@ for (const [name, mobile, standalone, scheme] of [
     await page.evaluate(() => window.__speech.started === 1 && window.__offlineWorker.loads === 0) &&
     log.transcribe.length === 0);
   await tap(offer.getByRole('button', { name: 'കീബോർഡ് ഉപയോഗിക്കുക' }));
+  const declined = await page.evaluate(() => ({
+    focused: document.activeElement?.getAttribute('aria-label') === 'Message XS AI',
+    micCalls: window.__micCaptureCalls,
+    activeTag: document.activeElement?.tagName,
+  }));
   check(name + ': offline setup can be declined without microphone capture',
-    await input.evaluate((el) => document.activeElement === el) &&
-    await page.evaluate(() => window.__micCaptureCalls === 0));
+    declined.focused && declined.micCalls === 0, JSON.stringify(declined));
   await ctx.close();
 }
 
