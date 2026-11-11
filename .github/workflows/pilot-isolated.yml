@@ -1,0 +1,105 @@
+# Feature-branch safety validation. No production Supabase URL, no secrets,
+# no live customer data, and deliberately NO GitHub Pages deployment job.
+name: XS Gym pilot isolated safety checks
+
+on:
+  push:
+    branches:
+      - 'feature/**'
+    paths:
+      - 'src/**'
+      - 'supabase/migrations/**'
+      - 'tests/**'
+      - 'docs/**'
+      - 'PROGRESS.md'
+      - '.github/workflows/pilot-isolated.yml'
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: pilot-isolated-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  # Non-production placeholders for static compilation only. Real end-to-end
+  # tests explicitly override this with their localhost Supabase simulator.
+  VITE_SUPABASE_URL: http://127.0.0.1:54321
+  VITE_SUPABASE_PUBLISHABLE_KEY: synthetic-local-only
+  VITE_BASE_PATH: /xs-gym/
+
+jobs:
+  app:
+    name: Static app, unit and security tests
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm test
+      - name: XS AI HTTP contract (mock network)
+        run: node --experimental-strip-types tests/ai/http.check.mjs
+      - run: npm run build
+      - name: Guard against accidental production Supabase configuration
+        run: |
+          if grep -Rq 'knuanihnxtxtyrgvsumq' dist/; then
+            echo 'REFUSE: production project ref found in the isolated build' >&2
+            exit 1
+          fi
+
+  database:
+    name: Two-tenant isolated PostgreSQL safety tests
+    runs-on: ubuntu-24.04
+    env:
+      PG_RUN_AS: runner
+    steps:
+      - uses: actions/checkout@v6
+      - name: Execute all migrations and database assertions on local PG16
+        run: bash tests/db/run.sh
+
+  restore:
+    name: Synthetic database backup and restore drill
+    runs-on: ubuntu-24.04
+    env:
+      PG_RUN_AS: runner
+    steps:
+      - uses: actions/checkout@v6
+      - name: Dump and restore local synthetic gym/ledger data
+        run: bash tests/db/pilot_restore_drill.sh
+
+  e2e:
+    name: Synthetic ${{ matrix.device }} end-to-end
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        device: [phone, tablet, laptop]
+    env:
+      PG_RUN_AS: runner
+      E2E_OUT: ${{ github.workspace }}/tests/e2e/out
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Install isolated Chromium and Playwright
+        run: |
+          python3 -m venv /tmp/xs-pilot-python
+          /tmp/xs-pilot-python/bin/pip install --disable-pip-version-check playwright
+          /tmp/xs-pilot-python/bin/python -m playwright install --with-deps chromium
+      - name: Run full synthetic user flows (no live API access)
+        run: |
+          export PATH="/tmp/xs-pilot-python/bin:$PATH"
+          bash tests/e2e/run.sh "${{ matrix.device }}"
