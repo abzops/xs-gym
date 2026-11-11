@@ -5,7 +5,7 @@ name: Test and deploy
 
 on:
   push:
-    branches: [main, analytics-onboarding, 'fix/malayalam-voice-access', 'fix/live-voice-interim-transcription', 'fix/text-only-xs-ai-voice', 'fix/member-payment-edit-delete-archive', 'feat/member-swipe-archive-delete', 'fix/one-tap-delete-warning-20261111', 'feat/edit-member-joining-date-20261111']
+    branches: [main, analytics-onboarding, 'fix/malayalam-voice-access', 'fix/live-voice-interim-transcription', 'fix/text-only-xs-ai-voice', 'fix/member-payment-edit-delete-archive', 'feat/member-swipe-archive-delete', 'fix/one-tap-delete-warning-20261111', 'feat/edit-member-joining-date-20261111', 'fix/browser-malayalam-speech-20261112']
   workflow_dispatch:
 
 concurrency:
@@ -35,6 +35,22 @@ jobs:
       - name: XS AI text-only HTTP security contract
         run: node --experimental-strip-types tests/ai/http.check.mjs
       - run: npm run build
+      # Deployment is forbidden until the browser speech regression suite
+      # passes, including English and the alternate Malayalam tag. The suite
+      # mocks native SpeechRecognition and never contacts customer databases.
+      - name: Install isolated browser regression harness
+        run: |
+          npm install --no-save --no-package-lock playwright@1.64.1
+          npx playwright install chromium
+      - name: Verify browser speech before publishing
+        run: |
+          npm run preview -- --host 127.0.0.1 --port 4173 >/tmp/xs-voice-gate.log 2>&1 &
+          for i in $(seq 1 40); do
+            if curl -fsS http://127.0.0.1:4173/xs-gym/ >/dev/null; then break; fi
+            sleep 1
+          done
+          curl -fsS http://127.0.0.1:4173/xs-gym/ >/dev/null
+          node tests/ui/live-voice.mjs "$(pwd)/node_modules/playwright/index.js" "http://127.0.0.1:4173/xs-gym/"
       - name: Secret scan of the published bundle
         run: |
           # Real key shapes only: Supabase secret keys, any JWT (service-role or
