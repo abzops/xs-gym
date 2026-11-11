@@ -42,8 +42,12 @@ done
 # Dump and restore local disposable data only. No real customer backup, no
 # remote network connection, no cloud token and no artifact upload.
 pg_dump -h "$DATA" -p "$PORT" -U postgres -d postgres -Fc -f "$DATA/synthetic.dump"
+# A purely synthetic, ephemeral encryption and tamper-detection exercise.
+# The key is never written; production key escrow/off-site backup remains blocked.
+node "$ROOT/tests/db/synthetic_backup_crypto.mjs" "$DATA/synthetic.dump" "$DATA/synthetic.dump.aesgcm" "$DATA/restored.dump"
+rm -f "$DATA/synthetic.dump"
 createdb -h "$DATA" -p "$PORT" -U postgres --template=template0 pilot_restored
-pg_restore --exit-on-error -h "$DATA" -p "$PORT" -U postgres -d pilot_restored "$DATA/synthetic.dump" >/dev/null
+pg_restore --exit-on-error -h "$DATA" -p "$PORT" -U postgres -d pilot_restored "$DATA/restored.dump" >/dev/null
 
 CHECKS="select jsonb_build_object(
  'gym_count',(select count(*) from public.gyms),
