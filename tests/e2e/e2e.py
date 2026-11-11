@@ -505,6 +505,9 @@ with sync_playwright() as p:
             tap(page.get_by_role('button', name=tab)); page.wait_for_timeout(500)
             if page.locator('main .notice.bad, main [class*="bad"]').filter(has_text=re.compile('error|wrong', re.I)).count(): note('BUG', f'reports {tab} shows an error')
         tap(page.get_by_role('group', name='View').get_by_role('button', name='Dues')); page.wait_for_timeout(500)
+        if PLATFORM == 'phone':
+            sizes = page.evaluate('() => ({ content: document.documentElement.scrollWidth, viewport: document.documentElement.clientWidth })')
+            assert sizes['content'] <= sizes['viewport'] + 1, f'Analytics Dues exceeds phone viewport: {sizes}'
         remind = page.get_by_role('button', name=re.compile('^Remind'))
         if remind.count():
             tap(remind.first)
