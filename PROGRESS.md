@@ -69,8 +69,8 @@
 - Read-only baseline: 17/17 RLS-enabled public tables; 7 migrations; 24 authenticated SECURITY DEFINER warnings; separate Auth password-protection warning; production `main` is unprotected and auto-publishes.
 - CHAOS COMBAT aggregate count: 26 active members, zero archived, zero recorded payments and zero membership records at inspection. Exact per-record onboarding reconciliation not authorized or performed.
 - Urgent gap: current private roster-backup table returned zero snapshots. A previously asserted backup cannot be treated as confirmed. No real customer data was read/exported.
-- Added source-linked audit documents under `docs/audits/`, operations runbooks and the synthetic-finance regression test. New dedicated isolated CI/restore evidence is tracked on the feature branch.
-- Payment void policy remains open: current code releases paid-charge allocation to credit while leaving membership active. No policy change made.
+- Added source-linked audit documents under `docs/audits/`, all-24 RPC reviews, owner-approved financial/access policy, branch protection proposal and low-cost encrypted backup research. Dedicated isolated CI now tests synthetic AES-256-GCM encryption, restoration and tamper detection. PR #3 remains draft; import safety work is in separate draft PR #4.
+- Owner decision (11 Nov): voiding a paid charge **must not cancel membership**. Ledger corrections and access cancellation remain separate explicit audited actions; covered with synthetic regression. No policy implementation change made.
 - Release posture: **HOLD**. Seek owner-reviewed PR, isolated test evidence, recovered-backup plan and explicit `APPROVE DEPLOY` before any future production release.
 
 ### 2026-11-06 — Text-only voice input: remove WAV/cloud transcription
