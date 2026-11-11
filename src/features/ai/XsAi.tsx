@@ -12,7 +12,7 @@ import './ai.css';
 type Action = { tool: string; ok: boolean; summary: string; undo?: { rpc: string; args: Record<string, unknown> }; undone?: boolean };
 type Turn = { role: 'user' | 'assistant'; content: string; actions?: Action[]; tone?: 'bad' };
 type State = 'idle' | 'listening' | 'thinking' | 'speaking';
-type MicDialog = 'denied' | 'unavailable' | 'service' | null;
+type MicDialog = 'denied' | 'unavailable' | 'service' | 'unsupported' | null;
 
 // XS AI sends typed text only. Audio recording/upload is intentionally disabled.
 // Live word-by-word recognition uses the browser's SpeechRecognition interface.
@@ -28,12 +28,14 @@ const MIC_COPY: Record<Lang, Record<Exclude<MicDialog, null>, MicCopy>> = {
   en: {
     denied: { title: 'Microphone permission needed', detail: 'Your device did not allow live speech recognition. Try again if permission can be requested, or use your keyboard microphone to dictate.', button: 'Try live voice again' },
     service: { title: 'Live speech unavailable', detail: 'Live speech recognition is not available in this browser or installed app. XS AI will not record or upload audio. Use the microphone on your keyboard to dictate instead.', button: 'Try live voice again' },
-    unavailable: { title: 'Use keyboard dictation', detail: 'This browser does not support live speech recognition. Tap the message field, then the microphone on your phone keyboard. Only the text you submit goes to XS AI.', button: '' },
+    unavailable: { title: 'Browser speech is unavailable', detail: 'This browser does not expose SpeechRecognition. You can type your message instead.', button: '' },
+    unsupported: { title: 'Speech language not supported', detail: 'Your browser rejected the requested language. XS Gym cannot install recognition languages into the iPhone browser.', button: 'Try browser voice again' },
   },
   ml: {
-    denied: { title: 'മൈക്രോഫോൺ അനുമതി ആവശ്യമാണ്', detail: 'ലൈവ് വോയ്സ് തിരിച്ചറിയാൻ ഫോൺ അനുമതി നൽകിയില്ല. വീണ്ടും ശ്രമിക്കാം; അല്ലെങ്കിൽ കീബോർഡിലെ മൈക്ക് ഉപയോഗിച്ച് മലയാളത്തിൽ പറയാം.', button: 'ലൈവ് വോയ്സ് വീണ്ടും ശ്രമിക്കുക' },
-    service: { title: 'ലൈവ് വോയ്സ് ലഭ്യമല്ല', detail: 'ഈ ബ്രൗസറിലോ ഇൻസ്റ്റാൾ ചെയ്ത ആപ്പിലോ തത്സമയ സ്പീച്ച് തിരിച്ചറിയൽ ലഭ്യമല്ല. XS AI ഓഡിയോ റെക്കോർഡ് ചെയ്ത് അപ്‌ലോഡ് ചെയ്യില്ല. കീബോർഡിലെ മൈക്ക് ഉപയോഗിക്കാം.', button: 'വീണ്ടും ശ്രമിക്കുക' },
-    unavailable: { title: 'കീബോർഡ് ഡിക്റ്റേഷൻ ഉപയോഗിക്കുക', detail: 'ഈ ബ്രൗസറിൽ ലൈവ് സ്പീച്ച് തിരിച്ചറിയൽ ലഭ്യമല്ല. മെസേജ് ബോക്സിൽ ടാപ്പ് ചെയ്ത് iPhone കീബോർഡിലെ മൈക്ക് അമർത്തി മലയാളത്തിൽ സംസാരിക്കുക. അയക്കുന്ന ടെക്സ്റ്റ് മാത്രമേ XS AI-ലേക്ക് പോകൂ.', button: '' },
+    denied: { title: 'ബ്രൗസർ വോയ്സ് അനുമതി നിഷേധിച്ചു', detail: 'ബ്രൗസർ സ്പീച്ച് തിരിച്ചറിയൽ നിരസിച്ചു. ഇത് മലയാളം മോഡൽ ലഭ്യമാണെന്നതിന് തെളിവല്ല. വീണ്ടും ശ്രമിക്കാം, അല്ലെങ്കിൽ മലയാളത്തിൽ ടൈപ്പ് ചെയ്യാം.', button: 'വീണ്ടും ശ്രമിക്കുക' },
+    service: { title: 'ലൈവ് വോയ്സ് ലഭ്യമല്ല', detail: 'iPhone ബ്രൗസറിലെ വോയ്സ് സേവനം മലയാളം തിരിച്ചറിയൽ നിരസിച്ചു. മറ്റൊരു മലയാളം ഭാഷാ കോഡ് പരീക്ഷിക്കാം. പിന്തുണയില്ലെങ്കിൽ XS Gym-ന് ബ്രൗസറിനെ നിർബന്ധിച്ച് തിരിച്ചറിയിക്കാൻ കഴിയില്ല.', button: 'വീണ്ടും ശ്രമിക്കുക' },
+    unavailable: { title: 'ബ്രൗസർ വോയ്സ് ലഭ്യമല്ല', detail: 'ഈ ബ്രൗസറിൽ SpeechRecognition API ഇല്ല. മലയാളം ടൈപ്പ് ചെയ്യാം.', button: '' },
+    unsupported: { title: 'മലയാളം വോയ്സ് ഈ ബ്രൗസറിൽ പിന്തുണയ്ക്കുന്നില്ല', detail: 'iPhone-ന്റെ സ്പീച്ച് സേവനം ഈ ഭാഷാ കോഡ് നിരസിച്ചു. ഒരു ബദൽ മലയാളം കോഡ് പരീക്ഷിക്കാം; അത് പ്രവർത്തിക്കുമെന്ന് ഉറപ്പില്ല.', button: 'വീണ്ടും ശ്രമിക്കുക' },
   },
 };
 
@@ -49,6 +51,7 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
   const [text, setText] = useState('');
   const [mute, setMute] = useState(false);
   const [micDialog, setMicDialog] = useState<MicDialog>(null);
+  const [speechIssue, setSpeechIssue] = useState<{ code: string; locale: string } | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const micActionRef = useRef<HTMLButtonElement>(null);
   const stopRef = useRef<() => void>(() => {});
@@ -113,17 +116,18 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
   // Browser interim results arrive while the user is still speaking; display
   // them in the message composer immediately. A silence-triggered onend
   // submits exactly once, without waiting for a whole WAV upload.
-  async function beginListening() {
+  async function beginListening(shortMalayalam = false) {
     if (closingRef.current || listeningBusy.current || requestBusy.current) return;
     listeningBusy.current = true;
     stopSpeaking();
+    setSpeechIssue(null);
     setText(''); setState('listening');
     try {
       // listen() calls SpeechRecognition.start() synchronously before its
       // first await, preserving the iOS user gesture from the mic button.
       const l = listen(lang, (partial) => {
         if (!closingRef.current) setText(partial);
-      });
+      }, shortMalayalam);
       stopRef.current = l.stop;
       const heard = (await l.done).trim();
       listeningBusy.current = false;
@@ -142,7 +146,9 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
         setState('idle');
         // Preserve any partial words in the text field for manual sending.
         if (e instanceof SpeechListenError) {
-          setMicDialog(e.reason === 'denied' || e.reason === 'audio' ? 'denied' : 'service');
+          setSpeechIssue({ code: e.browserCode, locale: e.locale });
+          setMicDialog(e.reason === 'denied' || e.reason === 'audio' ? 'denied'
+            : e.reason === 'unsupported' ? 'unsupported' : 'service');
         } else {
           toast(e instanceof Error ? e.message : String(e), 'bad');
         }
@@ -164,12 +170,12 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
   }
 
   // SpeechRecognition is the ONLY voice input. Never record or upload raw audio.
-  async function talk(retry = false) {
+  async function talk(retry = false, shortMalayalam = false) {
     if (closingRef.current || (micDialog && !retry)) return;
     if (state === 'listening') { stopRef.current(); return; }
     if (state === 'speaking') { stopSpeaking(); return; }
     if (requestBusy.current || listeningBusy.current) return;
-    if (canListen()) { void beginListening(); return; }
+    if (canListen()) { void beginListening(shortMalayalam); return; }
     setMicDialog('unavailable');
   }
 
@@ -200,7 +206,9 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
     <Sheet title="XS AI" onClosing={stopInteraction} onClose={() => { stopInteraction(); onClose(); }}>
       <div className="xsai">
         <div className="xsai-bar">
-          <Segmented label="Language" value={lang} onChange={setLang} options={[{ value: 'en', label: 'English' }, { value: 'ml', label: 'മലയാളം' }]} />
+          <Segmented label="Language" value={lang} onChange={(value) => {
+            setLang(value); setMicDialog(null); setSpeechIssue(null);
+          }} options={[{ value: 'en', label: 'English' }, { value: 'ml', label: 'മലയാളം' }]} />
           <button type="button" className={`btn small ghost ${mute ? '' : 'on'}`} onClick={() => { setMute((m) => !m); stopSpeaking(); }} aria-pressed={!mute}>
             {mute ? 'Voice off' : 'Voice on'}
           </button>
@@ -240,7 +248,7 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
           }
           <p className="xsai-status" aria-live="polite">{status}{lang === 'ml' && !mute && !voiceFor('ml') ? ' · replies shown as text on this device' : ''}</p>
           <form className="xsai-type" onSubmit={(e) => { e.preventDefault(); void ask(text); }}>
-            <input ref={inputRef} className="input" value={text} onChange={(e) => setText(e.target.value)} placeholder={lang === 'ml' ? 'ടൈപ്പ് ചെയ്യൂ…' : 'Type a message…'} aria-label="Message XS AI" enterKeyHint="send" />
+            <input ref={inputRef} className="input" lang={lang === 'ml' ? 'ml-IN' : 'en-IN'} value={text} onChange={(e) => setText(e.target.value)} placeholder={lang === 'ml' ? 'ടൈപ്പ് ചെയ്യൂ…' : 'Type a message…'} aria-label="Message XS AI" enterKeyHint="send" />
             <button className="btn primary icon-btn" disabled={!text.trim() || state !== 'idle'} aria-label="Send"><ArrowUp size={20} /></button>
           </form>
         </div>
@@ -251,11 +259,26 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
               <span className="xsai-mic-icon" aria-hidden><Mic size={27} strokeWidth={1.8} /></span>
               <h3 id="xsai-mic-heading">{MIC_COPY[lang][micDialog].title}</h3>
               <p id="xsai-mic-desc">{MIC_COPY[lang][micDialog].detail}</p>
+              {speechIssue && (
+                <p className="muted" role="status">
+                  Browser error: <code>{speechIssue.code}</code> · language <code>{speechIssue.locale}</code>
+                </p>
+              )}
+              {lang === 'ml' && <p className="muted">
+                No XS Gym recording, AI model, or audio upload is used. Safari and installed iPhone apps may differ.
+                Malayalam browser recognition is not guaranteed.
+              </p>}
               <div className="xsai-mic-actions">
                 {micDialog !== 'unavailable' && (
                   <button ref={micActionRef} type="button" className="btn primary"
                     onClick={() => { setMicDialog(null); void talk(true); }}>
                     {MIC_COPY[lang][micDialog].button}
+                  </button>
+                )}
+                {lang === 'ml' && speechIssue?.locale === 'ml-IN' && micDialog !== 'denied' && (
+                  <button type="button" className="btn ghost"
+                    onClick={() => { setMicDialog(null); void talk(true, true); }}>
+                    മലയാളം (ml) കോഡ് പരീക്ഷിക്കുക
                   </button>
                 )}
                 <button ref={micDialog === 'unavailable' ? micActionRef : undefined}
