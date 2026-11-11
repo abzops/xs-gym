@@ -188,8 +188,13 @@ for (const [name, mobile, standalone, scheme] of [
   await dialog.getByRole('button', { name: 'Stop listening' }).waitFor({ timeout: 6000 });
   await page.waitForTimeout(850); // local microphone must collect >0.2s of PCM
   await tap(dialog.getByRole('button', { name: 'Stop listening' }));
+  await dialog.getByRole('textbox', { name: 'Message XS AI' }).waitFor({ timeout: 12000 });
+  check('iPhone: local model fills editable Malayalam composer before any AI action',
+    await liveValue(page, 'ഇന്ന് എത്ര രൂപ കിട്ടി?') &&
+    log.agent.length === 0 && log.transcribe.length === 0);
+  await tap(dialog.getByRole('button', { name: 'Send' }));
   await dialog.getByText('ശരി, മനസ്സിലായി.').waitFor({ timeout: 12000 });
-  check('iPhone: local Malayalam text is submitted once; no audio upload',
+  check('iPhone: user-confirmed Malayalam text is sent once; no audio upload',
     log.agent.length === 1 && log.agent[0].lang === 'ml' &&
     log.agent[0].messages.at(-1).content === 'ഇന്ന് എത്ര രൂപ കിട്ടി?' &&
     log.transcribe.length === 0 &&
