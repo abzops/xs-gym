@@ -430,6 +430,7 @@ with sync_playwright() as p:
         row = page.locator('main li.member-swipe', has_text='Swipe Delete QA')
         reveal_member_actions(row)
         tap(row.get_by_role('button', name='Restore member Swipe Delete QA'))
+        expect(row).to_have_count(0, timeout=10000)  # wait until restored member leaves Archived
         assert sql(f"select status from members where id='{new_id}'")[0][0] == 'active', 'Restore must work'
         go(base() + '/members')
         row = page.locator('main li.member-swipe', has_text='Swipe Delete QA')
