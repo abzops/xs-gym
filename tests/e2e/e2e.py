@@ -506,6 +506,12 @@ with sync_playwright() as p:
             if page.locator('main .notice.bad, main [class*="bad"]').filter(has_text=re.compile('error|wrong', re.I)).count(): note('BUG', f'reports {tab} shows an error')
         tap(page.get_by_role('group', name='View').get_by_role('button', name='Dues')); page.wait_for_timeout(500)
         if PLATFORM == 'phone':
+            nav_rect = page.locator('nav.tabbar').bounding_box()
+            assert nav_rect is not None, 'phone tab bar missing'
+            assert nav_rect['x'] >= -1 and nav_rect['x'] + nav_rect['width'] <= 394, f'phone tab bar is offscreen: {nav_rect}'
+            report_scroller = page.locator('main .table-wrap')
+            assert report_scroller.count() == 1, 'Dues report table wrapper missing'
+            assert report_scroller.evaluate('(e) => getComputedStyle(e).overflowX') == 'auto', 'Dues table does not support horizontal scroll'
             sizes = page.evaluate('() => ({ content: document.documentElement.scrollWidth, viewport: document.documentElement.clientWidth })')
             if sizes['content'] > sizes['viewport'] + 1:
                 geometry = page.evaluate("""() => {
