@@ -1,0 +1,72 @@
+# No production credentials, no deployment, no customer audio or data.
+name: Malayalam offline speech prototype (synthetic only)
+
+on:
+  push:
+    branches: ['feature/malayalam-offline-speech']
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ml-offline-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  VITE_SUPABASE_URL: https://synthetic-voice-qa.supabase.co
+  VITE_SUPABASE_PUBLISHABLE_KEY: fake-local-voice-key
+  VITE_BASE_PATH: /xs-gym/
+
+jobs:
+  quality:
+    name: Voice prototype static, unit and build checks
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm test
+      - run: npm run build
+      - name: Ensure output has no live project reference
+        run: |
+          if grep -Rq 'knuanihnxtxtyrgvsumq' dist/; then
+            echo 'Production Supabase project reference leaked into synthetic build' >&2
+            exit 1
+          fi
+
+  voice_browser:
+    name: Mocked iPhone/local-model voice integration
+    runs-on: ubuntu-24.04
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Install Playwright without apt mirror dependencies
+        run: |
+          npm install --no-save --no-package-lock playwright@1.64.1
+          npx playwright install chromium
+      - run: npm run build
+      - name: Launch local preview only
+        run: |
+          npm run preview -- --host 127.0.0.1 --port 4173 >/tmp/ml-voice-preview.log 2>&1 &
+          for i in $(seq 1 40); do
+            if curl -fsS http://127.0.0.1:4173/xs-gym/ >/dev/null; then exit 0; fi
+            sleep 1
+          done
+          cat /tmp/ml-voice-preview.log
+          exit 1
+      - name: English regression and Malayalam mocked on-device voice
+        run: |
+          node tests/ui/live-voice.mjs "$(pwd)/node_modules/playwright/index.js" "http://127.0.0.1:4173/xs-gym/"

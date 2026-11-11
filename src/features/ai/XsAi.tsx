@@ -7,12 +7,13 @@ import { Segmented, Sheet, useToast } from '../../components/ui';
 import { errorMessage } from '../../lib/errors';
 import { rpc, supabase } from '../../lib/supabase';
 import { canListen, listen, speak, SpeechListenError, stopSpeaking, voiceFor, type Lang } from './voice';
+import { listenLocalMalayalam, localMalayalamReady, prepareLocalMalayalam } from './localMalayalam';
 import './ai.css';
 
 type Action = { tool: string; ok: boolean; summary: string; undo?: { rpc: string; args: Record<string, unknown> }; undone?: boolean };
 type Turn = { role: 'user' | 'assistant'; content: string; actions?: Action[]; tone?: 'bad' };
-type State = 'idle' | 'listening' | 'thinking' | 'speaking';
-type MicDialog = 'denied' | 'unavailable' | 'service' | null;
+type State = 'idle' | 'listening' | 'processing' | 'thinking' | 'speaking';
+type MicDialog = 'denied' | 'unavailable' | 'service' | 'offline' | 'offlineError' | null;
 
 // XS AI sends typed text only. Audio recording/upload is intentionally disabled.
 // Live word-by-word recognition uses the browser's SpeechRecognition interface.
@@ -29,11 +30,15 @@ const MIC_COPY: Record<Lang, Record<Exclude<MicDialog, null>, MicCopy>> = {
     denied: { title: 'Microphone permission needed', detail: 'Your device did not allow live speech recognition. Try again if permission can be requested, or use your keyboard microphone to dictate.', button: 'Try live voice again' },
     service: { title: 'Live speech unavailable', detail: 'Live speech recognition is not available in this browser or installed app. XS AI will not record or upload audio. Use the microphone on your keyboard to dictate instead.', button: 'Try live voice again' },
     unavailable: { title: 'Use keyboard dictation', detail: 'This browser does not support live speech recognition. Tap the message field, then the microphone on your phone keyboard. Only the text you submit goes to XS AI.', button: '' },
+    offline: { title: 'Local Malayalam model', detail: 'This option processes a short Malayalam phrase entirely on your device. The first setup downloads a large model (around 90 MB); it may be slow on older phones. No microphone audio is uploaded.', button: 'Load Malayalam model' },
+    offlineError: { title: 'Local model unavailable', detail: 'The Malayalam model could not be loaded or run on this device. No audio has been uploaded. You can try loading it again or type Malayalam.', button: 'Retry local model' },
   },
   ml: {
     denied: { title: 'മൈക്രോഫോൺ അനുമതി ആവശ്യമാണ്', detail: 'ലൈവ് വോയ്സ് തിരിച്ചറിയാൻ ഫോൺ അനുമതി നൽകിയില്ല. വീണ്ടും ശ്രമിക്കാം; അല്ലെങ്കിൽ കീബോർഡിലെ മൈക്ക് ഉപയോഗിച്ച് മലയാളത്തിൽ പറയാം.', button: 'ലൈവ് വോയ്സ് വീണ്ടും ശ്രമിക്കുക' },
-    service: { title: 'ലൈവ് വോയ്സ് ലഭ്യമല്ല', detail: 'ഈ ബ്രൗസറിലോ ഇൻസ്റ്റാൾ ചെയ്ത ആപ്പിലോ തത്സമയ സ്പീച്ച് തിരിച്ചറിയൽ ലഭ്യമല്ല. XS AI ഓഡിയോ റെക്കോർഡ് ചെയ്ത് അപ്‌ലോഡ് ചെയ്യില്ല. കീബോർഡിലെ മൈക്ക് ഉപയോഗിക്കാം.', button: 'വീണ്ടും ശ്രമിക്കുക' },
-    unavailable: { title: 'കീബോർഡ് ഡിക്റ്റേഷൻ ഉപയോഗിക്കുക', detail: 'ഈ ബ്രൗസറിൽ ലൈവ് സ്പീച്ച് തിരിച്ചറിയൽ ലഭ്യമല്ല. മെസേജ് ബോക്സിൽ ടാപ്പ് ചെയ്ത് iPhone കീബോർഡിലെ മൈക്ക് അമർത്തി മലയാളത്തിൽ സംസാരിക്കുക. അയക്കുന്ന ടെക്സ്റ്റ് മാത്രമേ XS AI-ലേക്ക് പോകൂ.', button: '' },
+    service: { title: 'ലൈവ് വോയ്സ് ലഭ്യമല്ല', detail: 'ഈ ബ്രൗസറിലെ മലയാളം തിരിച്ചറിയൽ ലഭ്യമല്ല. പകരം ഉപകരണത്തിൽ തന്നെ പ്രവർത്തിക്കുന്ന മലയാളം മോഡൽ പരീക്ഷിക്കാം. ഓഡിയോ സർവറിലേക്ക് അയയ്ക്കില്ല.', button: 'മലയാളം മോഡൽ പരീക്ഷിക്കുക' },
+    unavailable: { title: 'കീബോർഡ് ഉപയോഗിക്കുക', detail: 'ഈ ബ്രൗസറിൽ ലൈവ് സ്പീച്ച് തിരിച്ചറിയൽ ലഭ്യമല്ല. നിങ്ങളുടെ ഫോണിൽ മലയാളം ഡിക്റ്റേഷൻ ലഭ്യമാകണമെന്നില്ല; മലയാളം ടൈപ്പ് ചെയ്യാം.', button: '' },
+    offline: { title: 'ഫോണിൽ തന്നെ മലയാളം വോയ്സ്', detail: 'മലയാളം ഓഡിയോ സെർവറിലേക്ക് അയയ്ക്കാതെ ഫോണിൽ തന്നെ തിരിച്ചറിയാൻ ഒരു മോഡൽ ഉപയോഗിക്കാം. ആദ്യമായി ഏകദേശം 90 MB ഡൗൺലോഡ് വേണം. പഴയ ഫോണുകളിൽ കുറച്ച് സമയം എടുത്തേക്കാം.', button: 'മലയാളം മോഡൽ ലോഡ് ചെയ്യുക' },
+    offlineError: { title: 'മലയാളം മോഡൽ പ്രവർത്തിച്ചില്ല', detail: 'ഈ ഫോണിൽ മോഡൽ ലോഡ് ചെയ്യാനോ വോയ്സ് തിരിച്ചറിയാനോ കഴിഞ്ഞില്ല. ഓഡിയോ അപ്‌ലോഡ് ചെയ്തിട്ടില്ല. വീണ്ടും ശ്രമിക്കാം, അല്ലെങ്കിൽ മലയാളം ടൈപ്പ് ചെയ്യാം.', button: 'വീണ്ടും ലോഡ് ചെയ്യുക' },
   },
 };
 
@@ -49,9 +54,13 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
   const [text, setText] = useState('');
   const [mute, setMute] = useState(false);
   const [micDialog, setMicDialog] = useState<MicDialog>(null);
+  const [offlineLoading, setOfflineLoading] = useState(false);
+  const [offlinePercent, setOfflinePercent] = useState(0);
+  const [offlineAvailable, setOfflineAvailable] = useState(() => localMalayalamReady());
   const inputRef = useRef<HTMLInputElement>(null);
   const micActionRef = useRef<HTMLButtonElement>(null);
   const stopRef = useRef<() => void>(() => {});
+  const cancelOfflineRef = useRef<() => void>(() => {});
   const closingRef = useRef(false);
   const requestBusy = useRef(false);
   const listeningBusy = useRef(false);
@@ -65,6 +74,7 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
   useEffect(() => { if (micDialog) micActionRef.current?.focus(); }, [micDialog]);
   const stopInteraction = useCallback(() => {
     closingRef.current = true;
+    cancelOfflineRef.current();
     stopRef.current();
     stopSpeaking();
   }, []);
@@ -142,7 +152,7 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
         setState('idle');
         // Preserve any partial words in the text field for manual sending.
         if (e instanceof SpeechListenError) {
-          setMicDialog(e.reason === 'denied' || e.reason === 'audio' ? 'denied' : 'service');
+          setMicDialog(e.reason === 'denied' || e.reason === 'audio' ? 'denied' : lang === 'ml' ? 'offline' : 'service');
         } else {
           toast(e instanceof Error ? e.message : String(e), 'bad');
         }
@@ -150,6 +160,68 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
     } finally {
       listeningBusy.current = false;
       stopRef.current = () => {};
+    }
+  }
+
+  // The browser may implement English speech while rejecting ml-IN on the
+  // same device. Download the multilingual model only after an explicit tap.
+  async function setupOfflineMalayalam() {
+    if (offlineLoading) return;
+    setOfflineLoading(true);
+    setOfflinePercent(0);
+    try {
+      await prepareLocalMalayalam((percent) => {
+        if (!closingRef.current) setOfflinePercent(percent);
+      });
+      if (closingRef.current) return;
+      setOfflineAvailable(true);
+      setMicDialog(null);
+      toast(lang === 'ml' ? 'മലയാളം മോഡൽ തയ്യാറായി. മൈക്ക് അമർത്തി സംസാരിക്കൂ.' : 'Local Malayalam is ready. Tap the microphone to speak.');
+    } catch {
+      if (!closingRef.current) setMicDialog('offlineError');
+    } finally {
+      if (!closingRef.current) setOfflineLoading(false);
+    }
+  }
+
+  // Audio stays on the device. Unlike Web Speech interim results, this local
+  // fallback transcribes a complete short phrase after Stop / 12-second limit.
+  async function beginOfflineMalayalam() {
+    if (closingRef.current || listeningBusy.current || requestBusy.current) return;
+    listeningBusy.current = true;
+    stopSpeaking();
+    setText('');
+    setState('listening');
+    try {
+      // Synchronous start from the microphone tap is essential on iPhone.
+      const session = listenLocalMalayalam((phase) => {
+        if (!closingRef.current) setState(phase === 'processing' ? 'processing' : 'listening');
+      });
+      stopRef.current = session.stop;
+      cancelOfflineRef.current = session.cancel;
+      const heard = (await session.done).trim();
+      listeningBusy.current = false;
+      stopRef.current = () => {};
+      cancelOfflineRef.current = () => {};
+      if (closingRef.current) return;
+      setState('idle');
+      // Tiny multilingual models can misread names and rupee amounts. Show
+      // the recognised phrase for confirmation before any AI tool action.
+      if (heard) {
+        setText(heard);
+        toast('മലയാളം ടെക്സ്റ്റ് പരിശോധിച്ച് Send അമർത്തൂ.');
+      } else toast('ഒന്നും കേട്ടില്ല. വീണ്ടും ശ്രമിക്കൂ.');
+    } catch (e) {
+      if (!closingRef.current) {
+        setState('idle');
+        if (e instanceof Error && ['NotAllowedError', 'PermissionDeniedError', 'SecurityError'].includes(e.name)) {
+          setMicDialog('denied');
+        } else setMicDialog('offlineError');
+      }
+    } finally {
+      listeningBusy.current = false;
+      stopRef.current = () => {};
+      cancelOfflineRef.current = () => {};
     }
   }
 
@@ -169,6 +241,13 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
     if (state === 'listening') { stopRef.current(); return; }
     if (state === 'speaking') { stopSpeaking(); return; }
     if (requestBusy.current || listeningBusy.current) return;
+    // Never invoke Web Speech for Malayalam: its service may be cloud-backed
+    // and the iPhone does not consistently support ml-IN. Opt in to local ML.
+    if (lang === 'ml') {
+      if (localMalayalamReady()) void beginOfflineMalayalam();
+      else setMicDialog('offline');
+      return;
+    }
     if (canListen()) { void beginListening(); return; }
     setMicDialog('unavailable');
   }
@@ -191,10 +270,13 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
   }
 
   const status = state === 'listening' ? (lang === 'ml' ? 'കേൾക്കുന്നു…' : 'Listening…')
+    : state === 'processing' ? (lang === 'ml' ? 'ഫോണിൽ തന്നെ മലയാളം തിരിച്ചറിയുന്നു…' : 'Processing speech on device…')
     : state === 'thinking' ? (lang === 'ml' ? 'ആലോചിക്കുന്നു…' : 'Thinking…')
     : state === 'speaking' ? (lang === 'ml' ? 'സംസാരിക്കുന്നു…' : 'Speaking…')
-      : voiceOk ? (lang === 'ml' ? 'സംസാരിക്കാൻ ടാപ്പ് ചെയ്യൂ' : 'Tap to talk')
-      : (lang === 'ml' ? 'കീബോർഡിലെ മൈക്ക് ഉപയോഗിക്കൂ' : 'Use keyboard dictation');
+      : lang === 'ml' && offlineAvailable ? 'മലയാളം സംസാരിക്കാൻ ടാപ്പ് ചെയ്യൂ (പരമാവധി 12 സെക്കൻഡ്)'
+      : lang === 'ml' ? 'മലയാളം വോയ്സ് മോഡൽ ഉപയോഗിക്കാൻ ടാപ്പ് ചെയ്യൂ'
+      : voiceOk ? 'Tap to talk'
+      : 'Use keyboard dictation';
 
   return (
     <Sheet title="XS AI" onClosing={stopInteraction} onClose={() => { stopInteraction(); onClose(); }}>
@@ -232,7 +314,7 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
 
         <div className="xsai-controls">
           {
-            <button type="button" className={`xsai-orb ${state}`} onClick={() => void talk()} disabled={state === 'thinking'}
+            <button type="button" className={`xsai-orb ${state}`} onClick={() => void talk()} disabled={state === 'thinking' || state === 'processing' || offlineLoading}
               aria-label={state === 'listening' ? 'Stop listening' : state === 'speaking' ? 'Stop speaking' : 'Talk to XS AI'}>
               <span className="xsai-orb-glow" aria-hidden />
               {state === 'listening' || state === 'speaking' ? <Square size={22} fill="currentColor" /> : <Mic size={26} />}
@@ -240,7 +322,7 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
           }
           <p className="xsai-status" aria-live="polite">{status}{lang === 'ml' && !mute && !voiceFor('ml') ? ' · replies shown as text on this device' : ''}</p>
           <form className="xsai-type" onSubmit={(e) => { e.preventDefault(); void ask(text); }}>
-            <input ref={inputRef} className="input" value={text} onChange={(e) => setText(e.target.value)} placeholder={lang === 'ml' ? 'ടൈപ്പ് ചെയ്യൂ…' : 'Type a message…'} aria-label="Message XS AI" enterKeyHint="send" />
+            <input ref={inputRef} className="input" lang={lang === 'ml' ? 'ml-IN' : 'en-IN'} value={text} onChange={(e) => setText(e.target.value)} placeholder={lang === 'ml' ? 'ടൈപ്പ് ചെയ്യൂ…' : 'Type a message…'} aria-label="Message XS AI" enterKeyHint="send" />
             <button className="btn primary icon-btn" disabled={!text.trim() || state !== 'idle'} aria-label="Send"><ArrowUp size={20} /></button>
           </form>
         </div>
@@ -253,9 +335,9 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
               <p id="xsai-mic-desc">{MIC_COPY[lang][micDialog].detail}</p>
               <div className="xsai-mic-actions">
                 {micDialog !== 'unavailable' && (
-                  <button ref={micActionRef} type="button" className="btn primary"
-                    onClick={() => { setMicDialog(null); void talk(true); }}>
-                    {MIC_COPY[lang][micDialog].button}
+                  <button ref={micActionRef} type="button" className="btn primary" disabled={offlineLoading}
+                    onClick={() => { if (micDialog === 'offline' || micDialog === 'offlineError' || (lang === 'ml' && micDialog === 'service')) { void setupOfflineMalayalam(); } else { setMicDialog(null); void talk(true); } }}>
+                    {offlineLoading ? (lang === 'ml' ? `മോഡൽ ലോഡ് ചെയ്യുന്നു… ${offlinePercent}%` : `Loading… ${offlinePercent}%`) : MIC_COPY[lang][micDialog].button}
                   </button>
                 )}
                 <button ref={micDialog === 'unavailable' ? micActionRef : undefined}

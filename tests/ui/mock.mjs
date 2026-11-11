@@ -1,6 +1,6 @@
 // Mocked Supabase API and signed-in session shared by the UI tests.
 // Everything is local: no request leaves the machine.
-export const REF = 'knuanihnxtxtyrgvsumq';
+export const REF = 'synthetic-voice-qa';
 const userId = '11111111-1111-4111-8111-111111111111';
 export const gym = { id: '22222222-2222-4222-8222-222222222222', name: 'Iron Temple Kozhikode', slug: 'iron-temple', timezone: 'Asia/Kolkata',
   currency: 'INR', phone: null, email: null, address: null, grace_days: 3, status: 'active', created_at: '2026-11-01T00:00:00Z', onboarded_at: '2026-11-01T00:10:00Z' };
