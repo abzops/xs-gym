@@ -195,6 +195,55 @@ for (const [name, mobile, standalone, scheme] of [
     errors.length === 0, errors.join(' | '));
   await ctx.close();
 }
+// iOS may support English but refuse ml-IN. Confirm the browser error is
+// visible and a second explicit TAP retries bare "ml" without any audio upload.
+{
+  const { ctx, page, dialog, log, errors, tap } = await setup({ standalone: true, mobile: true });
+  await tap(dialog.getByRole('group', { name: 'Language' }).getByRole('button', { name: 'മലയാളം' }));
+  await tap(dialog.getByRole('button', { name: 'Talk to XS AI' }));
+  await page.evaluate(() => {
+    window.__speech.last?.onerror?.({ error: 'language-not-supported' });
+    window.__speech.last?.onend?.();
+  });
+  const warning = dialog.getByRole('dialog', { name: 'മലയാളം വോയ്സ് ഈ ബ്രൗസറിൽ പിന്തുണയ്ക്കുന്നില്ല' });
+  await warning.waitFor({ timeout: 4000 });
+  const firstError = await warning.getByRole('status').innerText();
+  check('iPhone: real language-not-supported error and ml-IN locale are visible',
+    firstError.includes('language-not-supported') && firstError.includes('ml-IN'));
+  await tap(warning.getByRole('button', { name: 'മലയാളം (ml) കോഡ് പരീക്ഷിക്കുക' }));
+  const retry = await page.evaluate(() => ({
+    lang: window.__speech.last?.lang,
+    started: window.__speech.started,
+    capture: window.__micCaptureCalls,
+  }));
+  check('iPhone: second explicit tap uses browser SpeechRecognition with ml tag',
+    retry.lang === 'ml' && retry.started === 2 && retry.capture === 0);
+  await page.evaluate(() => window.__partial('എത്ര രൂപ കിട്ടി?'));
+  check('iPhone: retry still updates Malayalam interim composer text',
+    await liveValue(page, 'എത്ര രൂപ കിട്ടി?') && log.agent.length === 0);
+  await page.evaluate(() => window.__ended());
+  await dialog.getByText('ശരി, മനസ്സിലായി.').waitFor({ timeout: 5000 });
+  check('iPhone: successful alternate locale submits text only once',
+    log.agent.length === 1 && log.agent[0].messages.at(-1).content === 'എത്ര രൂപ കിട്ടി?' &&
+    log.transcribe.length === 0 && errors.length === 0, errors.join(' | '));
+  await ctx.close();
+}
+
+// Both common failures need honest, precise diagnosis, not a false assurance
+// that a browser's available English voice implies Malayalam voice works.
+{
+  const { ctx, page, dialog, log, tap, errors } = await setup({ standalone: true });
+  await tap(dialog.getByRole('group', { name: 'Language' }).getByRole('button', { name: 'മലയാളം' }));
+  await tap(dialog.getByRole('button', { name: 'Talk to XS AI' }));
+  await page.evaluate(() => window.__serviceError());
+  const warning = dialog.getByRole('dialog', { name: 'ലൈവ് വോയ്സ് ലഭ്യമല്ല' });
+  await warning.waitFor({ timeout: 4000 });
+  const detail = await warning.getByRole('status').innerText();
+  check('iPhone: service-not-allowed is reported without permission misdiagnosis',
+    detail.includes('service-not-allowed') && detail.includes('ml-IN') &&
+    log.agent.length === 0 && log.transcribe.length === 0 && errors.length === 0, errors.join(' | '));
+  await ctx.close();
+}
 await browser.close();
 console.log(failures ? failures + ' LIVE VOICE FAILURES' : 'TEXT-ONLY VOICE OK');
 process.exit(failures ? 1 : 0);
