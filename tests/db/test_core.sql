@@ -30,6 +30,7 @@ insert into auth.users (id, email) values
   ('00000000-0000-0000-0000-0000000000a1', 'owner.a@test.local'),
   ('00000000-0000-0000-0000-0000000000a2', 'desk.a@test.local'),
   ('00000000-0000-0000-0000-0000000000a3', 'trainer.a@test.local'),
+  ('00000000-0000-0000-0000-0000000000a4', 'manager.a@test.local'),
   ('00000000-0000-0000-0000-0000000000b1', 'owner.b@test.local');
 
 create table t.ids (k text primary key, v uuid);
@@ -73,6 +74,7 @@ insert into t.ids select 'memberB', id from public.create_member(t.id('gymB'), '
 select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000a1', false);
 select public.save_staff(t.id('gymA'), 'desk.a@test.local', 'reception');
 select public.save_staff(t.id('gymA'), 'trainer.a@test.local', 'trainer');
+select public.save_staff(t.id('gymA'), 'manager.a@test.local', 'manager');
 select t.fails($$select public.save_staff(t.id('gymA'), 'nobody@test.local', 'reception')$$, 'XS404', 'staff must have an account');
 select t.fails($$select public.save_staff(t.id('gymA'), 'desk.a@test.local', 'owner')$$, 'XS422', 'cannot grant owner role');
 
@@ -198,6 +200,44 @@ select t.eq((select status from public.member_overview where id=t.id('m1')), 'ar
 select t.eq((select count(*) from public.payments where member_id=t.id('m1'))::int > 0, true, 'member archive preserves payments');
 select public.set_member_status(t.id('gymA'), t.id('m1'), 'active', 'Restore');
 select t.eq((select status from public.member_overview where id=t.id('m1')), 'active', 'archived member can be restored');
+
+-- Permanent Delete is a distinct owner-only command. Never erase any ledger,
+-- membership, check-in or receipt even if the owner explicitly tries.
+select t.fails($select public.permanently_delete_member(t.id('gymA'),t.id('m1'),'XS-0001','Wrong registration')$,
+  'XS409', 'permanent delete cannot remove a member with financial history');
+select t.eq((select count(*) from public.payments where member_id=t.id('m1'))::int > 0,
+  true, 'blocked delete keeps all payments');
+
+insert into t.ids
+  select 'trashOnly',id from public.create_member(t.id('gymA'), 'Throwaway Member', '9000000098');
+select t.fails($select public.permanently_delete_member(t.id('gymA'),t.id('trashOnly'),'WRONG','Duplicate')$,
+  'XS422', 'permanent delete requires matching member number');
+select t.fails($select public.permanently_delete_member(t.id('gymA'),t.id('trashOnly'),
+  (select member_no from public.members where id=t.id('trashOnly')),'')$,
+  'XS422', 'permanent delete requires reason');
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000a4', false);
+select t.fails($select public.permanently_delete_member(t.id('gymA'),t.id('trashOnly'),
+  (select member_no from public.members where id=t.id('trashOnly')),'Duplicate')$,
+  'XS403', 'manager with archive permission cannot permanently delete');
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000b1', false);
+select t.fails($select public.permanently_delete_member(t.id('gymA'),t.id('trashOnly'),
+  (select member_no from public.members where id=t.id('trashOnly')),'Cross tenant')$,
+  'XS403', 'another gym owner cannot delete this member');
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000a1', false);
+insert into t.ids select 'trashLead', id from public.save_enquiry(
+  t.id('gymA'), null, 'Throwaway Member', '+919000000098',
+  'walk_in', null, null, null, 'joined', t.id('trashOnly'));
+select public.permanently_delete_member(t.id('gymA'),t.id('trashOnly'),
+  (select member_no from public.members where id=t.id('trashOnly')), 'Duplicate profile');
+select t.eq((select count(*) from public.members where id=t.id('trashOnly'))::int,
+  0, 'permanent delete removes unbilled member from database');
+select t.eq((select count(*) from public.enquiries where id=t.id('trashLead'))::int,
+  0, 'permanent delete removes linked enquiry');
+select t.eq((select count(*) from public.audit_logs where entity_id=t.id('trashOnly')
+  and action='member.permanently_deleted')::int,1,'permanent deletion is audited');
+select t.fails($select public.permanently_delete_member(t.id('gymA'),t.id('trashOnly'),'XS-9999','Again')$,
+  'XS404', 'cannot delete the same member twice');
+
 
 -- Payment edits must be atomic reversal + replacement, not an UPDATE/DELETE.
 insert into t.ids
