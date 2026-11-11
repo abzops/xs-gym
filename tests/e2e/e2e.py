@@ -521,6 +521,32 @@ with sync_playwright() as p:
                     });
                 }""")
                 print('OVERFLOW_GEOMETRY ' + json.dumps(geometry, separators=(',', ':')), flush=True)
+                extra = page.evaluate("""() => {
+                    const w = document.documentElement.clientWidth;
+                    const root = document.documentElement;
+                    const pseudoNames = ['::before', '::after', '::view-transition',
+                        '::view-transition-group(page)', '::view-transition-old(page)',
+                        '::view-transition-new(page)'];
+                    const pseudos = pseudoNames.map(p => {
+                        const s = getComputedStyle(root,p);
+                        return {pseudo:p,display:s.display,width:s.width,position:s.position,
+                            transform:s.transform,animation:s.animationName,opacity:s.opacity};
+                    });
+                    const beyond = [...document.body.querySelectorAll('*')].map(el => {
+                        const rect = el.getBoundingClientRect();
+                        const style = getComputedStyle(el);
+                        return {element:el.tagName.toLowerCase() + '.' + String(el.className?.baseVal ?? el.className ?? '').slice(0,35),
+                            right:Math.round(rect.right), width:Math.round(rect.width),
+                            position:style.position,overflowX:style.overflowX};
+                    }).filter(o => o.right > w + 2).sort((a,b)=>b.right-a.right).slice(0,16);
+                    const animations = root.getAnimations({subtree:true}).slice(0,10).map(a=>({
+                        state:a.playState, duration:a.effect?.getTiming().duration,
+                        pseudo:a.effect?.pseudoElement ?? null
+                    }));
+                    return {scrollX:scrollX,viewTransitions:document.startViewTransition != null,
+                        pseudos,beyond,animations};
+                }""")
+                print('OVERFLOW_EXTRA ' + json.dumps(extra, separators=(',', ':')), flush=True)
                 raise AssertionError(f'Analytics Dues exceeds phone viewport: {sizes}')
         remind = page.get_by_role('button', name=re.compile('^Remind'))
         if remind.count():
