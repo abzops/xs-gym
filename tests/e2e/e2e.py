@@ -65,6 +65,27 @@ with sync_playwright() as p:
         expect(page.locator('.toasts')).to_contain_text(text, timeout=timeout)
     def dialog():
         return page.get_by_role('dialog')
+    def reveal_member_actions(row):
+        """A real leftward touch gesture on phone, native inline actions elsewhere."""
+        if PLATFORM != 'phone': return
+        surface = row.locator('.member-swipe-foreground')
+        box = surface.bounding_box()
+        assert box, 'member row has no bounding box'
+        y = box['y'] + box['height'] * 0.5
+        start_x = box['x'] + box['width'] * 0.72
+        session = ctx.new_cdp_session(page)
+        try:
+            session.send('Input.dispatchTouchEvent', {'type': 'touchStart',
+                'touchPoints': [{'x': start_x, 'y': y, 'id': 1}]})
+            for distance in [24, 55, 86, 126, 174]:
+                session.send('Input.dispatchTouchEvent', {'type': 'touchMove',
+                    'touchPoints': [{'x': start_x - distance, 'y': y, 'id': 1}]})
+                page.wait_for_timeout(35)
+            session.send('Input.dispatchTouchEvent', {'type': 'touchEnd', 'touchPoints': []})
+        finally:
+            session.detach()
+        page.wait_for_timeout(280)
+        expect(row.get_by_role('button', name=re.compile('Archive member|Restore member'))).to_be_visible(timeout=3000)
     def go(path):
         page.goto(U + path); page.wait_for_load_state('networkidle')
     def nav(label):
@@ -370,16 +391,73 @@ with sync_playwright() as p:
 
     @step('archive then restore member')
     def _():
-        tap(page.locator('main').get_by_role('button', name='Delete member'))
+        tap(page.locator('main').get_by_role('button', name='Archive member'))
         d = dialog(); d.get_by_label('Reason (required)').fill('Moved away')
-        tap(d.get_by_role('button', name='Delete / archive member')); page.wait_for_timeout(950)
+        tap(d.get_by_role('button', name='Archive member')); page.wait_for_timeout(950)
         assert sql(f"select status from members where id = '{state['member']}'")[0][0] == 'archived'
         nav('Members')
         tap(page.get_by_role('link', name='Archived members'))
         expect(page.locator('main')).to_contain_text('Rahul QA Edited', timeout=8000)
-        tap(page.locator('main').get_by_role('button', name='Restore member Rahul QA Edited'))
+        row = page.locator('main li.member-swipe', has_text='Rahul QA Edited')
+        reveal_member_actions(row)
+        tap(row.get_by_role('button', name='Restore member Rahul QA Edited'))
         toast('Rahul QA Edited restored')
         assert sql(f"select status from members where id = '{state['member']}'")[0][0] == 'active'
+
+    @step('left swipe reveals Archive and permanent Delete; ledger records stay protected')
+    def _():
+        # Add an unbilled profile using the real screen; swipe actions must be
+        # usable on phone, while tablet and laptop retain ordinary buttons.
+        go(base() + '/members/new')
+        page.get_by_label('Full name').fill('Swipe Delete QA')
+        page.get_by_label('Mobile number').fill('9988776600')
+        tap(page.locator('main button.btn.primary'))
+        toast('Member added')
+        page.wait_for_url(re.compile(r'/members/[0-9a-f-]{36}'), timeout=8000)
+        new_id = re.search(r'/members/([0-9a-f-]{36})', page.url).group(1)
+        number = sql(f"select member_no from members where id='{new_id}'")[0][0]
+        if dialog().count(): tap(dialog().get_by_role('button', name='Close'))
+        go(base() + '/members')
+        row = page.locator('main li.member-swipe', has_text='Swipe Delete QA')
+        expect(row).to_be_visible(timeout=8000)
+        reveal_member_actions(row)
+        tap(row.get_by_role('button', name='Archive member Swipe Delete QA'))
+        d = dialog()
+        d.get_by_label('Reason (required)').fill('Temporarily inactive')
+        tap(d.get_by_role('button', name='Archive member'))
+        assert sql(f"select status from members where id='{new_id}'")[0][0] == 'archived', 'Archive must be reversible'
+        go(base() + '/members?filter=archived')
+        row = page.locator('main li.member-swipe', has_text='Swipe Delete QA')
+        reveal_member_actions(row)
+        tap(row.get_by_role('button', name='Restore member Swipe Delete QA'))
+        assert sql(f"select status from members where id='{new_id}'")[0][0] == 'active', 'Restore must work'
+        go(base() + '/members')
+        row = page.locator('main li.member-swipe', has_text='Swipe Delete QA')
+        reveal_member_actions(row)
+        tap(row.get_by_role('button', name='Permanently delete member Swipe Delete QA'))
+        d = dialog()
+        expect(d).to_contain_text('Delete is permanent')
+        assert d.get_by_role('button', name='Delete member permanently').is_disabled(), 'Delete allowed without confirmation'
+        d.get_by_label('Member number (required)').fill('INCORRECT')
+        d.get_by_label('Reason for permanent deletion (required)').fill('Duplicate test profile')
+        assert d.get_by_role('button', name='Delete member permanently').is_disabled(), 'Wrong member number accepted'
+        d.get_by_label('Member number (required)').fill(number)
+        tap(d.get_by_role('button', name='Delete member permanently'))
+        expect(dialog()).to_have_count(0, timeout=10000)
+        assert sql(f"select count(*) from members where id='{new_id}'")[0][0] == '0', 'Hard delete did not remove member'
+
+        # A billed member must never disappear even if the owner confirms.
+        row = page.locator('main li.member-swipe', has_text='Rahul QA Edited')
+        reveal_member_actions(row)
+        tap(row.get_by_role('button', name='Permanently delete member Rahul QA Edited'))
+        d = dialog()
+        original_number = sql(f"select member_no from members where id='{state['member']}'")[0][0]
+        d.get_by_label('Member number (required)').fill(original_number)
+        d.get_by_label('Reason for permanent deletion (required)').fill('Must protect receipts')
+        tap(d.get_by_role('button', name='Delete member permanently'))
+        expect(d).to_contain_text('Archive the member instead', timeout=8000)
+        assert sql(f"select count(*) from payments where member_id='{state['member']}'")[0][0] != '0', 'Payments lost after blocked delete'
+        tap(d.get_by_role('button', name='Close'))
 
     # ---------------- Member search ----------------
     @step('members search: by last phone digits, by name, unknown name, special characters')
