@@ -4,6 +4,7 @@ import { useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router';
 import { useGym } from '../../app/gym';
 import { Field, Notice, useToast } from '../../components/ui';
+import { todayInGym } from '../../lib/dates';
 import { errorMessage } from '../../lib/errors';
 import { setTransition } from '../../lib/motion';
 import { rpc } from '../../lib/supabase';
@@ -11,10 +12,9 @@ import type { MemberOverview } from '../../lib/types';
 
 type Values = {
   full_name: string; phone: string; email: string; gender: string;
-  date_of_birth: string; address: string; emergency_contact: string;
+  date_of_birth: string; address: string; emergency_contact: string; join_date: string;
 };
 
-const empty: Values = { full_name: '', phone: '', email: '', gender: '', date_of_birth: '', address: '', emergency_contact: '' };
 
 export function MemberForm({ member, onDone }: { member?: MemberOverview; onDone?: () => void }) {
   const { gym } = useGym();
@@ -24,8 +24,11 @@ export function MemberForm({ member, onDone }: { member?: MemberOverview; onDone
   const [v, setV] = useState<Values>(() => member ? {
     full_name: member.full_name, phone: member.phone.replace(/^\+91/, ''), email: member.email ?? '',
     gender: member.gender ?? '', date_of_birth: member.date_of_birth ?? '', address: member.address ?? '',
-    emergency_contact: member.emergency_contact ?? '',
-  } : empty);
+    emergency_contact: member.emergency_contact ?? '', join_date: member.join_date,
+  } : {
+    full_name: '', phone: '', email: '', gender: '', date_of_birth: '',
+    address: '', emergency_contact: '', join_date: todayInGym(gym.timezone),
+  });
   const [more, setMore] = useState(!!member);
   const set = (k: keyof Values) => (e: { target: { value: string } }) => setV((s) => ({ ...s, [k]: e.target.value }));
 
@@ -34,7 +37,7 @@ export function MemberForm({ member, onDone }: { member?: MemberOverview; onDone
       const args = {
         p_gym: gym.id, p_full_name: v.full_name, p_phone: v.phone, p_email: v.email || null,
         p_gender: v.gender || null, p_date_of_birth: v.date_of_birth || null, p_address: v.address || null,
-        p_emergency_contact: v.emergency_contact || null,
+        p_emergency_contact: v.emergency_contact || null, p_join_date: v.join_date,
       };
       return member
         ? rpc<{ id: string }>('update_member', { ...args, p_member: member.id })
@@ -43,6 +46,8 @@ export function MemberForm({ member, onDone }: { member?: MemberOverview; onDone
     onSuccess: async (saved) => {
       await qc.invalidateQueries({ queryKey: ['members', gym.id] });
       await qc.invalidateQueries({ queryKey: ['member', gym.id, saved.id] });
+      await qc.invalidateQueries({ queryKey: ['dashboard', gym.id] });
+      await qc.invalidateQueries({ queryKey: ['analytics', gym.id] });
       toast(member ? 'Member updated' : 'Member added');
       if (onDone) onDone();
       else { setTransition('push'); navigate(`/g/${gym.slug}/members/${saved.id}?sell=1`, { replace: true, viewTransition: true }); }
@@ -51,7 +56,7 @@ export function MemberForm({ member, onDone }: { member?: MemberOverview; onDone
 
   const phoneDigits = v.phone.replace(/\D/g, '');
   const phoneOk = phoneDigits.length >= 10;
-  const valid = v.full_name.trim().length > 0 && phoneOk;
+  const valid = v.full_name.trim().length > 0 && phoneOk && /^\d{4}-\d{2}-\d{2}$/.test(v.join_date);
 
   function submit(e: FormEvent) {
     e.preventDefault();
@@ -67,6 +72,9 @@ export function MemberForm({ member, onDone }: { member?: MemberOverview; onDone
         <Field label="Mobile number" error={v.phone && !phoneOk ? 'Enter 10 digits' : null}>
           <input className="input" type="tel" inputMode="tel" value={v.phone} onChange={set('phone')} autoComplete="off" required
             aria-invalid={!!v.phone && !phoneOk} />
+        </Field>
+        <Field label="Joining date">
+          <input className="input" type="date" value={v.join_date} onChange={set('join_date')} required />
         </Field>
       </div>
 
