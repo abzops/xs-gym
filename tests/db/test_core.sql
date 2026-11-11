@@ -89,6 +89,24 @@ select t.fails($$insert into public.members (gym_id, member_no, full_name, phone
 -- ---------------------------------------------------------------- members and plans
 insert into t.ids select 'm1', id from public.create_member(t.id('gymA'), 'Rahul K', '98765 11111');
 select t.eq((select member_no from public.members where id = t.id('m1')), 'XS-0001', 'member number assigned');
+
+-- Editing a member's Joining Date is a separate audited profile change.
+-- Old clients calling update_member without p_join_date must still work.
+select public.update_member(t.id('gymA'), t.id('m1'), 'Rahul K', '98765 11111', '2026-03-12'::date);
+select t.eq((select join_date from public.members where id = t.id('m1')), '2026-03-12'::date,
+  'member joining date can be changed');
+select t.eq((select join_date from public.member_overview where id = t.id('m1')), '2026-03-12'::date,
+  'joining date reflected on member overview');
+select t.eq((select count(*) from public.audit_logs where entity_id=t.id('m1')
+  and action='member.join_date_updated')::int, 1, 'joining date edit has audit trail');
+select public.update_member(t.id('gymA'), t.id('m1'), 'Rahul K', '98765 11111');
+select t.eq((select join_date from public.members where id = t.id('m1')), '2026-03-12'::date,
+  'legacy member edit preserves joining date');
+select t.fails($sql$select public.update_member(t.id('gymA'),t.id('m1'),
+  'Rahul K','98765 11111',null::date)$sql$, 'XS422', 'joining date cannot be empty');
+select t.fails($sql$select public.update_member(t.id('gymB'),t.id('memberB'),
+  'Intruder','9000000002','2026-03-12'::date)$sql$, 'XS403', 'joining date edit is tenant scoped');
+
 select t.fails($$select public.create_member(t.id('gymA'), 'Rahul Again', '+919876511111')$$, 'XS409', 'duplicate phone blocked');
 insert into t.ids select 'plan1m', id from public.save_plan(t.id('gymA'), null, 'Monthly', 'month', 1, 100000);
 insert into t.ids select 'plan3m', id from public.save_plan(t.id('gymA'), null, 'Quarterly', 'month', 3, 270000);
