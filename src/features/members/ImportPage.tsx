@@ -76,7 +76,7 @@ export function ImportPage() {
       setRows(reconcileMemberImport(parsed.rows, existing));
     } catch (error) {
       if (token === uploadToken.current) {
-        setPreviewError(errorMessage(error));
+        setPreviewError(error instanceof Error ? error.message : 'Unable to validate member import. Please try again.');
         setRows(null);
       }
     } finally {
@@ -123,7 +123,7 @@ export function ImportPage() {
         qc.invalidateQueries({ queryKey: ['dashboard', gym.id] }),
       ]);
     } catch (error) {
-      setPreviewError(errorMessage(error));
+      setPreviewError(error instanceof Error ? error.message : 'Unable to validate member import. Please try again.');
       setConfirmed(false);
     } finally {
       setProgress(null);
