@@ -279,7 +279,7 @@ for (const [label, mobile] of [['phone touch', true], ['desktop mouse', false]])
   await contact.release();
   await dialog.locator('.xsai-inline-issue').waitFor({ timeout: 3500 });
   check('error: one concise inline hint, no modal or provider details',
-    (await dialog.locator('.xsai-inline-issue').innerText()).includes('Voice not supported here') &&
+    (await dialog.locator('.xsai-inline-issue').innerText()).includes('Enable Malayalam voice fallback') &&
     await dialog.locator('.xsai-mic-backdrop').count() === 0 &&
     await dialog.getByRole('button', { name: 'Try ml' }).count() === 0 &&
     logs.agent.length === 0);
@@ -287,6 +287,25 @@ for (const [label, mobile] of [['phone touch', true], ['desktop mouse', false]])
   check('error: automatically switches to alternate browser Malayalam locale',
     await page.evaluate(() => window.__speech.last?.lang === 'ml'));
   await next.release();
+  await ctx.close();
+}
+
+// On an unsupported iPhone browser the inline action leads directly to
+// the actual Settings permission, instead of implying the user spoke quietly.
+{
+  const { ctx, page, open, tap } = await setup({ noSpeech: true });
+  const dialog = await open();
+  await tap(dialog.getByRole('group', { name: 'Language' }).getByRole('button', { name: 'മലയാളം' }));
+  const gesture = await hold(page, dialog.locator('.xsai-orb'));
+  await gesture.release();
+  await dialog.locator('.xsai-inline-issue').waitFor({ timeout: 3500 });
+  check('unsupported Malayalam: error explains fallback setup',
+    (await dialog.locator('.xsai-inline-issue').innerText()).includes('Enable Malayalam voice fallback') &&
+    await dialog.locator('.xsai-mic-backdrop').count() === 0);
+  await tap(dialog.locator('.xsai-inline-issue').getByRole('button', { name: 'Settings' }));
+  await page.waitForURL(/\/settings$/);
+  check('Malayalam recovery button opens the actual cloud consent control',
+    await page.getByRole('switch', { name: 'Use Sarvam cloud speech for Malayalam' }).count() === 1);
   await ctx.close();
 }
 
