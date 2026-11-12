@@ -10,7 +10,7 @@ async function scenario({ failed }) {
   const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
   await ctx.addInitScript(([key,value]) => {
     localStorage.setItem(key, value);
-    localStorage.setItem('xs-ai-voice-input-mode','sarvam');
+    localStorage.setItem('xs-ai-voice-input-mode','browser'); // legacy preference is ignored
   }, ['sb-'+REF+'-auth-token',JSON.stringify(session)]);
   await ctx.addInitScript(() => {
     window.__malayalam = { micStarts: 0, trackStops: 0, uploads: 0, recorder: null, recognizer: null };
@@ -104,7 +104,8 @@ async function scenario({ failed }) {
     assert.equal(agentCalls[0].cloudVoice,true,'Speech-derived financial tools remain read-only');
     assert.equal(agentCalls[0].messages.at(-1).content,'ഞാൻ പറയുന്നത് കേൾക്കുന്നുണ്ടോ?');
     assert.equal(await dialog.locator('.xsai-turn.user .xsai-bubble').textContent(),'ഞാൻ പറയുന്നത് കേൾക്കുന്നുണ്ടോ?');
-    assert.equal(await page.evaluate(()=>localStorage.getItem('xs-ai-native-ml-unavailable')),'1');
+    assert.equal(await page.evaluate(()=>localStorage.getItem('xs-ai-native-ml-unavailable')),null,
+      'Do not persist a broken WebSocket-only mode after a failed browser session');
   } else {
     assert.equal(uploads.length,0,'Successful native Malayalam must NEVER send audio to Sarvam');
     assert.equal(agentCalls[0].cloudVoice,false);
