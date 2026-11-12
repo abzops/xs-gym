@@ -35,6 +35,11 @@ jobs:
           npm install --no-save --no-package-lock playwright@1.64.1
           npx playwright install chromium
       - run: npm run build
+      - name: Install Malayalam font for truthful screenshots
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq fonts-noto-core
+          fc-cache -f
       - name: Start local GitHub Pages preview
         run: |
           npm run preview -- --host 127.0.0.1 --port 4173 >/tmp/xs-voice-preview.log 2>&1 &
