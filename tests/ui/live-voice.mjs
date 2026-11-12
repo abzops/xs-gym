@@ -244,15 +244,10 @@ for (const [name, mobile, standalone, scheme] of [
   await tap(dialog.getByRole('group', { name: 'Language' }).getByRole('button', { name: 'മലയാളം' }));
   const contact = await holdOrb(page, dialog.locator('.xsai-orb'), true);
   await page.evaluate(() => window.__serviceError());
+  await page.waitForTimeout(55);
+  check('iPhone: service failure dialog waits until touch release',
+    await dialog.locator('.xsai-mic-dialog').count() === 0 && log.agent.length === 0);
   await contact.release();
-  await page.waitForTimeout(250);
-  console.log('SERVICE DIAGNOSTIC', JSON.stringify(await page.evaluate(() => ({
-    speech: window.__speech,
-    heading: Array.from(document.querySelectorAll('.xsai-mic-dialog h3')).map((el) => el.textContent),
-    errors: Array.from(document.querySelectorAll('[role=status]')).map((el) => el.textContent),
-    held: document.querySelector('.xsai-orb')?.getAttribute('aria-pressed'),
-    status: document.querySelector('.xsai-status')?.textContent,
-  }))));
   const help = dialog.getByRole('dialog', { name: 'ലൈവ് വോയ്സ് ലഭ്യമല്ല' });
   await help.waitFor({ timeout: 4000 });
   const detail = await help.getByRole('status').innerText();
