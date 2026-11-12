@@ -12,7 +12,8 @@ export type MalayalamClip = { blob: Blob; durationMs: number };
 export function captureMalayalamBackup(): {
   stop: () => Promise<MalayalamClip | null>;
   abort: () => void;
-} {
+} | null {
+  if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') return null;
   let stream: MediaStream | null = null;
   let recorder: MediaRecorder | null = null;
   let recordingAt = 0, released = false, cancelled = false, finished = false;
@@ -29,8 +30,6 @@ export function captureMalayalamBackup(): {
     resolveClip(cancelled ? null : clip);
   };
   try {
-    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined')
-      throw Error('Recording unsupported');
     // This MUST be called synchronously from the pointerdown user gesture.
     void navigator.mediaDevices.getUserMedia({ audio: {
       echoCancellation: true, noiseSuppression: true, channelCount: 1,
