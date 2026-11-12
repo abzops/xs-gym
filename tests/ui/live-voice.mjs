@@ -130,7 +130,7 @@ async function setup({ mobile = true, noSpeech = false, delay = 0 } = {}) {
   await page.goto(baseUrl + 'g/' + gym.slug, { waitUntil: 'networkidle' });
   const tap = (item) => mobile ? item.tap() : item.click();
   async function open() {
-    const entry = mobile ? page.locator('.topbar .xsai-entry') : page.locator('.sidebar .xsai-side');
+    const entry = page.getByRole('button', { name: 'Open XS AI' });
     await tap(entry);
     const dialog = page.getByRole('dialog', { name: 'XS AI' });
     await dialog.waitFor();
