@@ -150,6 +150,12 @@ await page.waitForFunction(() => document.querySelector('.xsai-orb')?.getAttribu
 assert.ok(await dialog.locator('.xsai-voice-zone .xsai-orb.listening').isVisible());
 assert.equal(await page.evaluate(() => window.getSelection()?.toString() ?? ''), '',
   'Holding the mic must not select page text');
+const noOverlap = await page.evaluate(() => {
+  const waves = document.querySelector('.xsai-hold-waves')?.getBoundingClientRect();
+  const caption = document.querySelector('.xsai-voice-caption')?.getBoundingClientRect();
+  return !!waves && !!caption && waves.right + 3 <= caption.left;
+});
+assert.ok(noOverlap, 'Recording animation must not overlap the release label');
 await page.evaluate(() => window.__floatEmit('How many active members?'));
 await page.waitForFunction(() => document.querySelector('input[aria-label="Message XS AI"]')?.value === 'How many active members?');
 assert.equal(messages.length, 0, 'Voice command must not send before finger release');

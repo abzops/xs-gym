@@ -184,7 +184,8 @@
 }
 .xsai-voice-caption {
   font-size: .77rem; font-weight: 700; letter-spacing: -.01em;
-  color: var(--graphite); min-width: 96px; pointer-events: none;
+  color: var(--graphite); min-width: 96px; margin-left: 24px; pointer-events: none;
+  /* Reserve space for the recording waveform even while it is hidden. */
 }
 .xsai-composer {
   display: flex; align-items: center; gap: 8px;
