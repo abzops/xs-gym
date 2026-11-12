@@ -248,6 +248,10 @@
   .overlay:has(.xsai) .sheet { max-width: 640px; height: min(88dvh, 825px); padding: 20px 26px 22px; }
   .xsai-log { padding-inline: 9px; }
   .xsai-agent-name small { max-width: 230px; }
+  /* Keep the complete agent orb visible within the desktop dialog. */
+  .xsai-welcome-visual { width: 136px; height: 136px; }
+  .xsai-shortcuts { margin-top: 18px; }
+  .xsai-welcome h3 { margin-top: 7px; }
 }
 @media (max-width: 390px) {
   .xsai-welcome-visual { width: 127px; height: 127px; margin-bottom: 2px; }
