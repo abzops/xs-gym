@@ -11,12 +11,13 @@ import { spokenRepliesEnabled } from './preferences';
 import { sttInputMode } from './sttPreferences';
 import { listenSarvam } from './sarvamRealtime';
 import { captureMalayalamBackup, transcribeFailedNative, type MalayalamClip } from './malayalamBackup';
+import { sarvamReadiness } from './sarvamStatus';
 import './ai.css';
 
 type Action = { tool: string; ok: boolean; summary: string; undo?: { rpc: string; args: Record<string, unknown> }; undone?: boolean };
 type Turn = { role: 'user' | 'assistant'; content: string; actions?: Action[]; tone?: 'bad'; id?: string; voicePending?: boolean };
 type State = 'idle' | 'thinking';
-type MicDialog = 'denied' | 'unavailable' | 'service' | 'unsupported' | null;
+type MicDialog = 'denied' | 'unavailable' | 'service' | 'unsupported' | 'enable-ml' | 'setup-ml' | null;
 
 type HoldSession = {
   pointerId: number | null;
@@ -218,8 +219,25 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
         setTimeout(() => {
           if (closingRef.current || holdRef.current) return;
           setSpeechIssue({ code: error.browserCode, locale: error.locale });
-          setMicDialog(error.reason === 'denied' || error.reason === 'audio' ? 'denied'
-            : error.reason === 'unsupported' ? 'unsupported' : 'service');
+          // Tell the user what actually failed. Browser-recognition failure
+          // is NOT proof that the microphone could not hear them.
+          if (error.reason === 'denied' || error.reason === 'audio') {
+            setMicDialog('denied');
+            return;
+          }
+          if (lang === 'ml') {
+            // An explicit per-device opt-in is required before uploading audio.
+            if (sttInputMode() !== 'sarvam') {
+              setMicDialog('enable-ml');
+              return;
+            }
+            void sarvamReadiness().then(({ ready }) => {
+              if (closingRef.current || holdRef.current) return;
+              setMicDialog(ready ? 'service' : 'setup-ml');
+            });
+            return;
+          }
+          setMicDialog(error.reason === 'unsupported' ? 'unsupported' : 'service');
         }, 80);
       } else setMicDialog('service');
       return;
@@ -463,7 +481,7 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
     if (pendingUnavailable.current) {
       pendingUnavailable.current = false;
       setTimeout(() => {
-        if (!closingRef.current) setMicDialog('unavailable');
+        if (!closingRef.current) setMicDialog(lang === 'ml' ? 'enable-ml' : 'unavailable');
       }, 80);
       return;
     }
@@ -715,9 +733,18 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
             <div className="xsai-inline-issue" role="status">
               <span>
                 {micDialog === 'denied' ? 'Microphone access needed' :
-                  micDialog === 'unsupported' ? 'Voice not supported here' : 'Could not hear that'}
+                  micDialog === 'enable-ml' ? 'Enable Malayalam voice fallback' :
+                  micDialog === 'setup-ml' ? 'Malayalam speech needs server setup' :
+                  micDialog === 'unsupported' ? 'Voice not supported here' : 'Could not transcribe audio'}
               </span>
-              <button type="button" onClick={() => { setMicDialog(null); inputRef.current?.focus(); }}>Type</button>
+              <button type="button" onClick={() => {
+                const settings = micDialog === 'enable-ml' || micDialog === 'setup-ml';
+                setMicDialog(null);
+                if (settings) {
+                  onClose();
+                  navigate(`/g/${gym.slug}/settings`);
+                } else inputRef.current?.focus();
+              }}>{micDialog === 'enable-ml' || micDialog === 'setup-ml' ? 'Settings' : 'Type'}</button>
               <button type="button" aria-label="Dismiss voice message" onClick={() => setMicDialog(null)}><X size={14} /></button>
             </div>
           )}
