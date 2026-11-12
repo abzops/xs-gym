@@ -1,7 +1,7 @@
 name: Sarvam voice POC (isolated, no deployment)
 on:
   push:
-    branches: ['feature/sarvam-realtime-malayalam-poc-20261112']
+    branches: ['feature/sarvam-realtime-malayalam-poc-20261112', 'fix/malayalam-real-audio-provider-20261113']
   workflow_dispatch:
 env:
   VITE_SUPABASE_URL: https://sarvamvoicepoc.supabase.co
@@ -41,6 +41,7 @@ jobs:
           curl -fsS http://127.0.0.1:4173/xs-gym/ >/dev/null
           node tests/ui/live-voice.mjs "$(pwd)/node_modules/playwright/index.js" "http://127.0.0.1:4173/xs-gym/"
           node tests/ui/sarvam-voice.mjs "$(pwd)/node_modules/playwright/index.js" "http://127.0.0.1:4173/xs-gym/"
+          node tests/ui/malayalam-real-fallback.mjs "$(pwd)/node_modules/playwright/index.js" "http://127.0.0.1:4173/xs-gym/"
       - name: Ensure no provider secret appears in the app build
         run: |
           if grep -rEn "SARVAM_API_KEY|api[.]sarvam[.]ai|api-subscription-key" dist/; then
