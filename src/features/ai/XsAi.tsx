@@ -25,7 +25,9 @@ type HoldSession = {
   cancelled: boolean;
   settled: boolean;
   cloud: boolean;
+  language: Lang;
   route: VoiceRoute;
+  complete: boolean;
   backup: ReturnType<typeof captureMalayalamBackup> | null;
   backupClip: Promise<MalayalamClip | null> | null;
   nativeFailed: boolean;
@@ -77,6 +79,7 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
 
   const holdRef = useRef<HoldSession | null>(null);
   const pendingVoice = useRef(new Set<HoldSession>());
+  const releasedVoice = useRef<HoldSession[]>([]);
   const activePointer = useRef<number | null>(null);
   const keyboardHeld = useRef(false);
   const pendingUnavailable = useRef(false);
@@ -113,6 +116,7 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
       active.backup?.abort();
     }
     pendingVoice.current.clear();
+    releasedVoice.current = [];
     if (session && !session.cancelled) {
       session.cancelled = true;
       session.abort();
@@ -128,10 +132,10 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
   // appears in the chat, and the microphone never waits for speech playback.
   // Serialize money-changing commands: holding again while the first request
   // is pending queues the new text without overlapping server actions.
-  function ask(content: string, fromVoice = false, pendingId?: string, cloudVoice = false) {
+  function ask(content: string, fromVoice = false, pendingId?: string, cloudVoice = false, language: Lang = lang) {
     const q = content.trim();
     if (!q || closingRef.current) return;
-    const command = { content: q, language: lang, id: crypto.randomUUID(), cloudVoice };
+    const command = { content: q, language, id: crypto.randomUUID(), cloudVoice };
     commandQueue.current.push(command);
     // Messenger behavior: replace the provisional outgoing voice bubble in-place
     // instead of popping it off and appending a second copy.
@@ -206,64 +210,64 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
     }
   }
 
-  // iPhone and Android use pointerdown/up, not click-to-toggle. Browser speech
-  // starts first. Consent-enabled Sarvam retries after a browser failure.
-  function finishTranscript(session: HoldSession) {
-    if (holdRef.current !== session || session.cancelled || !session.released) return;
-    if (session.watchdog) clearTimeout(session.watchdog);
-    holdRef.current = null;
-    listeningBusy.current = false;
-    setHolding(false);
-    if (closingRef.current) return;
-    if (session.failed) {
+  // A new hold can start while the preceding phrase is being transcribed.
+  // Dispatch in release order so gym commands stay serialized and intuitive.
+  function drainVoiceQueue() {
+    while (releasedVoice.current.length && releasedVoice.current[0].complete) {
+      const session = releasedVoice.current.shift()!;
+      if (!pendingVoice.current.has(session)) continue;
+      pendingVoice.current.delete(session);
+      if (session.watchdog) clearTimeout(session.watchdog);
       session.backup?.abort();
-      removeVoicePending(session.pendingId);
-      // Only an actual recognition failure shows a short inline message.
-      // Normal releases never display banners or spoken status.
-      const error = session.failed;
-      if (error instanceof SpeechListenError) {
-        // iOS synthesizes a click after pointerup. Mounting a modal inside that
-        // event can put its retry/dismiss control under the releasing finger.
-        // Open after the gesture finishes, so it cannot be clicked accidentally.
-        setTimeout(() => {
-          if (closingRef.current || holdRef.current) return;
-          setSpeechIssue({ code: error.browserCode, locale: error.locale });
-          // Tell the user what actually failed. Browser-recognition failure
-          // is NOT proof that the microphone could not hear them.
-          if (error.reason === 'denied' || error.reason === 'audio') {
-            setMicDialog('denied');
-            return;
-          }
-          if (lang === 'ml') {
-            // An explicit per-device opt-in is required before uploading audio.
-            if (sttInputMode() !== 'sarvam') {
-              setMicDialog('enable-ml');
+      if (closingRef.current || session.cancelled) continue;
+      if (session.failed) {
+        removeVoicePending(session.pendingId);
+        const error = session.failed;
+        if (error instanceof SpeechListenError) {
+          setTimeout(() => {
+            if (closingRef.current || holdRef.current) return;
+            setSpeechIssue({ code: error.browserCode, locale: error.locale });
+            if (error.reason === 'denied' || error.reason === 'audio') {
+              setMicDialog('denied');
               return;
             }
-            void sarvamReadiness().then(({ ready }) => {
-              if (closingRef.current || holdRef.current) return;
-              setMicDialog(ready ? 'service' : 'setup-ml');
-            });
-            return;
-          }
-          setMicDialog(error.reason === 'unsupported' ? 'unsupported' : 'service');
-        }, 80);
-      } else setMicDialog('service');
-      return;
+            if (session.language === 'ml') {
+              void sarvamReadiness().then(({ ready }) => {
+                if (!closingRef.current && !holdRef.current)
+                  setMicDialog(ready ? 'service' : 'setup-ml');
+              });
+              return;
+            }
+            setMicDialog(error.reason === 'unsupported' ? 'unsupported' : 'service');
+          }, 80);
+        } else setMicDialog('service');
+        continue;
+      }
+      const heard = (session.cloud ? session.final : session.final || session.latest).trim();
+      if (heard) ask(heard, true, session.pendingId ?? undefined, session.cloud, session.language);
+      else removeVoicePending(session.pendingId);
     }
-    // Cloud transcripts require an actual finalized result; browser interim text
-    // may be used on Safari when onend is dropped after finger-up.
-    const heard = (session.cloud ? session.final : session.final || session.latest).trim();
-    session.backup?.abort();
-    if (heard) ask(heard, true, session.pendingId ?? undefined, session.cloud);
-    else removeVoicePending(session.pendingId);
+    if (!closingRef.current)
+      setTranscribing([...pendingVoice.current].some((session) => session.released && !session.complete));
+  }
+
+  function finishTranscript(session: HoldSession) {
+    if (!pendingVoice.current.has(session) || session.cancelled || !session.released || session.complete) return;
+    session.complete = true;
+    if (session.watchdog) clearTimeout(session.watchdog);
+    if (holdRef.current === session) {
+      holdRef.current = null;
+      listeningBusy.current = false;
+      setHolding(false);
+    }
+    drainVoiceQueue();
   }
 
   // The captured clip is local until native recognition actually fails.
   // Uploading only after finger-up preserves the beginning of the sentence.
   function recoverMalayalam(session: HoldSession) {
     if (!session.released || session.cancelled || session.uploading ||
-      holdRef.current !== session || !session.backup) return;
+      !pendingVoice.current.has(session) || !session.backup) return;
     session.uploading = true;
     session.cloud = true; // server enforces READ-ONLY actions for cloud speech
     session.settled = false;
