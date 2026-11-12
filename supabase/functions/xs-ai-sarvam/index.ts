@@ -54,7 +54,24 @@ const corsHeaders = (origin: string) => ({
 });
 const json = (status: number, value: unknown, origin: string) =>
   new Response(JSON.stringify(value), { status, headers: corsHeaders(origin) });
-const relayReady = () => env('SARVAM_STT_ENABLED') === 'true' && !!env('SARVAM_API_KEY');
+// A legacy secret was entered under its dashboard display label rather than
+// the environment variable name the relay expected. Read the exact legacy
+// names securely on the server, without ever echoing the value to the client.
+// Do not silently re-enable a relay that the owner explicitly disabled.
+const vendorKey = (): string => {
+  for (const name of ['SARVAM_API_KEY', 'SARVAM_AI', 'Sarvam AI']) {
+    try {
+      const value = env(name);
+      if (value) return value;
+    } catch { /* unsupported legacy variable name */ }
+  }
+  return '';
+};
+const relayEnabled = (): boolean => {
+  const flag = env('SARVAM_STT_ENABLED');
+  return flag === 'true' || (flag === '' && !!vendorKey());
+};
+const relayReady = () => relayEnabled() && !!vendorKey();
 
 /** Authenticated small-clip fallback. Audio remains on device if native
  * browser recognition succeeded; only failed sessions reach this endpoint.
@@ -138,14 +155,14 @@ Deno.serve(async (request: Request) => {
     // signal distinguishes deployed-but-disabled from working speech service.
     return json(200, {
       provider: 'sarvam', ready: relayReady(),
-      enabled: env('SARVAM_STT_ENABLED') === 'true',
-      key_configured: !!env('SARVAM_API_KEY'),
+      enabled: relayEnabled(),
+      key_configured: !!vendorKey(),
       language: 'ml-IN', model: SarvamModel, max_seconds: 30,
     }, origin);
   }
   if (!relayReady()) return json(503, { code: 'speech_not_configured' }, origin);
-  const vendorKey = env('SARVAM_API_KEY');
-  if (request.method === 'POST') return transcribeRecording(request, origin, vendorKey);
+  const key = vendorKey();
+  if (request.method === 'POST') return transcribeRecording(request, origin, key);
   if (request.headers.get('upgrade')?.toLowerCase() !== 'websocket')
     return json(426, { code: 'websocket_required' }, origin);
   const offered = (request.headers.get('sec-websocket-protocol') ?? '')
@@ -201,7 +218,7 @@ Deno.serve(async (request: Request) => {
       url.searchParams.set('prompt', 'Malayalam speech for XS Gym. Membership, renewals, dues, collection, UPI, cash, അംഗത്വം, കുടിശ്ശിക, കളക്ഷൻ.');
       // Outbound custom headers are supported by Deno's server-side WebSocket API.
       upstream = new WebSocket(url.toString(), {
-        headers: { 'api-subscription-key': vendorKey },
+        headers: { 'api-subscription-key': key },
       });
       upstream.onopen = () => {
         ready = true;
