@@ -82,11 +82,11 @@ export const canListen = () => !!recognitionCtor();
 export const canSpeak = () => typeof window !== 'undefined' && 'speechSynthesis' in window;
 
 /** Listens once; calls onText with live text, resolves with the final text ('' if nothing heard). */
-export function listen(lang: Lang, onText: (text: string) => void, shortMalayalam = false): { done: Promise<string>; stop: () => void } {
+export function listen(lang: Lang, onText: (text: string) => void, shortMalayalam = false): { done: Promise<string>; stop: () => void; abort: () => void } {
   const Ctor = recognitionCtor();
   const locale = speechLocale(lang, shortMalayalam);
   if (!Ctor) return { done: Promise.reject(new SpeechListenError('unsupported',
-    'This browser does not expose speech recognition.', 'api-unavailable', locale)), stop: () => {} };
+    'This browser does not expose speech recognition.', 'api-unavailable', locale)), stop: () => {}, abort: () => {} };
   const r = new Ctor();
   r.lang = locale; r.interimResults = true; r.continuous = false; r.maxAlternatives = 1;
   let text = '';
@@ -117,7 +117,14 @@ export function listen(lang: Lang, onText: (text: string) => void, shortMalayala
       reject(new SpeechListenError('unknown', 'The browser could not start speech recognition.', code, locale));
     }
   });
-  return { done, stop: () => r.stop() };
+  // stop() requests the final recognized text, while abort() deliberately
+  // discards input on a canceled touch or a closed sheet. The UI alone
+  // decides when to send. Browser support for Malayalam is not guaranteed.
+  return {
+    done,
+    stop: () => { try { r.stop(); } catch { /* already ended */ } },
+    abort: () => { try { r.abort(); } catch { /* already ended */ } },
+  };
 }
 
 let voices: SpeechSynthesisVoice[] = [];
