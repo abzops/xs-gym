@@ -387,94 +387,70 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
             cancelHold(); setLang(value); setMicDialog(null);
             setSpeechIssue(null); setAlternateMalayalam(false);
           }} options={[{ value: 'en', label: 'English' }, { value: 'ml', label: 'മലയാളം' }]} />
-          <button type="button" className={`btn small ghost ${mute ? '' : 'on'}`} onClick={() => { setMute((m) => !m); stopSpeaking(); }} aria-pressed={!mute}>
-            {mute ? 'Voice off' : 'Voice on'}
-          </button>
         </div>
 
         <div className="xsai-log" ref={scroller} aria-live="polite">
-          {turns.length === 0 && (
-            <div className="xsai-empty">
-              <p>{lang === 'ml' ? 'ജിമ്മിനെക്കുറിച്ച് എന്തും ചോദിക്കൂ, അല്ലെങ്കിൽ ചെയ്യാൻ പറയൂ.' : 'Ask anything about your gym, or tell me what to do.'}</p>
-              <div className="xsai-hints">
-                {HINTS[lang].map((h) => <button type="button" key={h} className="btn small" onClick={() => ask(h)}>{h}</button>)}
-              </div>
-            </div>
-          )}
           {turns.map((t, ti) => (
             <div key={ti} className={`xsai-turn ${t.role} ${t.tone ?? ''}`}>
               {t.actions?.map((a, i) => (
                 <div key={i} className={`xsai-action ${a.ok ? (a.undone ? 'undone' : 'ok') : 'bad'}`}>
                   <span className="xsai-action-ico" aria-hidden>{a.ok ? <Check size={14} strokeWidth={3} /> : <X size={14} strokeWidth={3} />}</span>
                   <span className="xsai-action-text">{a.undone ? <s>{a.summary}</s> : a.summary}</span>
-                  {a.ok && a.undo && !a.undone && <button type="button" className="btn small ghost" onClick={() => undo(ti, i)}><RotateCcw size={14} /> Undo</button>}
+                  {a.ok && a.undo && !a.undone && (
+                    <button type="button" className="btn small ghost" onClick={() => undo(ti, i)}>
+                      <RotateCcw size={14} /> Undo
+                    </button>
+                  )}
                 </div>
               ))}
-              {t.content && <p className="xsai-bubble" lang={t.role === 'assistant' ? (lang === 'ml' ? 'ml' : 'en') : undefined}>{t.content}</p>}
+              {t.content && <p className="xsai-bubble">{t.content}</p>}
             </div>
           ))}
-          {state === 'thinking' && <div className="xsai-turn assistant"><p className="xsai-bubble xsai-dots" aria-label="Thinking"><i /><i /><i /></p></div>}
+          {state === 'thinking' && (
+            <div className="xsai-turn assistant">
+              <p className="xsai-bubble xsai-dots" aria-label="Waiting for reply"><i /><i /><i /></p>
+            </div>
+          )}
         </div>
 
         <div className="xsai-controls">
-          <button type="button" className={`xsai-orb ${state}`}
+          <button type="button" className={`xsai-orb ${holding ? 'listening' : ''}`}
             onPointerDown={onPressDown} onPointerUp={onPressUp} onPointerCancel={onPressCancel}
             onLostPointerCapture={onPressCancel}
             onKeyDown={onHoldKeyDown} onKeyUp={onHoldKeyUp}
             onContextMenu={(event) => event.preventDefault()}
-            onClick={onAccessibleClick} disabled={state === 'thinking'}
-            aria-pressed={state === 'listening'}
-            aria-label={state === 'listening' ? 'Release to send' : 'Hold to talk to XS AI'}>
+            onClick={onAccessibleClick}
+            aria-pressed={holding}
+            aria-label={holding ? 'Release to send' : 'Hold to talk to XS AI'}>
             <span className="xsai-orb-glow" aria-hidden />
-            {state === 'listening' ? <Square size={22} fill="currentColor" /> : <Mic size={26} />}
+            <Mic size={26} />
           </button>
-          <p className="xsai-status" aria-live="polite">{status}{lang === 'ml' && !mute && !voiceFor('ml') ? ' · replies shown as text on this device' : ''}</p>
-          <form className="xsai-type" onSubmit={(e) => { e.preventDefault(); void ask(text); }}>
-            <input ref={inputRef} className="input" lang={lang === 'ml' ? 'ml-IN' : 'en-IN'} value={text} onChange={(e) => setText(e.target.value)} placeholder={lang === 'ml' ? 'ടൈപ്പ് ചെയ്യൂ…' : 'Type a message…'} aria-label="Message XS AI" enterKeyHint="send" />
-            <button className="btn primary icon-btn" disabled={!text.trim() || state !== 'idle'} aria-label="Send"><ArrowUp size={20} /></button>
+          <span className="sr-only" role="status">{holding ? 'Listening' : ''}</span>
+          {micDialog && (
+            <div className="xsai-inline-issue" role="status">
+              <span title={speechIssue?.code ?? ''}>
+                {micDialog === 'denied' ? 'Microphone blocked' :
+                  micDialog === 'unsupported' ? 'Language unavailable' : 'Voice unavailable'}
+              </span>
+              {lang === 'ml' && !alternateMalayalam && speechIssue?.locale === 'ml-IN' && micDialog !== 'denied' && (
+                <button type="button" onClick={() => {
+                  setAlternateMalayalam(true); setMicDialog(null); setSpeechIssue(null);
+                }}>Try ml</button>
+              )}
+              <button type="button" onClick={() => { setMicDialog(null); inputRef.current?.focus(); }}>Type</button>
+              <button type="button" aria-label="Dismiss voice message" onClick={() => setMicDialog(null)}><X size={14} /></button>
+            </div>
+          )}
+          <form className="xsai-type" onSubmit={(event) => { event.preventDefault(); ask(text); }}>
+            <input ref={inputRef} className="input" lang={lang === 'ml' ? 'ml-IN' : 'en-IN'}
+              value={text} onChange={(event) => setText(event.target.value)}
+              placeholder={lang === 'ml' ? 'ചോദിക്കൂ…' : 'Ask XS AI…'}
+              aria-label="Message XS AI" enterKeyHint="send" />
+            <button className="btn primary icon-btn" disabled={!text.trim() || holding} aria-label="Send">
+              <ArrowUp size={20} />
+            </button>
           </form>
         </div>
-
-        {micDialog && (
-          <div className="xsai-mic-backdrop">
-            <section className="xsai-mic-dialog" role="dialog" aria-modal="true" aria-labelledby="xsai-mic-heading" aria-describedby="xsai-mic-desc">
-              <span className="xsai-mic-icon" aria-hidden><Mic size={27} strokeWidth={1.8} /></span>
-              <h3 id="xsai-mic-heading">{MIC_COPY[lang][micDialog].title}</h3>
-              <p id="xsai-mic-desc">{MIC_COPY[lang][micDialog].detail}</p>
-              {speechIssue && (
-                <p className="muted" role="status">
-                  Browser error: <code>{speechIssue.code}</code> · language <code>{speechIssue.locale}</code>
-                </p>
-              )}
-              {lang === 'ml' && <p className="muted">
-                No XS Gym recording, AI model, or audio upload is used. Safari and installed iPhone apps may differ.
-                Malayalam browser recognition is not guaranteed.
-              </p>}
-              <div className="xsai-mic-actions">
-                {micDialog !== 'unavailable' && (
-                  <button ref={micActionRef} type="button" className="btn primary"
-                    onClick={() => { setMicDialog(null); setSpeechIssue(null); }}>
-                    
-                    {MIC_COPY[lang][micDialog].button}
-                  </button>
-                )}
-                {lang === 'ml' && speechIssue?.locale === 'ml-IN' && micDialog !== 'denied' && (
-                  <button type="button" className="btn ghost"
-                    onClick={() => { setAlternateMalayalam(true); setMicDialog(null); setSpeechIssue(null); }}>
-                    
-                    മലയാളം (ml) കോഡ് പരീക്ഷിക്കുക
-                  </button>
-                )}
-                <button ref={micDialog === 'unavailable' ? micActionRef : undefined}
-                  type="button" className="btn ghost" onClick={useKeyboard}>
-                  <Keyboard size={17} /> {lang === 'ml' ? 'കീബോർഡ് ഉപയോഗിക്കുക' : 'Use keyboard instead'}
-                </button>
-               </div>
-              <button type="button" className="xsai-mic-dismiss"
-                aria-label={lang === 'ml' ? 'മൈക്രോഫോൺ സഹായം അടയ്ക്കുക' : 'Dismiss microphone help'} onClick={() => setMicDialog(null)}><X size={19}/></button>
-            </section>
-          </div>
-        )}
       </div>
     </Sheet>
   );
