@@ -305,6 +305,7 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
     session.released = true;
     holdRef.current = null;
     listeningBusy.current = false;
+    pendingVoice.current.delete(session);
     setHolding(false);
     if (session.watchdog) clearTimeout(session.watchdog);
     session.abort();
@@ -324,6 +325,12 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
     // Stop local capture immediately. Its bytes are uploaded ONLY if browser
     // Malayalam fails, after the user already released the button.
     if (session.backup) session.backupClip = session.backup.stop();
+    // Another hold can begin as soon as this finger lifts. Transcription
+    // completes asynchronously, while releasedVoice preserves message order.
+    releasedVoice.current.push(session);
+    holdRef.current = null;
+    listeningBusy.current = false;
+    setTranscribing(true);
     // Place the message in the conversation immediately. The actual text
     // replaces this quiet placeholder once speech recognition finalizes.
     const pendingId = crypto.randomUUID();
@@ -334,7 +341,8 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
     // Do not call stop() again when the browser has already ended/failed;
     // WebKit iOS 27 has a reported repeated-recognition regression.
     if (!session.settled) session.stop();
-    if (session.nativeFailed && session.backup) recoverMalayalam(session);
+    if ((session.route === 'recording' || session.nativeFailed) && session.backup)
+      recoverMalayalam(session);
     else if (session.settled) finishTranscript(session);
     else {
       session.watchdog = setTimeout(() => {
@@ -354,13 +362,14 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
   function beginHold(): boolean {
     if (closingRef.current || holdRef.current || listeningBusy.current) return false;
     setMicDialog(null);
-    // Sarvam is never first choice unless this session has already seen
-    // a browser Malayalam failure (or there is no browser speech API).
-    const canFallback = lang === 'ml' && sttInputMode() === 'sarvam';
-    const useSarvam = canFallback && (unavailableMalayalam.current || !canListen());
-    if (!useSarvam && !canListen()) {
-      // Delay the error overlay until pointerup. If it appears while a finger
-      // is down, releasing can click an action in the newly mounted dialog.
+    // iOS Safari/WebKit can mute a second getUserMedia stream during Web Speech.
+    // Route iOS Malayalam through ONE recorder from press to release; elsewhere
+    // browser recognition runs first with automatic Sarvam fallback.
+    const native = canListen();
+    const recorder = typeof MediaRecorder !== 'undefined' &&
+      typeof navigator.mediaDevices?.getUserMedia === 'function';
+    const route = chooseVoiceRoute(lang, { native, recorder, ios: iosVoiceDevice() });
+    if (route === 'unavailable') {
       pendingUnavailable.current = true;
       setSpeechIssue({ code: 'api-unavailable', locale: lang === 'ml' ? 'ml-IN' : 'en-IN' });
       return true;
@@ -370,20 +379,23 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
     setSpeechIssue(null);
     setText('');
     setHolding(true);
+    setKeyboardOpen(false);
     const session: HoldSession = {
       pointerId: null, released: false, cancelled: false, settled: false,
-      cloud: useSarvam,
-      backup: !useSarvam && canFallback ? captureMalayalamBackup() : null,
+      cloud: route === 'recording' || route === 'realtime',
+      language: lang, route, complete: false,
+      backup: lang === 'ml' && route !== 'realtime' ? captureMalayalamBackup() : null,
       backupClip: null, nativeFailed: false, uploading: false,
       pendingId: null, latest: '', final: '', failed: null,
       stop: () => {}, abort: () => {}, watchdog: null,
     };
+    pendingVoice.current.add(session);
     holdRef.current = session;
     try {
       const onPartial = (partial: string) => {
-        if (holdRef.current !== session || session.cancelled) return;
+        if (!pendingVoice.current.has(session) || session.cancelled) return;
         session.latest = partial;
-        if (!closingRef.current && !session.released) setText(partial);
+        if (holdRef.current === session && !closingRef.current && !session.released) setText(partial);
       };
       // Try both native Malayalam locale tags before invoking a previously
       // consented cloud provider; Safari support varies by browser version.
