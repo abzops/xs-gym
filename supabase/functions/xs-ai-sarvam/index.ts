@@ -97,7 +97,10 @@ async function transcribeRecording(req: Request, origin: string, vendorKey: stri
   } catch { return json(400, { code: 'invalid_audio' }, origin); }
 
   const form = new FormData();
-  form.append('file', new Blob([bytes], { type: mime }), 'xs-ai-voice.' + extension);
+  // Deno BlobPart requires an ArrayBuffer (not Uint8Array<ArrayBufferLike>).
+  const safeBuffer = new ArrayBuffer(bytes.length);
+  new Uint8Array(safeBuffer).set(bytes);
+  form.append('file', new Blob([safeBuffer], { type: mime }), 'xs-ai-voice.' + extension);
   form.append('model', SarvamModel);
   form.append('language_code', 'ml-IN');
   form.append('mode', 'transcribe'); // Malayalam script, NOT transliterated Roman text
