@@ -1,7 +1,7 @@
 name: Sarvam voice POC (isolated, no deployment)
 on:
   push:
-    branches: ['feature/sarvam-realtime-malayalam-poc-20261112', 'fix/malayalam-real-audio-provider-20261113']
+    branches: ['feature/sarvam-realtime-malayalam-poc-20261112', 'fix/malayalam-real-audio-provider-20261113', 'fix/xsai-malayalam-error-recovery-20261113']
   workflow_dispatch:
 env:
   VITE_SUPABASE_URL: https://sarvamvoicepoc.supabase.co
