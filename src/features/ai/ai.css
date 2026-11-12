@@ -1,86 +1,265 @@
-/* XS AI: text-first, minimal chat. The microphone reflects only a held
-   gesture; no "speaking" or "thinking" animation after finger release. */
-.overlay:has(.xsai) .sheet { display: flex; flex-direction: column; height: min(86dvh, 760px); }
-.xsai { display: flex; flex-direction: column; gap: 12px; flex: 1; min-height: 0; }
-.xsai-bar { display: flex; align-items: center; justify-content: center; }
+/* XS AI — an elevated, text-first agent workspace. The microphone only
+   signals an actively held gesture; response speech remains opt-in in Settings.
+   All surfaces follow XS Gym's Carbon / Porcelain design system. */
 
-.xsai-log {
-  flex: 1; min-height: 120px; overflow-y: auto; overscroll-behavior: contain;
-  display: grid; align-content: start; gap: 10px; padding: 4px 2px 8px;
-  scrollbar-width: none;
+.overlay:has(.xsai) .sheet {
+  display: flex; flex-direction: column; height: min(92dvh, 900px); overflow: hidden;
+  background: var(--paper); padding: 8px 16px calc(16px + env(safe-area-inset-bottom));
 }
-.xsai-log::-webkit-scrollbar { display: none; }
-.xsai-turn { display: grid; gap: 6px; justify-items: start; }
-.xsai-turn.user { justify-items: end; }
+.overlay:has(.xsai) .sheet-grab { flex: none; }
+.overlay:has(.xsai) .sheet-head {
+  margin-bottom: 12px; padding: 0 4px 12px; border-bottom: 1px solid var(--hair);
+}
+.overlay:has(.xsai) .sheet-head h2 { font-size: 1.075rem; letter-spacing: -.035em; }
+
+.xsai { display: flex; flex-direction: column; gap: 0; flex: 1; min-height: 0; color: var(--ink); }
+.xsai-agent-bar {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  border-radius: 18px; padding: 11px 12px;
+  background: linear-gradient(115deg,
+    color-mix(in srgb, var(--paper-2) 78%, var(--paper)),
+    color-mix(in srgb, var(--paper) 90%, var(--ink) 2%));
+  border: 1px solid color-mix(in srgb, var(--hair) 74%, transparent);
+}
+.xsai-agent-identity { display: flex; align-items: center; gap: 11px; min-width: 0; }
+.xsai-agent-mark {
+  width: 42px; height: 42px; border-radius: 14px; flex: none; display: grid;
+  place-items: center; position: relative; isolation: isolate; overflow: hidden;
+  background: #1B1B20; color: #fff;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 17%), 0 3px 10px rgb(0 0 0 / 13%);
+}
+.xsai-agent-mark::after {
+  content: ""; position: absolute; inset: -18px; z-index: -1; opacity: .32;
+  background: conic-gradient(from 30deg, #8d81ff, #6fd8ff, #dcb0ff, #ffe0bd, #8d81ff);
+  filter: blur(15px); animation: xsai-ambient 14s linear infinite;
+}
+.xsai-agent-name { display: grid; gap: 2px; min-width: 0; line-height: 1.2; }
+.xsai-agent-name strong { font-size: .89rem; font-weight: 700; letter-spacing: -.025em; }
+.xsai-agent-name small { color: var(--graphite); font-size: .71rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 185px; }
+.xsai-head-actions { display: flex; align-items: center; gap: 8px; flex: none; }
+.xsai-state-tag {
+  display: inline-flex; align-items: center; gap: 6px; padding: 7px 9px;
+  border: 1px solid var(--hair); border-radius: 999px; background: var(--paper);
+  color: var(--graphite); font-size: .69rem; font-weight: 650; white-space: nowrap;
+}
+.xsai-state-tag i { width: 6px; height: 6px; border-radius: 50%; background: var(--ok-vivid); }
+.xsai-state-tag.listening i { background: #7d6cf6; animation: xsai-pulse 1000ms ease-in-out infinite; }
+.xsai-state-tag.working i { background: var(--graphite); animation: xsai-pulse 1300ms ease-in-out infinite; }
+.xsai-new {
+  width: 36px; height: 36px; display: grid; place-items: center; flex: none;
+  border: 1px solid var(--hair); border-radius: 11px;
+  background: var(--paper); color: var(--ink); cursor: pointer;
+  transition: transform 150ms var(--ease-out), background 150ms ease;
+}
+.xsai-new:disabled { opacity: .4; cursor: not-allowed; }
+.xsai-new:active:not(:disabled) { transform: scale(.92); }
+@media (hover: hover) { .xsai-new:hover:not(:disabled) { background: var(--paper-2); } }
+
+/* The conversation is the center of the workspace. */
+.xsai-log {
+  flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain;
+  display: flex; flex-direction: column; gap: 19px; padding: 24px 5px 22px;
+  scrollbar-width: thin; scrollbar-color: var(--hair-strong) transparent;
+}
+.xsai-log::-webkit-scrollbar { width: 4px; }
+.xsai-log::-webkit-scrollbar-thumb { background: var(--hair-strong); border-radius: 999px; }
+
+/* A quiet, distinctive first impression. Quick prompts are real read-only
+   AI questions, not fake buttons or predetermined data. */
+.xsai-welcome {
+  margin: auto 0; display: flex; flex-direction: column; align-items: center;
+  text-align: center; padding: 8px 0 4px; min-height: max-content;
+}
+.xsai-welcome-visual {
+  position: relative; display: grid; place-items: center;
+  width: 164px; height: 164px; margin-bottom: 6px;
+  background: radial-gradient(circle at center,
+    color-mix(in srgb, #8c80fa 8%, var(--paper)) 0%, transparent 68%);
+}
+.xsai-orbit { position: absolute; border-radius: 50%; pointer-events: none; }
+.xsai-orbit-outer {
+  inset: 11px; border: 1px solid color-mix(in srgb, var(--ink) 12%, transparent);
+  border-left-color: color-mix(in srgb, #8d81ff 50%, transparent);
+  animation: xsai-ambient 22s linear infinite;
+}
+.xsai-orbit-inner {
+  inset: 31px; border: 1px dashed color-mix(in srgb, var(--ink) 12%, transparent);
+  animation: xsai-ambient 30s linear infinite reverse;
+}
+.xsai-welcome-mark {
+  position: relative; display: grid; place-items: center;
+  width: 76px; height: 76px; border-radius: 26px;
+  color: #F8F8FA;
+  background: radial-gradient(circle at 30% 22%, #4A485C, #202025 68%, #111115);
+  box-shadow: inset 0 1px 1px rgb(255 255 255 / 25%), 0 12px 28px rgb(0 0 0 / 20%),
+    0 0 0 5px color-mix(in srgb, var(--ink) 3%, transparent);
+}
+.xsai-welcome-mark::after {
+  content: ""; position: absolute; inset: -11px; border-radius: 35px;
+  border: 1px solid color-mix(in srgb, var(--ink) 9%, transparent);
+}
+.xsai-kicker { color: var(--graphite); font-size: .66rem; font-weight: 800; letter-spacing: .18em; }
+.xsai-welcome h3 {
+  font-size: clamp(1.35rem, 4.6vw, 1.85rem); font-weight: 750;
+  line-height: 1.22; letter-spacing: -.055em; margin: 10px 0 8px;
+  text-wrap: balance;
+}
+.xsai-welcome-sub { color: var(--graphite); font-size: .81rem; line-height: 1.5; }
+.xsai-shortcuts { display: grid; grid-template-columns: 1fr; gap: 8px; width: min(100%, 450px); margin-top: 30px; }
+.xsai-shortcut {
+  border: 1px solid var(--hair); border-radius: 16px; background: var(--paper);
+  box-shadow: var(--elev-1);
+  display: flex; align-items: center; gap: 11px; min-height: 55px;
+  text-align: left; padding: 8px 12px; color: var(--ink); font-size: .82rem;
+  font-weight: 650; cursor: pointer;
+  transition: transform 150ms var(--ease-out), box-shadow 150ms ease, border-color 150ms ease;
+}
+.xsai-shortcut:active { transform: scale(.985); }
+.xsai-shortcut-icon {
+  display: grid; place-items: center; width: 34px; height: 34px; flex: none;
+  border-radius: 11px; background: var(--paper-2); color: var(--ink);
+}
+.xsai-shortcut-arrow { margin-left: auto; flex: none; transform: rotate(45deg); color: var(--graphite); opacity: .55; }
+@media (hover: hover) {
+  .xsai-shortcut:hover { transform: translateY(-2px); box-shadow: var(--elev-2); border-color: var(--hair-strong); }
+  .xsai-shortcut:hover .xsai-shortcut-arrow { opacity: 1; }
+}
+
+/* Role-aware messages: assistant replies have an agent signature and optional
+   auditable completed-action receipts. No fictional tool activity is shown. */
+.xsai-turn { display: flex; align-items: flex-start; gap: 9px; min-width: 0; animation: xsai-enter 220ms var(--ease-out) both; }
+.xsai-turn.user { justify-content: flex-end; }
+.xsai-turn-body { display: flex; flex-direction: column; align-items: flex-start; gap: 7px; min-width: 0; max-width: calc(100% - 45px); }
+.xsai-turn.user .xsai-turn-body { align-items: flex-end; max-width: 86%; }
+.xsai-turn-avatar {
+  flex: none; width: 30px; height: 30px; border-radius: 11px; display: grid; place-items: center;
+  color: #fff; background: #24242B;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 14%);
+  margin-top: 2px;
+}
 .xsai-bubble {
-  max-width: 86%; padding: 10px 14px; border-radius: 18px;
-  line-height: 1.45; font-size: var(--t-base);
-  background: var(--paper-2); color: var(--ink);
-  white-space: pre-wrap; overflow-wrap: anywhere;
+  padding: 13px 15px; border-radius: 18px; font-size: .91rem; line-height: 1.62;
+  white-space: pre-wrap; overflow-wrap: anywhere; max-width: 100%; min-width: 0;
+  background: var(--paper); color: var(--ink); border: 1px solid var(--hair);
+  box-shadow: 0 3px 13px rgb(0 0 0 / 3%);
 }
 .xsai-turn.user .xsai-bubble {
-  background: var(--primary); color: var(--on-primary);
-  border-bottom-right-radius: 6px;
+  color: var(--on-primary); background: var(--primary); border-color: transparent;
+  border-bottom-right-radius: 6px; box-shadow: none;
 }
 .xsai-turn.assistant .xsai-bubble { border-bottom-left-radius: 6px; }
-.xsai-turn.bad .xsai-bubble { background: var(--bad-bg); color: var(--bad); }
+.xsai-turn.bad .xsai-bubble { color: var(--bad); background: var(--bad-bg); border-color: transparent; }
+.xsai-copy {
+  background: none; border: 0; color: var(--graphite); cursor: pointer; padding: 4px 5px;
+  display: inline-flex; align-items: center; gap: 6px; font-size: .69rem; font-weight: 600; border-radius: 7px;
+}
+.xsai-copy:active { background: var(--paper-2); }
+@media (hover: hover) { .xsai-copy:hover { background: var(--paper-2); color: var(--ink); } }
 
+/* Actual backend actions, with reversibility preserved. */
 .xsai-action {
-  display: flex; align-items: center; gap: 10px; width: min(100%, 420px);
-  padding: 8px 8px 8px 10px; border-radius: 14px;
-  background: var(--paper); box-shadow: var(--elev-chip);
-  font-size: var(--t-sm); font-weight: 600;
+  display: flex; align-items: center; gap: 10px; width: min(100%, 430px);
+  padding: 11px 12px; border: 1px solid var(--hair); border-radius: 14px;
+  background: var(--paper); box-shadow: var(--elev-1);
 }
 .xsai-action-ico {
-  display: grid; place-items: center; width: 22px; height: 22px;
-  border-radius: 50%; flex: none; color: #fff; background: var(--ok-vivid);
+  display: grid; place-items: center; width: 28px; height: 28px; flex: none;
+  border-radius: 10px; background: var(--ok-bg); color: var(--ok);
 }
-.xsai-action.bad .xsai-action-ico { background: var(--bad-vivid); }
-.xsai-action.undone .xsai-action-ico { background: var(--graphite); }
-.xsai-action-text { flex: 1; min-width: 0; }
-.xsai-action.bad .xsai-action-text { color: var(--bad); font-weight: 500; }
-.xsai-action .btn { flex: none; }
+.xsai-action.bad .xsai-action-ico { background: var(--bad-bg); color: var(--bad); }
+.xsai-action.undone .xsai-action-ico { background: var(--paper-2); color: var(--graphite); }
+.xsai-action-content { flex: 1; display: grid; gap: 1px; min-width: 0; }
+.xsai-action-status { font-size: .62rem; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; color: var(--ok); }
+.xsai-action.bad .xsai-action-status { color: var(--bad); }
+.xsai-action.undone .xsai-action-status { color: var(--graphite); }
+.xsai-action-text { font-size: .77rem; font-weight: 550; line-height: 1.45; overflow-wrap: anywhere; }
+.xsai-undo {
+  flex: none; display: inline-flex; align-items: center; gap: 4px;
+  border: 0; border-radius: 8px; background: var(--paper-2);
+  font-size: .71rem; font-weight: 700; padding: 8px; cursor: pointer;
+}
+.xsai-undo:active { transform: scale(.96); }
 
-.xsai-dots { display: inline-flex; gap: 5px; align-items: center; min-height: 38px; }
-.xsai-dots i { width: 6px; height: 6px; border-radius: 50%; background: var(--graphite); animation: xsai-dot 1s ease-in-out infinite; }
+/* Agent working indicator lives in the transcript, never on the microphone. */
+.xsai-dots { display: inline-flex; gap: 5px; align-items: center; min-height: 37px; }
+.xsai-dots i { width: 6px; height: 6px; border-radius: 50%; background: var(--graphite); animation: xsai-dot 1.15s ease-in-out infinite; }
 .xsai-dots i:nth-child(2) { animation-delay: 150ms; }
 .xsai-dots i:nth-child(3) { animation-delay: 300ms; }
-@keyframes xsai-dot {
-  0%, 80%, 100% { opacity: .25; transform: translateY(0); }
-  40% { opacity: 1; transform: translateY(-3px); }
-}
+@keyframes xsai-dot { 0%, 80%, 100% { opacity: .25; transform: translateY(0); } 40% { opacity: 1; transform: translateY(-3px); } }
+@keyframes xsai-enter { from { opacity: 0; transform: translateY(5px); } }
+@keyframes xsai-ambient { to { transform: rotate(360deg); } }
+@keyframes xsai-pulse { 50% { opacity: .35; } }
 
-.xsai-controls { display: grid; justify-items: center; gap: 10px; padding-top: 4px; }
+/* iOS/desktop unified composer, with a true press-and-hold browser mic.
+   Default state stays neutral immediately after pointerup, regardless of TTS. */
+.xsai-controls { display: grid; gap: 8px; padding: 12px 2px 2px; flex: none; border-top: 1px solid var(--hair); }
+.xsai-composer {
+  display: flex; align-items: center; gap: 8px;
+  background: var(--paper); border: 1px solid var(--hair-strong);
+  box-shadow: 0 3px 13px rgb(0 0 0 / 4%), inset 0 1px 0 rgb(255 255 255 / 8%);
+  border-radius: 22px; min-height: 62px; padding: 7px;
+  transition: box-shadow 180ms ease, border-color 180ms ease;
+}
+.xsai-controls.is-listening .xsai-composer {
+  border-color: color-mix(in srgb, #8579f4 44%, var(--hair-strong));
+  box-shadow: 0 0 0 4px color-mix(in srgb, #8579f4 10%, transparent), 0 4px 16px rgb(0 0 0 / 5%);
+}
 .xsai-orb {
-  display: grid; place-items: center; width: 64px; height: 64px;
-  border: 0; border-radius: 50%; cursor: pointer; position: relative;
-  background: var(--primary); color: var(--on-primary);
-  transition: transform 120ms ease, box-shadow 120ms ease;
+  position: relative; display: grid; place-items: center; flex: none;
+  width: 45px; height: 45px; border-radius: 15px; border: 0; cursor: pointer;
+  background: var(--paper-2); color: var(--ink);
+  transition: background 120ms ease, transform 120ms var(--ease-out), color 120ms ease;
   -webkit-tap-highlight-color: transparent;
   touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none;
 }
+.xsai-orb.listening { color: var(--on-primary); background: var(--primary); transform: scale(.97); }
 .xsai-orb-glow { display: none; }
-.xsai-orb.listening, .xsai-orb:active {
-  transform: scale(.95);
-  box-shadow: 0 0 0 4px color-mix(in srgb, var(--primary) 22%, transparent);
+.xsai-orb:focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; }
+.xsai-type { flex: 1; display: flex; align-items: center; gap: 6px; min-width: 0; }
+.xsai-type .input {
+  flex: 1; min-width: 0; min-height: 44px; padding: 0 5px; background: transparent;
+  box-shadow: none; border: 0; border-radius: 0; font-size: .87rem;
 }
-.xsai-orb:focus-visible { outline: 2px solid var(--focus); outline-offset: 4px; }
-
+.xsai-type .input:focus, .xsai-type .input:hover { background: transparent; box-shadow: none; outline: 0; }
+.xsai-type .input::placeholder { color: var(--graphite); opacity: .78; }
+.xsai-send {
+  flex: none; display: grid; place-items: center;
+  width: 40px; height: 40px; border-radius: 14px; border: 0;
+  background: var(--primary); color: var(--on-primary); cursor: pointer;
+  transition: transform 120ms var(--ease-out), opacity 120ms ease;
+}
+.xsai-send:not(:disabled):active { transform: scale(.93); }
+.xsai-send:disabled { opacity: .24; cursor: not-allowed; }
 .xsai-inline-issue {
-  display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 12px;
-  color: var(--graphite); font-size: var(--t-sm);
+  display: flex; flex-wrap: wrap; align-items: center; gap: 10px;
+  color: var(--graphite); font-size: .71rem; padding: 2px 7px;
 }
-.xsai-inline-issue button {
-  color: var(--ink); background: none; border: 0; padding: 3px; font: inherit;
-  text-decoration: underline; cursor: pointer;
-}
+.xsai-inline-issue button { color: var(--ink); background: none; border: 0; padding: 3px; font: inherit; text-decoration: underline; cursor: pointer; }
 .xsai-inline-issue button:last-child { display: inline-grid; place-items: center; text-decoration: none; }
-.xsai-type { display: flex; gap: 8px; width: 100%; }
-.xsai-type .input { flex: 1; min-width: 0; border-radius: 999px; }
-.xsai-type .btn {
-  flex: none; width: 48px; min-height: 48px; padding: 0; border-radius: 50%;
+
+@media (min-width: 720px) {
+  .overlay:has(.xsai) .sheet { max-width: 640px; height: min(88dvh, 825px); padding: 20px 26px 22px; }
+  .xsai-log { padding-inline: 9px; }
+  .xsai-agent-name small { max-width: 230px; }
+}
+@media (max-width: 390px) {
+  .xsai-welcome-visual { width: 127px; height: 127px; margin-bottom: 2px; }
+  .xsai-welcome-mark { width: 65px; height: 65px; border-radius: 22px; }
+  .xsai-shortcuts { margin-top: 18px; }
+  .xsai-shortcut { min-height: 49px; }
+  .xsai-agent-name small { max-width: 115px; }
+  .xsai-state-tag { font-size: .63rem; }
+}
+@media (max-height: 660px) {
+  .xsai-welcome-visual { width: 104px; height: 104px; }
+  .xsai-welcome-mark { width: 62px; height: 62px; }
+  .xsai-shortcuts { margin-top: 16px; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .xsai-dots i { animation: none; }
-  .xsai-orb { transition: none; }
+  .xsai-agent-mark::after, .xsai-orbit, .xsai-state-tag i, .xsai-dots i, .xsai-turn { animation: none !important; }
+  .xsai-shortcut, .xsai-orb, .xsai-composer, .xsai-send { transition: none; }
+}
+@media (prefers-contrast: more) {
+  .xsai-composer, .xsai-shortcut, .xsai-bubble, .xsai-agent-bar { border-color: var(--ink); }
+  .xsai-state-tag { border-color: var(--graphite); }
 }
