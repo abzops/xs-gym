@@ -107,6 +107,7 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
       session.cancelled = true;
       if (session.watchdog) clearTimeout(session.watchdog);
       session.abort();
+      session.backup?.abort(); // never leave a local mic stream running
     }
     stopSpeaking();
     setHolding(false);
