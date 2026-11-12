@@ -434,6 +434,12 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
             )}
           </div>
         </div>
+        <div className="xsai-locale-row">
+          <Segmented label="Language" value={lang} onChange={(value) => {
+            cancelHold(); setLang(value); setMicDialog(null);
+            setSpeechIssue(null); setAlternateMalayalam(false);
+          }} options={[{ value: 'en', label: 'English' }, { value: 'ml', label: 'മലയാളം' }]} />
+        </div>
 
         <div className="xsai-log" ref={scroller} aria-live="polite">
           {turns.length === 0 && (
