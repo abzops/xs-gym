@@ -105,6 +105,10 @@ assert.ok((await float.boundingBox()).x < 25, 'Position should persist on Paymen
 await float.focus();
 const beforeArrow = await float.boundingBox();
 await page.keyboard.press('ArrowUp');
+await page.waitForFunction((before) => {
+  const y = document.querySelector('.xsai-floating-launcher')?.getBoundingClientRect().y;
+  return typeof y === 'number' && y < before - 8;
+}, beforeArrow.y, { timeout: 1200 }); // account for the magnetic position animation
 const afterArrow = await float.boundingBox();
 assert.ok(afterArrow.y < beforeArrow.y, 'Keyboard users can reposition the launcher');
 await page.keyboard.press('Enter');
