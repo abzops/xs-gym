@@ -179,54 +179,11 @@ for (const [label, mobile] of [['phone touch', true], ['desktop mouse', false]])
 
   if (mobile) {
     const rect = await mic.boundingBox();
-    const diagnostics = await page.evaluate(({ x, y }) => {
-      const hit = document.elementFromPoint(x, y);
-      const orb = document.querySelector('.xsai-orb');
-      const sheet = document.querySelector('.sheet');
-      return {
-        hit: hit?.className?.baseVal ?? hit?.className ?? hit?.tagName,
-        hitTag: hit?.tagName, pressed: orb?.getAttribute('aria-pressed'),
-        inDom: !!orb?.isConnected, sheetY: sheet?.getBoundingClientRect().y,
-        micY: orb?.getBoundingClientRect().y,
-        currentScale: window.visualViewport?.scale,
-      };
-    }, { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 });
-    console.log('XS AI mic first-touch geometry:', JSON.stringify({ rect, ...diagnostics }));
-    for (const ms of [120, 240, 400]) {
-      await page.waitForTimeout(ms);
-      console.log('XS AI delayed first-touch hit:', JSON.stringify(await page.evaluate(({ x, y, afterMs }) => ({
-        afterMs,
-        hit: document.elementFromPoint(x, y)?.tagName,
-        hitClass: String(document.elementFromPoint(x, y)?.className ?? ''),
-        overlayOpacity: getComputedStyle(document.querySelector('.overlay')).opacity,
-        sheetOpacity: getComputedStyle(document.querySelector('.sheet')).opacity,
-        sheetVisibility: getComputedStyle(document.querySelector('.sheet')).visibility,
-        overlayHidden: document.querySelector('.overlay')?.closest('[inert]') !== null,
-        animations: document.getAnimations().length,
-        vt: getComputedStyle(document.documentElement, '::view-transition').display,
-      }), {x:rect.x+rect.width/2,y:rect.y+rect.height/2,afterMs:ms})));
-    }
-    console.log('XS AI mic geometry extended:', JSON.stringify(await page.evaluate(({ x, y }) => ({
-      point: [x,y], layout: [innerWidth,innerHeight], visual: [visualViewport?.width,visualViewport?.height],
-      hits: document.elementsFromPoint(x,y).slice(0,7).map(el => ({ tag: el.tagName, cls: String(el.className).slice(0,65) })),
-      sheet: document.querySelector('.sheet')?.getBoundingClientRect().toJSON(),
-      overlay: document.querySelector('.overlay')?.getBoundingClientRect().toJSON(),
-      mic: document.querySelector('.xsai-orb')?.getBoundingClientRect().toJSON(),
-      body: getComputedStyle(document.body).pointerEvents,
-      overlayPE: getComputedStyle(document.querySelector('.overlay')).pointerEvents,
-      sheetPE: getComputedStyle(document.querySelector('.sheet')).pointerEvents,
-      micPE: getComputedStyle(document.querySelector('.xsai-orb')).pointerEvents,
-    }), {x:rect.x+rect.width/2,y:rect.y+rect.height/2})));
+    const actual = await page.evaluate(({x,y}) => document.elementFromPoint(x,y)?.closest('.xsai-orb') !== null,
+      {x:rect.x + rect.width / 2, y:rect.y + rect.height / 2});
+    check('iPhone: XS AI microphone is hit-testable on the first frame', actual);
   }
   const first = await hold(page, mic, mobile);
-  if (mobile) {
-    console.log('XS AI mic after down:', JSON.stringify(await page.evaluate(() => ({
-      pressed: document.querySelector('.xsai-orb')?.getAttribute('aria-pressed'),
-      started: window.__speech?.started,
-      active: !!window.__speech?.last,
-      text: document.querySelector('input[aria-label="Message XS AI"]')?.value,
-    }))));
-  }
   const lang = await page.evaluate(() => window.__speech.last?.lang);
   check(label + ': press starts English browser recognition', lang === 'en-IN');
   await page.evaluate(() => window.__partial('How much'));
