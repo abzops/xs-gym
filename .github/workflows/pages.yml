@@ -5,7 +5,7 @@ name: Test and deploy
 
 on:
   push:
-    branches: [main, analytics-onboarding, 'fix/malayalam-voice-access', 'fix/live-voice-interim-transcription', 'fix/text-only-xs-ai-voice', 'fix/member-payment-edit-delete-archive', 'feat/member-swipe-archive-delete', 'fix/one-tap-delete-warning-20261111', 'feat/edit-member-joining-date-20261111', 'fix/browser-malayalam-speech-20261112', 'feature/hold-to-talk-browser-voice-20261112', 'feature/xs-ai-minimal-voice-settings-20261112', 'feature/xs-ai-agent-workspace']
+    branches: [main, analytics-onboarding, 'fix/malayalam-voice-access', 'fix/live-voice-interim-transcription', 'fix/text-only-xs-ai-voice', 'fix/member-payment-edit-delete-archive', 'feat/member-swipe-archive-delete', 'fix/one-tap-delete-warning-20261111', 'feat/edit-member-joining-date-20261111', 'fix/browser-malayalam-speech-20261112', 'feature/hold-to-talk-browser-voice-20261112', 'feature/xs-ai-minimal-voice-settings-20261112', 'feature/xs-ai-agent-workspace', 'fix/remove-membership-start-date-window-20261112']
   workflow_dispatch:
 
 concurrency:
