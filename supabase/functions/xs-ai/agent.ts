@@ -325,7 +325,7 @@ export function everydayMalayalamReply(input: string, lang: 'ml' | 'en'): string
   const spoken = input.normalize('NFC').trim().replace(/\s+/gu, ' ').replace(/[?.!,।؟]+$/gu, '');
   if (lang !== 'ml' && !/[\u0d00-\u0d7f]/u.test(spoken)) return null;
   if (spoken.length > 85) return null;
-  if (/കേൾക്ക|കേള്‍ക്ക/u.test(spoken) && /ഉണ്ടോ|ആണോ|മോ|ുന്നോ/u.test(spoken))
+  if (/കേൾക്ക|കേള്‍ക്ക/u.test(spoken) && /ണ്ടോ|ണോ|മോ|ന്നോ/u.test(spoken))
     return 'അതെ, നിങ്ങളുടെ മെസേജ് കിട്ടി. പറയൂ!';
   if (/സുഖമാണോ|സുഖമല്ലേ/u.test(spoken))
     return 'സുഖം തന്നെ! എന്താ വിശേഷം?';
