@@ -90,6 +90,8 @@ assert.equal(await dialog.getByRole('button',{name:'Open keyboard'}).count(),1);
 await dialog.getByRole('button',{name:'Open keyboard'}).tap();
 const input = dialog.getByRole('textbox',{name:'Message XS AI'});
 await input.waitFor();
+assert.equal(await input.evaluate(el => document.activeElement === el), true,
+  'iPhone keyboard icon must synchronously focus the input on the tap');
 assert.ok(Number(await input.evaluate(el => parseFloat(getComputedStyle(el).fontSize)))>=16,
   'iPhone keyboard must not trigger focus zoom');
 await dialog.getByRole('button',{name:'Hide keyboard'}).tap();
