@@ -153,9 +153,15 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
       setState('idle');
       const error = session.failed;
       if (error instanceof SpeechListenError) {
-        setSpeechIssue({ code: error.browserCode, locale: error.locale });
-        setMicDialog(error.reason === 'denied' || error.reason === 'audio' ? 'denied'
-          : error.reason === 'unsupported' ? 'unsupported' : 'service');
+        // iOS synthesizes a click after pointerup. Mounting a modal inside that
+        // event can put its retry/dismiss control under the releasing finger.
+        // Open after the gesture finishes, so it cannot be clicked accidentally.
+        setTimeout(() => {
+          if (closingRef.current) return;
+          setSpeechIssue({ code: error.browserCode, locale: error.locale });
+          setMicDialog(error.reason === 'denied' || error.reason === 'audio' ? 'denied'
+            : error.reason === 'unsupported' ? 'unsupported' : 'service');
+        }, 80);
       } else toast(error instanceof Error ? error.message : String(error), 'bad');
       return;
     }
