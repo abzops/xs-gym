@@ -1,0 +1,5 @@
+# This function is an isolated, disabled-by-default development prototype.
+# Browser WebSocket clients cannot supply an Authorization header. The endpoint
+# authenticates the user JWT and active gym membership before opening the socket.
+[functions.xs-ai-sarvam]
+verify_jwt = false
