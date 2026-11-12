@@ -289,6 +289,9 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
     // browser finalizes text and the previous AI reply is processing.
     setHolding(false);
     setText('');
+    // Stop local capture immediately. Its bytes are uploaded ONLY if browser
+    // Malayalam fails, after the user already released the button.
+    if (session.backup) session.backupClip = session.backup.stop();
     // Place the message in the conversation immediately. The actual text
     // replaces this quiet placeholder once speech recognition finalizes.
     const pendingId = crypto.randomUUID();
@@ -299,15 +302,20 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
     // Do not call stop() again when the browser has already ended/failed;
     // WebKit iOS 27 has a reported repeated-recognition regression.
     if (!session.settled) session.stop();
-    if (session.settled) finishTranscript(session);
+    if (session.nativeFailed && session.backup) recoverMalayalam(session);
+    else if (session.settled) finishTranscript(session);
     else {
-      // WebKit sometimes omits onend. Never leave the mic UI stuck forever:
-      // after the grace period, send the last interim text if any.
       session.watchdog = setTimeout(() => {
+        if (holdRef.current !== session || session.cancelled) return;
+        if (session.backup && !session.cloud && !(session.final || session.latest).trim()) {
+          session.nativeFailed = true;
+          recoverMalayalam(session);
+          return;
+        }
         if (session.cloud && !session.settled)
           session.failed = new SpeechListenError('service', 'Cloud speech did not finish.', 'cloud-timeout', lang);
         finishTranscript(session);
-      }, session.cloud ? 6_000 : 1800);
+      }, session.backup ? 2100 : session.cloud ? 6000 : 1800);
     }
   }
 
@@ -332,7 +340,11 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
     setHolding(true);
     const session: HoldSession = {
       pointerId: null, released: false, cancelled: false, settled: false,
-      cloud: useSarvam, pendingId: null, latest: '', final: '', failed: null, stop: () => {}, abort: () => {}, watchdog: null,
+      cloud: useSarvam,
+      backup: !useSarvam && canFallback ? captureMalayalamBackup() : null,
+      backupClip: null, nativeFailed: false, uploading: false,
+      pendingId: null, latest: '', final: '', failed: null,
+      stop: () => {}, abort: () => {}, watchdog: null,
     };
     holdRef.current = session;
     try {
@@ -354,23 +366,38 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
         void recognition.done.then((result) => {
           if (holdRef.current !== session || session.cancelled) return;
           session.final = result.trim();
-          if (!cloud) {
-            if (!session.final && lang === 'ml' && !session.latest.trim()) {
-              // Safari sometimes closes with an empty transcript and no error.
-              // The next press tries short native 'ml' first; only after BOTH
-              // browser locale variants failed can consented Sarvam take over.
-              if (!browserShortLocale) setAlternateMalayalam(true);
-              else if (canFallback) unavailableMalayalam.current = true;
-            }
+          if (!cloud && session.backup && (
+            !session.final ||
+            (!/[\u0D00-\u0D7F]/u.test(session.final) &&
+              /[A-Za-z]/u.test(session.final) && session.final.split(/\s+/u).length >= 2)
+          )) {
+            // Empty or Latin-only transcription while Malayalam is selected:
+            // recover the ORIGINAL audio rather than asking to repeat speech.
+            session.nativeFailed = true;
+            if (session.released) recoverMalayalam(session);
+            return;
           }
+          if (!cloud && !session.final && lang === 'ml' && !session.latest.trim()) {
+            if (!browserShortLocale) setAlternateMalayalam(true);
+            else if (canFallback) unavailableMalayalam.current = true;
+          }
+          if (!cloud && session.final && lang === 'ml' && /[\u0D00-\u0D7F]/u.test(session.final)) {
+            unavailableMalayalam.current = false;
+            try { localStorage.removeItem('xs-ai-native-ml-unavailable'); } catch { /* private mode */ }
+          }
+          session.backup?.abort(); // native transcript succeeded: discard local audio
           session.settled = true;
           if (session.released) finishTranscript(session);
         }, (error: unknown) => {
           if (holdRef.current !== session || session.cancelled) return;
           const browserError = error instanceof SpeechListenError ? error : null;
-          // Some iPhone builds silently return no transcript and 'no-speech'
-          // even when the user spoke. Two consecutive failures allow the next
-          // press to use Sarvam, but actual silence remains UI-silent.
+          if (!cloud && session.backup && browserError &&
+              ['no-speech', 'language-not-supported', 'service-not-allowed', 'network'].includes(browserError.browserCode)) {
+            // Keep capturing until finger-up; no cloud upload before failure.
+            session.nativeFailed = true;
+            if (session.released) recoverMalayalam(session);
+            return;
+          }
           if (!cloud && browserError?.browserCode === 'no-speech') {
             if (lang === 'ml') {
               if (!browserShortLocale) setAlternateMalayalam(true);
@@ -421,6 +448,7 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
       };
       startProvider(useSarvam);
     } catch (error) {
+      session.backup?.abort();
       holdRef.current = null;
       listeningBusy.current = false;
       setHolding(false);
