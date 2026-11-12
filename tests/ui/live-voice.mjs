@@ -1,12 +1,15 @@
 // Synthetic browser-only XS AI regression. No real customer API/audio.
 // node tests/ui/live-voice.mjs <playwright-module-path> <base-url>
 import { createRequire } from 'node:module';
+import { mkdir } from 'node:fs/promises';
 import { REF, gym, session, body } from './mock.mjs';
 
 const [pwPath, baseUrl] = process.argv.slice(2);
 const { chromium } = createRequire(import.meta.url)(pwPath);
 const browser = await chromium.launch({ args: ['--autoplay-policy=no-user-gesture-required'] });
 let failures = 0;
+const screenshotDir = '/tmp/xs-ai-agent-screens';
+await mkdir(screenshotDir, { recursive: true });
 function check(name, condition, detail = '') {
   if (!condition) failures++;
   console.log((condition ? 'ok   ' : 'FAIL ') + name + (detail ? ' — ' + detail : ''));
@@ -28,6 +31,10 @@ async function waitCount(page, count) {
 }
 function fakeSpeech({ noSpeech }) {
   window.__micCaptureCalls = 0;
+  window.__clipboard = [];
+  Object.defineProperty(navigator, 'clipboard', { configurable: true, value: {
+    writeText: async (value) => { window.__clipboard.push(value); },
+  } });
   if (navigator.mediaDevices) {
     navigator.mediaDevices.getUserMedia = () => {
       window.__micCaptureCalls++;
@@ -339,6 +346,79 @@ for (const [label, mobile] of [['phone touch', true], ['desktop mouse', false]])
   check('settings: OFF is persisted immediately',
     !(await onSwitch.isChecked()) &&
     await page.evaluate(() => localStorage.getItem('xs-ai-spoken-replies') === 'off'));
+  await ctx.close();
+}
+
+// Real browser-rendered visuals and real interactive controls, but synthetic
+// gym data/replies. Never capture any live member or payment information.
+{
+  const { ctx, page, logs, open, tap, errors } = await setup();
+  const dialog = await open();
+  const welcome = dialog.locator('.xsai-welcome');
+  await welcome.waitFor();
+  check('agent welcome: identity, status and three useful read-only shortcuts',
+    await dialog.locator('.xsai-agent-mark').count() === 1 &&
+    await dialog.getByLabel('Agent ready').isVisible() &&
+    await dialog.locator('.xsai-shortcut').count() === 3);
+  check('agent welcome: no horizontal overflow on iPhone',
+    await page.evaluate(() => {
+      const el = document.querySelector('.xsai');
+      return !!el && el.scrollWidth <= el.clientWidth + 2 &&
+        document.documentElement.scrollWidth <= window.innerWidth + 2;
+    }));
+  await page.waitForTimeout(350);
+  await page.screenshot({ path: screenshotDir + '/01-mobile-agent-welcome.png' });
+  await tap(dialog.getByRole('button', { name: "Today's collections" }));
+  await waitCount(page, 1);
+  check('quick question: collections sends only the read-only question',
+    logs.agent.length === 1 &&
+    logs.agent[0].messages.at(-1).content === 'How much did we collect today?' &&
+    logs.transcribe.length === 0 &&
+    await dialog.locator('.xsai-welcome').count() === 0);
+  await page.waitForTimeout(450); // capture the finished animation, not a faded frame
+  await page.screenshot({ path: screenshotDir + '/02-mobile-agent-conversation.png' });
+  await tap(dialog.getByRole('button', { name: 'Copy reply' }));
+  check('agent response: copy button copies the visible reply',
+    await page.evaluate(() => window.__clipboard.at(-1) === 'I understood.') &&
+    await dialog.getByRole('button', { name: 'Reply copied' }).count() === 1);
+  await tap(dialog.getByRole('button', { name: 'New conversation' }));
+  check('agent new conversation: resets only session UI, never backend data',
+    await dialog.locator('.xsai-welcome').count() === 1 &&
+    await dialog.locator('.xsai-turn.user').count() === 0 &&
+    logs.agent.length === 1 &&
+    await dialog.locator('.xsai-orb').getAttribute('aria-pressed') === 'false');
+  await tap(dialog.getByRole('button', { name: 'Pending dues' }));
+  await waitCount(page, 1);
+  check('agent new conversation: follow-up uses new isolated conversation history',
+    logs.agent.length === 2 && logs.agent[1].messages.length === 1 &&
+    logs.agent[1].messages[0].content === 'Who has pending membership dues?');
+  await tap(dialog.getByRole('button', { name: 'New conversation' }));
+  await dialog.locator('.xsai-welcome').waitFor();
+  await page.evaluate(() => { document.documentElement.dataset.theme = 'dark'; });
+  await page.waitForTimeout(500); // wait for segmented control/color transitions
+  await page.screenshot({ path: screenshotDir + '/03-mobile-agent-dark.png' });
+  check('agent dark appearance: designed hero and composer remain visible',
+    await dialog.locator('.xsai-welcome-visual').isVisible() &&
+    await dialog.locator('.xsai-composer').isVisible() && errors.length === 0, errors.join(' | '));
+  await ctx.close();
+}
+{
+  const { ctx, page, logs, open, tap, errors } = await setup({ mobile: false });
+  const dialog = await open();
+  await page.waitForTimeout(350);
+  await page.screenshot({ path: screenshotDir + '/04-desktop-agent-welcome.png' });
+  await tap(dialog.getByRole('button', { name: 'Upcoming renewals' }));
+  await waitCount(page, 1);
+  await page.waitForTimeout(450);
+  await page.screenshot({ path: screenshotDir + '/05-desktop-agent-conversation.png' });
+  check('agent desktop: shortcut and copy controls fit the wider workspace',
+    logs.agent.length === 1 &&
+    await dialog.locator('.xsai-agent-bar').isVisible() &&
+    await dialog.getByRole('button', { name: 'Copy reply' }).isVisible() &&
+    await page.evaluate(() => {
+      const el = document.querySelector('.xsai');
+      return !!el && el.scrollWidth <= el.clientWidth + 2;
+    }) && errors.length === 0, errors.join(' | '));
   await ctx.close();
 }
 
