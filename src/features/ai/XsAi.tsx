@@ -1,5 +1,5 @@
 import { useQueryClient } from '@tanstack/react-query';
-import { ArrowUp, Check, Mic, RotateCcw, X } from 'lucide-react';
+import { ArrowUp, Check, CheckCheck, Copy, Mic, Plus, RotateCcw, Sparkles, Users, Wallet, CalendarClock, X } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type MouseEvent as ReactMouseEvent } from 'react';
 import { useNavigate } from 'react-router';
 import { useGym } from '../../app/gym';
@@ -32,6 +32,20 @@ type HoldSession = {
 // Live word-by-word recognition uses the browser's SpeechRecognition interface.
 
 const LANG_KEY = 'xs-ai-lang';
+// Read-only example requests: these never contain an instruction to change a
+// payment or membership. They disappear after the conversation begins.
+const QUICK_PROMPTS: Record<Lang, { title: string; prompt: string; icon: 'wallet' | 'members' | 'renewals' }[]> = {
+  en: [
+    { title: "Today's collections", prompt: 'How much did we collect today?', icon: 'wallet' },
+    { title: 'Pending dues', prompt: 'Who has pending membership dues?', icon: 'members' },
+    { title: 'Upcoming renewals', prompt: 'Which memberships are due for renewal soon?', icon: 'renewals' },
+  ],
+  ml: [
+    { title: 'ഇന്നത്തെ കളക്ഷൻ', prompt: 'ഇന്ന് എത്ര രൂപ കളക്ട് ചെയ്തു?', icon: 'wallet' },
+    { title: 'കുടിശ്ശിക', prompt: 'ആർക്കൊക്കെ മെമ്പർഷിപ്പ് കുടിശ്ശികയുണ്ട്?', icon: 'members' },
+    { title: 'പുതുക്കേണ്ടത്', prompt: 'അടുത്തതായി ആരുടെയൊക്കെ മെമ്പർഷിപ്പ് പുതുക്കണം?', icon: 'renewals' },
+  ],
+};
 /** XS AI: talk to the gym. Opens as a sheet; every action shows a card with Undo. */
 export function XsAiPanel({ onClose }: { onClose: () => void }) {
   const { gym } = useGym();
@@ -42,6 +56,7 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
   const [turns, setTurns] = useState<Turn[]>([]);
   const [state, setState] = useState<State>('idle');
   const [text, setText] = useState('');
+  const [copiedTurn, setCopiedTurn] = useState<number | null>(null);
   const [holding, setHolding] = useState(false);
   const [micDialog, setMicDialog] = useState<MicDialog>(null);
   const [speechIssue, setSpeechIssue] = useState<{ code: string; locale: string } | null>(null);
@@ -352,6 +367,30 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
     document.addEventListener('visibilitychange', onHidden);
     return () => document.removeEventListener('visibilitychange', onHidden);
   }, []);
+
+  // Keep real backend actions and their audit trail untouched. This is a
+  // UI-only reset and cannot run while requests or microphone use are active.
+  function newConversation() {
+    if (requestBusy.current || commandQueue.current.length || holdRef.current || listeningBusy.current) return;
+    stopSpeaking();
+    processedHistory.current = [];
+    commandQueue.current = [];
+    turnsRef.current = [];
+    setTurns([]);
+    setText('');
+    setCopiedTurn(null);
+    setMicDialog(null);
+    setSpeechIssue(null);
+  }
+
+  async function copyReply(turn: number, content: string) {
+    try {
+      await navigator.clipboard.writeText(content);
+      setCopiedTurn(turn);
+    } catch {
+      toast('Could not copy', 'bad');
+    }
+  }
 
   async function undo(turn: number, i: number) {
     const a = turns[turn]?.actions?.[i];
