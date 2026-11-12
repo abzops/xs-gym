@@ -194,8 +194,8 @@ for (const [label, mobile] of [['phone touch', true], ['desktop mouse', false]])
     console.log('XS AI mic first-touch geometry:', JSON.stringify({ rect, ...diagnostics }));
     for (const ms of [120, 240, 400]) {
       await page.waitForTimeout(ms);
-      console.log('XS AI delayed first-touch hit:', JSON.stringify(await page.evaluate(({ x, y }) => ({
-        afterMs: ms,
+      console.log('XS AI delayed first-touch hit:', JSON.stringify(await page.evaluate(({ x, y, afterMs }) => ({
+        afterMs,
         hit: document.elementFromPoint(x, y)?.tagName,
         hitClass: String(document.elementFromPoint(x, y)?.className ?? ''),
         overlayOpacity: getComputedStyle(document.querySelector('.overlay')).opacity,
@@ -204,7 +204,7 @@ for (const [label, mobile] of [['phone touch', true], ['desktop mouse', false]])
         overlayHidden: document.querySelector('.overlay')?.closest('[inert]') !== null,
         animations: document.getAnimations().length,
         vt: getComputedStyle(document.documentElement, '::view-transition').display,
-      }), {x:rect.x+rect.width/2,y:rect.y+rect.height/2})));
+      }), {x:rect.x+rect.width/2,y:rect.y+rect.height/2,afterMs:ms})));
     }
     console.log('XS AI mic geometry extended:', JSON.stringify(await page.evaluate(({ x, y }) => ({
       point: [x,y], layout: [innerWidth,innerHeight], visual: [visualViewport?.width,visualViewport?.height],
