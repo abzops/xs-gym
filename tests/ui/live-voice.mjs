@@ -273,7 +273,7 @@ for (const [label, mobile] of [['phone touch', true], ['desktop mouse', false]])
   await contact.release();
   await dialog.locator('.xsai-inline-issue').waitFor({ timeout: 3500 });
   check('error: one concise inline hint, no modal or provider details',
-    (await dialog.locator('.xsai-inline-issue').innerText()).includes('Could not hear that') &&
+    (await dialog.locator('.xsai-inline-issue').innerText()).includes('Voice not supported here') &&
     await dialog.locator('.xsai-mic-backdrop').count() === 0 &&
     await dialog.getByRole('button', { name: 'Try ml' }).count() === 0 &&
     logs.agent.length === 0);
