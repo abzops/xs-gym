@@ -5,9 +5,10 @@ name: XS AI voice UI
 on:
   workflow_dispatch:
   push:
-    branches: [main, 'fix/malayalam-voice-access', 'fix/live-voice-interim-transcription', 'fix/text-only-xs-ai-voice', 'fix/member-payment-edit-delete-archive', 'fix/browser-malayalam-speech-20261112', 'feature/hold-to-talk-browser-voice-20261112']
+    branches: [main, 'fix/malayalam-voice-access', 'fix/live-voice-interim-transcription', 'fix/text-only-xs-ai-voice', 'fix/member-payment-edit-delete-archive', 'fix/browser-malayalam-speech-20261112', 'feature/hold-to-talk-browser-voice-20261112', 'feature/xs-ai-minimal-voice-settings-20261112']
     paths:
       - 'src/features/ai/**'
+      - 'src/features/settings/**'
       - 'tests/ui/live-voice.mjs'
       - '.github/workflows/voice-ui.yml'
 
