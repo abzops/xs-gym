@@ -546,18 +546,23 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
   useEffect(() => {
     function onHidden() {
       if (!document.hidden) return;
-      const session = holdRef.current;
-      if (!session) return;
-      session.cancelled = true;
+      if (!pendingVoice.current.size) return;
+      // Suspend every outstanding audio request, including older released
+      // sessions still awaiting a provider. Never send speech on backgrounding.
+      for (const session of pendingVoice.current) {
+        session.cancelled = true;
+        if (session.watchdog) clearTimeout(session.watchdog);
+        session.abort();
+        session.backup?.abort();
+        removeVoicePending(session.pendingId);
+      }
+      pendingVoice.current.clear();
+      releasedVoice.current = [];
       holdRef.current = null;
       activePointer.current = null;
       keyboardHeld.current = false;
       pendingUnavailable.current = false;
       listeningBusy.current = false;
-      if (session.watchdog) clearTimeout(session.watchdog);
-      session.abort();
-      session.backup?.abort();
-      removeVoicePending(session.pendingId);
       setHolding(false);
       setText('');
       setLiveTranscript('');
