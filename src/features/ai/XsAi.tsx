@@ -412,49 +412,124 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
   return (
     <Sheet title="XS AI" onClosing={stopInteraction} onClose={() => { stopInteraction(); onClose(); }}>
       <div className="xsai">
-        <div className="xsai-bar">
-          <Segmented label="Language" value={lang} onChange={(value) => {
-            cancelHold(); setLang(value); setMicDialog(null);
-            setSpeechIssue(null); setAlternateMalayalam(false);
-          }} options={[{ value: 'en', label: 'English' }, { value: 'ml', label: 'മലയാളം' }]} />
+        <div className="xsai-agent-bar">
+          <div className="xsai-agent-identity">
+            <span className="xsai-agent-mark" aria-hidden="true"><Sparkles size={19} strokeWidth={1.8} /></span>
+            <span className="xsai-agent-name">
+              <strong>Gym copilot</strong>
+              <small title={gym.name}>{gym.name}</small>
+            </span>
+          </div>
+          <div className="xsai-head-actions">
+            <span className={`xsai-state-tag ${holding ? 'listening' : state === 'thinking' ? 'working' : ''}`}
+              aria-label={holding ? 'Agent listening' : state === 'thinking' ? 'Agent working' : 'Agent ready'}>
+              <i aria-hidden="true" />
+              {holding ? 'Listening' : state === 'thinking' ? 'Working' : 'Ready'}
+            </span>
+            {turns.length > 0 && (
+              <button type="button" className="xsai-new" title="New conversation" aria-label="New conversation"
+                onClick={newConversation} disabled={state === 'thinking' || holding}>
+                <Plus size={18} strokeWidth={1.8} />
+              </button>
+            )}
+          </div>
         </div>
 
         <div className="xsai-log" ref={scroller} aria-live="polite">
+          {turns.length === 0 && (
+            <div className="xsai-welcome">
+              <div className="xsai-welcome-visual" aria-hidden="true">
+                <span className="xsai-orbit xsai-orbit-outer" />
+                <span className="xsai-orbit xsai-orbit-inner" />
+                <span className="xsai-welcome-mark"><Sparkles size={34} strokeWidth={1.4} /></span>
+              </div>
+              <span className="xsai-kicker">XS AI AGENT</span>
+              <h3>{lang === 'ml' ? 'ഇന്ന് എന്ത് സഹായമാണ് വേണ്ടത്?' : 'What can I take care of?'}</h3>
+              <p className="xsai-welcome-sub">
+                {lang === 'ml' ? 'ജിം കാര്യങ്ങൾ ചോദിക്കൂ, ഞാൻ സഹായിക്കാം.' : 'Your gym, one conversation away.'}
+              </p>
+              <div className="xsai-shortcuts" aria-label="Quick questions">
+                {QUICK_PROMPTS[lang].map((prompt) => (
+                  <button type="button" key={prompt.icon} className="xsai-shortcut"
+                    onClick={() => ask(prompt.prompt)}>
+                    <span className="xsai-shortcut-icon" aria-hidden="true">
+                      {prompt.icon === 'wallet' ? <Wallet size={18} /> :
+                        prompt.icon === 'members' ? <Users size={18} /> : <CalendarClock size={18} />}
+                    </span>
+                    <span>{prompt.title}</span>
+                    <ArrowUp size={15} className="xsai-shortcut-arrow" aria-hidden="true" />
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
           {turns.map((t, ti) => (
             <div key={ti} className={`xsai-turn ${t.role} ${t.tone ?? ''}`}>
-              {t.actions?.map((a, i) => (
-                <div key={i} className={`xsai-action ${a.ok ? (a.undone ? 'undone' : 'ok') : 'bad'}`}>
-                  <span className="xsai-action-ico" aria-hidden>{a.ok ? <Check size={14} strokeWidth={3} /> : <X size={14} strokeWidth={3} />}</span>
-                  <span className="xsai-action-text">{a.undone ? <s>{a.summary}</s> : a.summary}</span>
-                  {a.ok && a.undo && !a.undone && (
-                    <button type="button" className="btn small ghost" onClick={() => undo(ti, i)}>
-                      <RotateCcw size={14} /> Undo
-                    </button>
-                  )}
-                </div>
-              ))}
-              {t.content && <p className="xsai-bubble">{t.content}</p>}
+              {t.role === 'assistant' && (
+                <span className="xsai-turn-avatar" aria-hidden="true"><Sparkles size={15} strokeWidth={1.8} /></span>
+              )}
+              <div className="xsai-turn-body">
+                {t.content && <p className="xsai-bubble">{t.content}</p>}
+                {t.actions?.map((a, i) => (
+                  <div key={i} className={`xsai-action ${a.ok ? (a.undone ? 'undone' : 'ok') : 'bad'}`}>
+                    <span className="xsai-action-ico" aria-hidden="true">
+                      {a.ok ? <Check size={14} strokeWidth={2.5} /> : <X size={14} strokeWidth={2.5} />}
+                    </span>
+                    <div className="xsai-action-content">
+                      <span className="xsai-action-status">{a.undone ? 'Reversed' : a.ok ? 'Completed' : 'Needs attention'}</span>
+                      <span className="xsai-action-text">{a.undone ? <s>{a.summary}</s> : a.summary}</span>
+                    </div>
+                    {a.ok && a.undo && !a.undone && (
+                      <button type="button" className="xsai-undo" onClick={() => undo(ti, i)}>
+                        <RotateCcw size={13} /> Undo
+                      </button>
+                    )}
+                  </div>
+                ))}
+                {t.role === 'assistant' && t.content && !t.tone && (
+                  <button type="button" className="xsai-copy"
+                    aria-label={copiedTurn === ti ? 'Reply copied' : 'Copy reply'}
+                    onClick={() => void copyReply(ti, t.content)}>
+                    {copiedTurn === ti ? <CheckCheck size={14} /> : <Copy size={14} />}
+                    <span>{copiedTurn === ti ? 'Copied' : 'Copy'}</span>
+                  </button>
+                )}
+              </div>
             </div>
           ))}
           {state === 'thinking' && (
-            <div className="xsai-turn assistant">
-              <p className="xsai-bubble xsai-dots" aria-label="Waiting for reply"><i /><i /><i /></p>
+            <div className="xsai-turn assistant xsai-pending">
+              <span className="xsai-turn-avatar" aria-hidden="true"><Sparkles size={15} strokeWidth={1.8} /></span>
+              <div className="xsai-turn-body">
+                <p className="xsai-bubble xsai-dots" aria-label="Waiting for reply"><i /><i /><i /></p>
+              </div>
             </div>
           )}
         </div>
 
-        <div className="xsai-controls">
-          <button type="button" className={`xsai-orb ${holding ? 'listening' : ''}`}
-            onPointerDown={onPressDown} onPointerUp={onPressUp} onPointerCancel={onPressCancel}
-            onLostPointerCapture={onPressCancel}
-            onKeyDown={onHoldKeyDown} onKeyUp={onHoldKeyUp}
-            onContextMenu={(event) => event.preventDefault()}
-            onClick={onAccessibleClick}
-            aria-pressed={holding}
-            aria-label={holding ? 'Release to send' : 'Hold to talk to XS AI'}>
-            <span className="xsai-orb-glow" aria-hidden />
-            <Mic size={26} />
-          </button>
+        <div className={`xsai-controls ${holding ? 'is-listening' : ''}`}>
+          <div className="xsai-composer">
+            <button type="button" className={`xsai-orb ${holding ? 'listening' : ''}`}
+              onPointerDown={onPressDown} onPointerUp={onPressUp} onPointerCancel={onPressCancel}
+              onLostPointerCapture={onPressCancel}
+              onKeyDown={onHoldKeyDown} onKeyUp={onHoldKeyUp}
+              onContextMenu={(event) => event.preventDefault()}
+              onClick={onAccessibleClick}
+              aria-pressed={holding}
+              aria-label={holding ? 'Release to send' : 'Hold to talk to XS AI'}>
+              <span className="xsai-orb-glow" aria-hidden="true" />
+              <Mic size={21} strokeWidth={2} />
+            </button>
+            <form className="xsai-type" onSubmit={(event) => { event.preventDefault(); ask(text); }}>
+              <input ref={inputRef} className="input" lang={lang === 'ml' ? 'ml-IN' : 'en-IN'}
+                value={text} onChange={(event) => setText(event.target.value)}
+                placeholder={lang === 'ml' ? 'എന്തെങ്കിലും ചോദിക്കൂ…' : 'Ask XS AI anything…'}
+                aria-label="Message XS AI" enterKeyHint="send" />
+              <button className="xsai-send" disabled={!text.trim() || holding} aria-label="Send">
+                <ArrowUp size={19} strokeWidth={2.4} />
+              </button>
+            </form>
+          </div>
           <span className="sr-only" role="status">{holding ? 'Listening' : ''}</span>
           {micDialog && (
             <div className="xsai-inline-issue" role="status">
@@ -471,15 +546,6 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
               <button type="button" aria-label="Dismiss voice message" onClick={() => setMicDialog(null)}><X size={14} /></button>
             </div>
           )}
-          <form className="xsai-type" onSubmit={(event) => { event.preventDefault(); ask(text); }}>
-            <input ref={inputRef} className="input" lang={lang === 'ml' ? 'ml-IN' : 'en-IN'}
-              value={text} onChange={(event) => setText(event.target.value)}
-              placeholder={lang === 'ml' ? 'ചോദിക്കൂ…' : 'Ask XS AI…'}
-              aria-label="Message XS AI" enterKeyHint="send" />
-            <button className="btn primary icon-btn" disabled={!text.trim() || holding} aria-label="Send">
-              <ArrowUp size={20} />
-            </button>
-          </form>
         </div>
       </div>
     </Sheet>
