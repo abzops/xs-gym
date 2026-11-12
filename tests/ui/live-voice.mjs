@@ -433,9 +433,11 @@ for (const [label, mobile] of [['phone touch', true], ['desktop mouse', false]])
   await page.evaluate(() => { document.documentElement.dataset.theme = 'dark'; });
   await page.waitForTimeout(500); // wait for segmented control/color transitions
   await page.screenshot({ path: screenshotDir + '/03-mobile-agent-dark.png' });
-  check('agent dark appearance: designed hero and composer remain visible',
+  check('agent dark appearance: hero and voice-first keyboard control remain visible',
     await dialog.locator('.xsai-welcome-visual').isVisible() &&
-    await dialog.locator('.xsai-composer').isVisible() && errors.length === 0, errors.join(' | '));
+    await dialog.getByRole('button', { name: 'Open keyboard' }).isVisible() &&
+    await dialog.locator('.xsai-composer').count() === 0 &&
+    errors.length === 0, errors.join(' | '));
   await ctx.close();
 }
 {
