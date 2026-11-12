@@ -89,7 +89,7 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
   // appears in the chat, and the microphone never waits for speech playback.
   // Serialize money-changing commands: holding again while the first request
   // is pending queues the new text without overlapping server actions.
-  function ask(content: string) {
+  function ask(content: string, fromVoice = false) {
     const q = content.trim();
     if (!q || closingRef.current) return;
     const command = { content: q, language: lang, id: crypto.randomUUID() };
@@ -97,7 +97,8 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
     const updated: Turn[] = [...turnsRef.current, { role: 'user', content: q }];
     turnsRef.current = updated;
     setTurns(updated);
-    setText('');
+    // A late speech result must not clear text the user started typing after release.
+    if (!fromVoice) setText('');
     void drainQueue();
   }
 
@@ -172,7 +173,7 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
         // event can put its retry/dismiss control under the releasing finger.
         // Open after the gesture finishes, so it cannot be clicked accidentally.
         setTimeout(() => {
-          if (closingRef.current) return;
+          if (closingRef.current || holdRef.current) return;
           setSpeechIssue({ code: error.browserCode, locale: error.locale });
           setMicDialog(error.reason === 'denied' || error.reason === 'audio' ? 'denied'
             : error.reason === 'unsupported' ? 'unsupported' : 'service');
@@ -181,8 +182,7 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
       return;
     }
     const heard = (session.final || session.latest).trim();
-    setText('');
-    if (heard) ask(heard); // Only release can send; silence sends nothing.
+    if (heard) ask(heard, true); // Only release can send; silence sends nothing.
   }
 
   function cancelHold() {
