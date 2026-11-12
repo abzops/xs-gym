@@ -177,7 +177,31 @@ for (const [label, mobile] of [['phone touch', true], ['desktop mouse', false]])
     await dialog.locator('.xsai-mic-backdrop').count() === 0 &&
     await idleMic(page));
 
+  if (mobile) {
+    const rect = await mic.boundingBox();
+    const diagnostics = await page.evaluate(({ x, y }) => {
+      const hit = document.elementFromPoint(x, y);
+      const orb = document.querySelector('.xsai-orb');
+      const sheet = document.querySelector('.sheet');
+      return {
+        hit: hit?.className?.baseVal ?? hit?.className ?? hit?.tagName,
+        hitTag: hit?.tagName, pressed: orb?.getAttribute('aria-pressed'),
+        inDom: !!orb?.isConnected, sheetY: sheet?.getBoundingClientRect().y,
+        micY: orb?.getBoundingClientRect().y,
+        currentScale: window.visualViewport?.scale,
+      };
+    }, { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 });
+    console.log('XS AI mic first-touch geometry:', JSON.stringify(diagnostics));
+  }
   const first = await hold(page, mic, mobile);
+  if (mobile) {
+    console.log('XS AI mic after down:', JSON.stringify(await page.evaluate(() => ({
+      pressed: document.querySelector('.xsai-orb')?.getAttribute('aria-pressed'),
+      started: window.__speech?.started,
+      active: !!window.__speech?.last,
+      text: document.querySelector('input[aria-label="Message XS AI"]')?.value,
+    }))));
+  }
   const lang = await page.evaluate(() => window.__speech.last?.lang);
   check(label + ': press starts English browser recognition', lang === 'en-IN');
   await page.evaluate(() => window.__partial('How much'));
