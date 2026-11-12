@@ -461,8 +461,12 @@ export async function runAgent(req: AgentRequest, env: AgentEnv): Promise<AgentR
   const user = (await auth.json().catch(() => null)) as Json | null;
   const userId = typeof user?.id === 'string' ? user.id : '';
   if (!isUuid(userId)) throw new ApiError('not signed in', 401);
-  const gyms = (await rest(`gyms?select=id,name,slug,timezone,grace_days&id=eq.${req.gym_id}`)) as Ctx['gym'][];
-  const staff = (await rest(`gym_staff?select=role,status&gym_id=eq.${req.gym_id}&user_id=eq.${userId}`)) as Json[];
+  // Independent, JWT/RLS-scoped read checks may run together to save an RTT.
+  // Never issue any gym data query before the caller identity is verified.
+  const [gyms, staff] = await Promise.all([
+    rest(`gyms?select=id,name,slug,timezone,grace_days&id=eq.${req.gym_id}`) as Promise<Ctx['gym'][]>,
+    rest(`gym_staff?select=role,status&gym_id=eq.${req.gym_id}&user_id=eq.${userId}`) as Promise<Json[]>,
+  ]);
   if (!gyms[0] || !staff[0] || staff[0].status !== 'active') throw new ApiError('you are not staff in this gym', 403);
   const role = String(staff[0].role);
   const perms = new Set(((await rest(`role_permissions?select=permission&role=eq.${role}`)) as Json[]).map((p) => String(p.permission)));
