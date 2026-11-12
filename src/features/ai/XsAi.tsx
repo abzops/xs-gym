@@ -73,6 +73,7 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
   const [holding, setHolding] = useState(false);
   const [keyboardOpen, setKeyboardOpen] = useState(false);
   const [transcribing, setTranscribing] = useState(false);
+  const [liveTranscript, setLiveTranscript] = useState('');
   const [micDialog, setMicDialog] = useState<MicDialog>(null);
   const [, setSpeechIssue] = useState<{ code: string; locale: string } | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -125,6 +126,7 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
     stopSpeaking();
     setHolding(false);
     setTranscribing(false);
+    setLiveTranscript('');
   }, []);
   useEffect(() => () => { stopInteraction(); }, [stopInteraction]);
 
@@ -307,7 +309,7 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
     session.abort();
     session.backup?.abort();
     removeVoicePending(session.pendingId);
-    if (!closingRef.current) setText('');
+    if (!closingRef.current) { setText(''); setLiveTranscript(''); }
   }
 
   function releaseHold() {
@@ -318,6 +320,7 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
     // browser finalizes text and the previous AI reply is processing.
     setHolding(false);
     setText('');
+    setLiveTranscript('');
     // Stop local capture immediately. Its bytes are uploaded ONLY if browser
     // Malayalam fails, after the user already released the button.
     if (session.backup) session.backupClip = session.backup.stop();
@@ -374,6 +377,7 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
     listeningBusy.current = true;
     setSpeechIssue(null);
     setText('');
+    setLiveTranscript('');
     setHolding(true);
     setKeyboardOpen(false);
     const session: HoldSession = {
@@ -391,7 +395,7 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
       const onPartial = (partial: string) => {
         if (!pendingVoice.current.has(session) || session.cancelled) return;
         session.latest = partial;
-        if (holdRef.current === session && !closingRef.current && !session.released) setText(partial);
+        if (holdRef.current === session && !closingRef.current && !session.released) setLiveTranscript(partial);
       };
       const browserShortLocale = alternateMalayalam && lang === 'ml';
       const startProvider = (cloud: boolean) => {
@@ -518,6 +522,17 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
     finishGesture();
   }
 
+  function toggleKeyboard() {
+    if (keyboardOpen) {
+      setKeyboardOpen(false);
+      inputRef.current?.blur();
+    } else {
+      setKeyboardOpen(true);
+      requestAnimationFrame(() => inputRef.current?.focus());
+    }
+    setMicDialog(null);
+  }
+
   function onAccessibleClick(event: ReactMouseEvent<HTMLButtonElement>) {
     // Ignore synthetic clicks after a pointer/keyboard release. VoiceOver's
     // click without a pointer has detail=0, so it can toggle accessibly.
@@ -545,6 +560,8 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
       removeVoicePending(session.pendingId);
       setHolding(false);
       setText('');
+      setLiveTranscript('');
+      setTranscribing(false);
     }
     document.addEventListener('visibilitychange', onHidden);
     return () => document.removeEventListener('visibilitychange', onHidden);
@@ -553,13 +570,15 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
   // Keep real backend actions and their audit trail untouched. This is a
   // UI-only reset and cannot run while requests or microphone use are active.
   function newConversation() {
-    if (requestBusy.current || commandQueue.current.length || holdRef.current || listeningBusy.current) return;
+    if (requestBusy.current || commandQueue.current.length || pendingVoice.current.size || holdRef.current || listeningBusy.current) return;
     stopSpeaking();
     processedHistory.current = [];
     commandQueue.current = [];
     turnsRef.current = [];
     setTurns([]);
     setText('');
+    setKeyboardOpen(false);
+    setLiveTranscript('');
     setCopiedTurn(null);
     setMicDialog(null);
     setSpeechIssue(null);
