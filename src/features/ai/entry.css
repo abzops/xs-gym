@@ -1,13 +1,6 @@
-/* XS AI entry points: glowing orb in the phone header, item in the sidebar.
-   Loaded with the shell; the panel's own styles load on first open. */
+/* XS AI floating launcher on every gym screen, with an optional desktop sidebar entry. */
 @keyframes xsai-spin { to { transform: rotate(1turn); } }
-/* Entry points */
-.xsai-entry { display: grid; place-items: center; width: 34px; height: 34px; margin-left: auto; border: 0; border-radius: 50%; cursor: pointer; flex: none;
-  color: var(--on-primary); background: radial-gradient(circle at 35% 30%, color-mix(in srgb, var(--primary) 70%, #fff) 0%, var(--primary) 65%);
-  box-shadow: var(--elev-btn), 0 0 0 0 rgb(10 132 255 / 0); position: relative; isolation: isolate; }
-.xsai-entry::after { content: ""; position: absolute; inset: -3px; z-index: -1; border-radius: 50%; opacity: 0.55; filter: blur(5px);
-  background: conic-gradient(from 0deg, #34C759, #0A84FF, #BF5AF2, #FF375F, #FF9F0A, #34C759); animation: xsai-spin 6s linear infinite; }
-.xsai-entry:active { transform: scale(0.92); }
+/* The mobile header no longer contains a duplicate AI entry. */
 .sidebar .xsai-side .xsai-mark { display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; position: relative; isolation: isolate;
   background: radial-gradient(circle at 35% 30%, #fff 0%, #D9D9DE 70%); color: #171719; }
 .sidebar .xsai-side .xsai-mark::after { content: ""; position: absolute; inset: -2px; z-index: -1; border-radius: 50%; filter: blur(3px); opacity: 0.8;
@@ -15,4 +8,44 @@
 
 @media (prefers-reduced-motion: reduce) {
   .xsai-entry::after, .sidebar .xsai-side .xsai-mark::after { animation: none !important; }
+}
+
+
+/* One draggable XS AI entry follows the user across every gym section. */
+.xsai-floating-launcher {
+  position: fixed; z-index: 40; display: grid; place-items: center;
+  width: 60px; height: 60px; border-radius: 22px;
+  border: 1px solid rgb(255 255 255 / 24%);
+  color: #fff; background: linear-gradient(145deg, #333245, #111116 80%);
+  box-shadow: 0 9px 24px rgb(0 0 0 / 25%), inset 0 1px 1px rgb(255 255 255 / 24%);
+  cursor: grab; isolation: isolate;
+  -webkit-user-select: none; user-select: none; -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent; touch-action: none;
+  transition: left 220ms cubic-bezier(.2,.8,.2,1), top 220ms cubic-bezier(.2,.8,.2,1),
+    transform 150ms ease, box-shadow 150ms ease;
+}
+.xsai-floating-launcher > * { pointer-events: none; -webkit-user-select: none; user-select: none; }
+.xsai-floating-launcher.is-dragging {
+  cursor: grabbing; transform: scale(1.08); transition: transform 110ms ease, box-shadow 110ms ease;
+  box-shadow: 0 14px 36px rgb(0 0 0 / 30%), 0 0 0 7px rgb(140 130 255 / 18%);
+}
+.xsai-floating-launcher:active:not(.is-dragging) { transform: scale(.94); }
+.xsai-floating-launcher:focus-visible { outline: 3px solid var(--focus); outline-offset: 4px; }
+.xsai-floating-glow {
+  position: absolute; z-index: -1; inset: -5px; border-radius: 27px;
+  background: conic-gradient(from 45deg, #9685ff, #6edce5, #dba5fc, #fbd2c6, #9685ff);
+  opacity: .45; filter: blur(7px); animation: xsai-float-aura 9s linear infinite;
+}
+.xsai-floating-ai {
+  position: absolute; right: 6px; bottom: 6px;
+  color: #e3e1ff; font-size: 9px; font-weight: 800; letter-spacing: -.03em;
+}
+@keyframes xsai-float-aura { to { transform: rotate(360deg); } }
+@media (hover: hover) {
+  .xsai-floating-launcher:not(.is-dragging):hover {
+    box-shadow: 0 12px 30px rgb(0 0 0 / 28%), 0 0 0 5px rgb(140 130 255 / 16%);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .xsai-floating-launcher, .xsai-floating-glow { animation: none !important; transition: none !important; }
 }

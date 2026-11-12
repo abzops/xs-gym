@@ -512,7 +512,7 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
   }
 
   return (
-    <Sheet title="XS AI" onClosing={stopInteraction} onClose={() => { stopInteraction(); onClose(); }}>
+    <Sheet instant title="XS AI" onClosing={stopInteraction} onClose={() => { stopInteraction(); onClose(); }}>
       <div className="xsai">
         <div className="xsai-locale-row">
           {turns.length > 0 && (
@@ -605,18 +605,25 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
         </div>
 
         <div className={`xsai-controls ${holding ? 'is-listening' : ''}`}>
-          <div className="xsai-composer">
+          <div className="xsai-voice-zone">
             <button type="button" className={`xsai-orb ${holding ? 'listening' : ''}`}
               onPointerDown={onPressDown} onPointerUp={onPressUp} onPointerCancel={onPressCancel}
               onLostPointerCapture={onPressCancel}
               onKeyDown={onHoldKeyDown} onKeyUp={onHoldKeyUp}
               onContextMenu={(event) => event.preventDefault()}
+              onDragStart={(event) => event.preventDefault()}
               onClick={onAccessibleClick}
               aria-pressed={holding}
               aria-label={holding ? 'Release to send' : 'Hold to talk to XS AI'}>
               <span className="xsai-orb-glow" aria-hidden="true" />
-              <Mic size={21} strokeWidth={2} />
+              <Mic size={27} strokeWidth={1.85} aria-hidden="true" />
+              <span className="xsai-hold-waves" aria-hidden="true"><i /><i /><i /><i /></span>
             </button>
+            <span className="xsai-voice-caption" aria-hidden="true">
+              {holding ? 'Release to send' : 'Hold to talk'}
+            </span>
+          </div>
+          <div className="xsai-composer">
             <form className="xsai-type" onSubmit={(event) => { event.preventDefault(); ask(text); }}>
               <input ref={inputRef} className="input" lang={lang === 'ml' ? 'ml-IN' : 'en-IN'}
                 value={text} onChange={(event) => setText(event.target.value)}

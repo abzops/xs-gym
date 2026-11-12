@@ -12,12 +12,15 @@ import type { MembershipStatus } from '../lib/types';
    pulled up, and on release hands the finger's velocity to the spring,
    projecting the flick to decide between settling and dismissing.
    Wider screens and reduced motion: a centred dialog with a short fade. */
-export function Sheet({ title, onClose, onClosing, children }: { title: string; onClose: () => void; onClosing?: () => void; children: ReactNode }) {
+export function Sheet({ title, onClose, onClosing, children, instant = false }: { title: string; onClose: () => void; onClosing?: () => void; children: ReactNode; instant?: boolean }) {
   const ref = useRef<HTMLDivElement>(null);
   const backdrop = useRef<HTMLDivElement>(null);
   const [closing, setClosing] = useState(false);
+  // A voice assistant must be immediately touchable when launched. Other
+  // sheets keep the shared spring/drag behavior unchanged.
   const [physical] = useState(() =>
-    window.matchMedia('(max-width: 719px)').matches && !window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+    !instant && window.matchMedia('(max-width: 719px)').matches &&
+    !window.matchMedia('(prefers-reduced-motion: reduce)').matches);
   const spring = useRef<Spring | null>(null);
   const tracker = useRef(new VelocityTracker());
   const drag = useRef<{ start: number; base: number; moved: boolean } | null>(null);

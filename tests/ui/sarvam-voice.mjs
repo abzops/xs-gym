@@ -81,7 +81,7 @@ const page = await context.newPage();
 const errors = [];
 page.on('pageerror', (e) => errors.push(e.message));
 await page.goto(baseUrl + 'g/' + gym.slug, { waitUntil: 'networkidle' });
-await page.locator('.topbar .xsai-entry').tap();
+await page.getByRole('button', { name: 'Open XS AI' }).tap();
 const dialog = page.getByRole('dialog', { name: 'XS AI' });
 await dialog.getByRole('group', { name: 'Language' }).getByRole('button', { name: 'മലയാളം' }).tap();
 const orb = dialog.locator('.xsai-orb');

@@ -130,7 +130,7 @@ async function setup({ mobile = true, noSpeech = false, delay = 0 } = {}) {
   await page.goto(baseUrl + 'g/' + gym.slug, { waitUntil: 'networkidle' });
   const tap = (item) => mobile ? item.tap() : item.click();
   async function open() {
-    const entry = mobile ? page.locator('.topbar .xsai-entry') : page.locator('.sidebar .xsai-side');
+    const entry = page.getByRole('button', { name: 'Open XS AI' });
     await tap(entry);
     const dialog = page.getByRole('dialog', { name: 'XS AI' });
     await dialog.waitFor();
@@ -177,6 +177,12 @@ for (const [label, mobile] of [['phone touch', true], ['desktop mouse', false]])
     await dialog.locator('.xsai-mic-backdrop').count() === 0 &&
     await idleMic(page));
 
+  if (mobile) {
+    const rect = await mic.boundingBox();
+    const actual = await page.evaluate(({x,y}) => document.elementFromPoint(x,y)?.closest('.xsai-orb') !== null,
+      {x:rect.x + rect.width / 2, y:rect.y + rect.height / 2});
+    check('iPhone: XS AI microphone is hit-testable on the first frame', actual);
+  }
   const first = await hold(page, mic, mobile);
   const lang = await page.evaluate(() => window.__speech.last?.lang);
   check(label + ': press starts English browser recognition', lang === 'en-IN');

@@ -12,6 +12,7 @@ import { pageModules, prefetchSection } from '../lib/sections';
 import { supabase } from '../lib/supabase';
 import { ROLE_LABEL } from '../lib/types';
 import '../features/ai/entry.css';
+import { FloatingXsAi } from '../features/ai/FloatingXsAi';
 import { useGym } from './gym';
 
 const XsAiPanel = lazy(() => import('../features/ai/XsAi').then((m) => ({ default: m.XsAiPanel })));
@@ -37,6 +38,21 @@ export function Shell() {
   const { gym, role, can, canWrite, subscription } = useGym();
   const [more, setMore] = useState(false);
   const [ai, setAi] = useState(false);
+  function openAi() {
+    // React Router may still be displaying a view-transition snapshot from
+    // the last route. It lives in the top layer and can swallow the first mic
+    // touch even though the real XS AI sheet is already rendered beneath.
+    // Finish only those decorative pseudo-element animations, not the app's
+    // actual content or all ongoing animations.
+    for (const animation of document.getAnimations()) {
+      const effect = animation.effect as KeyframeEffect | null;
+      if (!effect?.pseudoElement?.startsWith('::view-transition')) continue;
+      try { animation.finish(); } catch { animation.cancel(); }
+    }
+    setMore(false);
+    // Allow the transition top-layer to be cleared before showing the sheet.
+    requestAnimationFrame(() => setAi(true));
+  }
   const location = useLocation();
   const items = NAV.filter((n) => can(n.perm));
   const primary = items.slice(0, 4);
@@ -100,7 +116,7 @@ export function Shell() {
           </NavLink>
         ))}
         <div className="grow" />
-        <button className="signout xsai-side" onClick={() => setAi(true)} title="XS AI" onPointerEnter={() => void import('../features/ai/XsAi')}>
+        <button className="signout xsai-side" onClick={openAi} title="XS AI" onPointerEnter={() => void import('../features/ai/XsAi')}>
           <span className="xsai-mark" aria-hidden><Sparkles size={13} strokeWidth={2.4} /></span> <span className="nav-label">XS AI</span>
         </button>
         <AppearanceButton className="signout" />
@@ -114,9 +130,6 @@ export function Shell() {
           <img className="brand-mark only-light" src={mark} alt="" width={26} height={26} />
           <img className="brand-mark only-dark" src={markOnDark} alt="" width={26} height={26} />
           <span className="gym">{gym.name}</span>
-          <button className="xsai-entry" onClick={() => setAi(true)} aria-label="XS AI" onPointerDown={() => void import('../features/ai/XsAi')}>
-            <Sparkles size={17} strokeWidth={2.2} />
-          </button>
         </header>
         <main className="main">
           {!canWrite && (
@@ -141,6 +154,7 @@ export function Shell() {
         </button>
       </nav>
 
+      {!ai && <FloatingXsAi gymId={gym.id} onOpen={openAi} />}
       {ai && <Suspense fallback={null}><XsAiPanel onClose={() => setAi(false)} /></Suspense>}
 
       {more && (
