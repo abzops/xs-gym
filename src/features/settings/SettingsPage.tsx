@@ -10,6 +10,7 @@ import { errorMessage } from '../../lib/errors';
 import { rpc } from '../../lib/supabase';
 import { ROLE_LABEL, type Role, type StaffRow } from '../../lib/types';
 import { setSpokenReplies, spokenRepliesEnabled } from '../ai/preferences';
+import { setSttInputMode, sttInputMode } from '../ai/sttPreferences';
 
 export function SettingsPage() {
   const { can, subscription } = useGym();
@@ -39,6 +40,7 @@ export function SettingsPage() {
 
 function SpokenRepliesSetting() {
   const [enabled, setEnabled] = useState(spokenRepliesEnabled);
+  const [cloudMalayalam, setCloudMalayalam] = useState(() => sttInputMode() === 'sarvam');
   return (
     <section className="card" aria-label="XS AI settings">
       <div className="row between" style={{ alignItems: 'center', gap: 16 }}>
@@ -53,6 +55,21 @@ function SpokenRepliesSetting() {
             const next = event.target.checked;
             setSpokenReplies(next);
             setEnabled(next);
+          }} />
+      </div>
+      <div className="row between" style={{ alignItems: 'center', gap: 16, marginTop: 16, paddingTop: 16, borderTop: '1px solid var(--hair)' }}>
+        <div className="stack" style={{ gap: 4 }}>
+          <label htmlFor="xs-ai-sarvam-voice">Automatic Malayalam voice fallback</label>
+          <span className="muted" style={{ fontSize: 13 }}>
+            Optional. Browser recognition is tried first. If it fails, your voice audio is sent to Sarvam AI in the cloud. No repeated popups; payments and membership changes still require confirmation.
+          </span>
+        </div>
+        <input id="xs-ai-sarvam-voice" type="checkbox" role="switch"
+          checked={cloudMalayalam} aria-label="Use Sarvam cloud speech for Malayalam"
+          onChange={(event) => {
+            const next = event.target.checked;
+            setSttInputMode(next ? 'sarvam' : 'browser');
+            setCloudMalayalam(next);
           }} />
       </div>
     </section>

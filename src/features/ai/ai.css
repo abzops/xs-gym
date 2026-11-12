@@ -274,3 +274,10 @@
   .xsai-composer, .xsai-shortcut, .xsai-bubble, .xsai-agent-bar { border-color: var(--ink); }
   .xsai-state-tag { border-color: var(--graphite); }
 }
+
+/* Messenger-like immediate outgoing voice bubble, no processing banners. */
+.xsai-turn.user .xsai-bubble.xsai-voice-pending {
+  opacity: .72; min-width: 43px; min-height: 33px;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.xsai-voice-pending svg { animation: xsai-pulse 900ms ease-in-out infinite; }
