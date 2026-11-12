@@ -255,8 +255,13 @@ for (const [name, mobile, standalone, scheme] of [
     detail.includes('service-not-allowed') && detail.includes('ml-IN') &&
     log.agent.length === 0 && log.transcribe.length === 0 && errors.length === 0, errors.join(' | '));
   await tap(help.getByRole('button', { name: 'കീബോർഡ് ഉപയോഗിക്കുക' }));
+  await page.waitForTimeout(140); // React restores the input on animation frame
+  const focusInfo = await page.evaluate(() => ({
+    target: document.activeElement?.getAttribute('aria-label'),
+    tag: document.activeElement?.tagName,
+  }));
   check('iPhone: keyboard fallback retains focus',
-    await dialog.getByRole('textbox', { name: 'Message XS AI' }).evaluate((el) => document.activeElement === el));
+    focusInfo.target === 'Message XS AI', JSON.stringify(focusInfo));
   await ctx.close();
 }
 
