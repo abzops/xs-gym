@@ -708,9 +708,14 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
           )}
         </div>
 
-        <div className={`xsai-controls ${holding ? 'is-listening' : ''}`}>
+        <div className={'xsai-controls' + (holding ? ' is-listening' : '')}>
+          {holding && liveTranscript && (
+            <div className="xsai-live-transcript" aria-live="off" lang={lang === 'ml' ? 'ml-IN' : 'en-IN'}>
+              {liveTranscript}
+            </div>
+          )}
           <div className="xsai-voice-zone">
-            <button type="button" className={`xsai-orb ${holding ? 'listening' : ''}`}
+            <button type="button" className={'xsai-orb' + (holding ? ' listening' : '')}
               onPointerDown={onPressDown} onPointerUp={onPressUp} onPointerCancel={onPressCancel}
               onLostPointerCapture={onPressCancel}
               onKeyDown={onHoldKeyDown} onKeyUp={onHoldKeyUp}
@@ -723,39 +728,52 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
               <Mic size={27} strokeWidth={1.85} aria-hidden="true" />
               <span className="xsai-hold-waves" aria-hidden="true"><i /><i /><i /><i /></span>
             </button>
-            <span className="xsai-voice-caption" aria-hidden="true">
-              {holding ? 'Release to send' : 'Hold to talk'}
+            <span className="xsai-voice-caption" aria-live="polite">
+              {holding ? 'Release to send' : transcribing ? 'Transcribing…' : 'Hold to talk'}
             </span>
+            <button type="button" className={'xsai-keyboard-toggle' + (keyboardOpen ? ' is-active' : '')}
+              onClick={toggleKeyboard} disabled={holding}
+              aria-pressed={keyboardOpen} title={keyboardOpen ? 'Hide keyboard' : 'Open keyboard'}
+              aria-label={keyboardOpen ? 'Hide keyboard' : 'Open keyboard'}>
+              <Keyboard size={22} strokeWidth={1.9} aria-hidden="true" />
+            </button>
           </div>
-          <div className="xsai-composer">
-            <form className="xsai-type" onSubmit={(event) => { event.preventDefault(); ask(text); }}>
-              <input ref={inputRef} className="input" lang={lang === 'ml' ? 'ml-IN' : 'en-IN'}
-                value={text} onChange={(event) => setText(event.target.value)}
-                placeholder={lang === 'ml' ? 'എന്തെങ്കിലും ചോദിക്കൂ…' : 'Ask XS AI anything…'}
-                aria-label="Message XS AI" enterKeyHint="send" />
-              <button className="xsai-send" disabled={!text.trim() || holding} aria-label="Send">
-                <ArrowUp size={19} strokeWidth={2.4} />
-              </button>
-            </form>
-          </div>
-          <span className="sr-only" role="status">{holding ? 'Listening' : ''}</span>
+          {keyboardOpen && (
+            <div className="xsai-composer">
+              <form className="xsai-type" onSubmit={(event) => {
+                event.preventDefault();
+                if (!text.trim()) return;
+                ask(text);
+                setText('');
+              }}>
+                <input ref={inputRef} className="input" lang={lang === 'ml' ? 'ml-IN' : 'en-IN'}
+                  value={text} onChange={(event) => setText(event.target.value)}
+                  placeholder={lang === 'ml' ? 'എന്തെങ്കിലും ചോദിക്കൂ…' : 'Ask XS AI anything…'}
+                  aria-label="Message XS AI" enterKeyHint="send" />
+                <button className="xsai-send" disabled={!text.trim() || holding} aria-label="Send">
+                  <ArrowUp size={19} strokeWidth={2.4} />
+                </button>
+              </form>
+            </div>
+          )}
+          <span className="sr-only" role="status">{holding ? 'Listening' : transcribing ? 'Transcribing audio' : ''}</span>
           {micDialog && (
             <div className="xsai-inline-issue" role="status">
               <span>
                 {micDialog === 'denied' ? 'Microphone access needed' :
-                  micDialog === 'enable-ml' ? 'Enable Malayalam voice fallback' :
-                  micDialog === 'setup-ml' ? 'Malayalam speech needs server setup' :
-                  micDialog === 'unsupported' ? 'Voice not supported here' : 'Could not transcribe audio'}
+                  micDialog === 'setup-ml' ? 'Malayalam voice temporarily unavailable' :
+                  micDialog === 'unsupported' ? 'Voice not supported here' : 'Voice unavailable — try again'}
               </span>
-              <button type="button" onClick={() => {
-                const settings = micDialog === 'enable-ml' || micDialog === 'setup-ml';
-                setMicDialog(null);
-                if (settings) {
-                  onClose();
-                  navigate(`/g/${gym.slug}/settings`);
-                } else inputRef.current?.focus();
-              }}>{micDialog === 'enable-ml' || micDialog === 'setup-ml' ? 'Settings' : 'Type'}</button>
-              <button type="button" aria-label="Dismiss voice message" onClick={() => setMicDialog(null)}><X size={14} /></button>
+              <button type="button" aria-label="Type message" title="Type message"
+                onClick={() => {
+                  setMicDialog(null);
+                  setKeyboardOpen(true);
+                  requestAnimationFrame(() => inputRef.current?.focus());
+                }}>
+                <Keyboard size={18} aria-hidden="true" />
+              </button>
+              <button type="button" aria-label="Dismiss voice message"
+                onClick={() => setMicDialog(null)}><X size={14} /></button>
             </div>
           )}
         </div>
