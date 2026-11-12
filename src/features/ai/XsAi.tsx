@@ -70,6 +70,7 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
   const holdRef = useRef<HoldSession | null>(null);
   const activePointer = useRef<number | null>(null);
   const keyboardHeld = useRef(false);
+  const pendingUnavailable = useRef(false);
   const suppressClickUntil = useRef(0);
   const [alternateMalayalam, setAlternateMalayalam] = useState(false);
   const closingRef = useRef(false);
@@ -87,6 +88,7 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
     closingRef.current = true;
     activePointer.current = null;
     keyboardHeld.current = false;
+    pendingUnavailable.current = false;
     const session = holdRef.current;
     holdRef.current = null;
     listeningBusy.current = false;
@@ -209,9 +211,11 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
   function beginHold(): boolean {
     if (closingRef.current || micDialog || holdRef.current || requestBusy.current || listeningBusy.current) return false;
     if (!canListen()) {
+      // Delay the error overlay until pointerup. If it appears while a finger
+      // is down, releasing can click an action in the newly mounted dialog.
+      pendingUnavailable.current = true;
       setSpeechIssue({ code: 'api-unavailable', locale: lang === 'ml' ? 'ml-IN' : 'en-IN' });
-      setMicDialog('unavailable');
-      return false;
+      return true;
     }
     stopSpeaking();
     listeningBusy.current = true;
@@ -254,6 +258,17 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
     return true;
   }
 
+  function finishGesture() {
+    if (pendingUnavailable.current) {
+      pendingUnavailable.current = false;
+      setTimeout(() => {
+        if (!closingRef.current) setMicDialog('unavailable');
+      }, 80);
+      return;
+    }
+    releaseHold();
+  }
+
   function onPressDown(event: ReactPointerEvent<HTMLButtonElement>) {
     if (event.pointerType === 'mouse' && event.button !== 0) return;
     if (activePointer.current !== null || !beginHold()) return;
@@ -268,13 +283,14 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
     activePointer.current = null;
     suppressClickUntil.current = Date.now() + 800;
     event.preventDefault();
-    releaseHold();
+    finishGesture();
   }
 
   function onPressCancel(event: ReactPointerEvent<HTMLButtonElement>) {
     if (activePointer.current !== event.pointerId) return;
     activePointer.current = null;
     suppressClickUntil.current = Date.now() + 800;
+    pendingUnavailable.current = false;
     cancelHold(); // A cancelled gesture must never create a payment command.
   }
 
@@ -291,7 +307,7 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
     if (!keyboardHeld.current) return;
     keyboardHeld.current = false;
     suppressClickUntil.current = Date.now() + 800;
-    releaseHold();
+    finishGesture();
   }
 
   function onAccessibleClick(event: ReactMouseEvent<HTMLButtonElement>) {
@@ -299,7 +315,10 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
     // click without a pointer has detail=0, so it can toggle accessibly.
     if (event.detail > 0 || Date.now() < suppressClickUntil.current) return;
     if (holdRef.current) releaseHold();
-    else beginHold();
+    else if (!canListen()) {
+      setSpeechIssue({ code: 'api-unavailable', locale: lang === 'ml' ? 'ml-IN' : 'en-IN' });
+      setMicDialog('unavailable');
+    } else beginHold();
   }
 
   function useKeyboard() {
@@ -322,6 +341,7 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
       holdRef.current = null;
       activePointer.current = null;
       keyboardHeld.current = false;
+      pendingUnavailable.current = false;
       listeningBusy.current = false;
       if (session.watchdog) clearTimeout(session.watchdog);
       session.abort();
