@@ -1,6 +1,7 @@
 import { useQueryClient } from '@tanstack/react-query';
-import { ArrowUp, Check, CheckCheck, Copy, Mic, Plus, RotateCcw, Sparkles, Users, Wallet, CalendarClock, X } from 'lucide-react';
+import { ArrowUp, Check, CheckCheck, Copy, Keyboard, Mic, Plus, RotateCcw, Sparkles, Users, Wallet, CalendarClock, X } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type MouseEvent as ReactMouseEvent } from 'react';
+import { flushSync } from 'react-dom';
 import { useNavigate } from 'react-router';
 import { useGym } from '../../app/gym';
 import { Segmented, Sheet, useToast } from '../../components/ui';
@@ -8,7 +9,7 @@ import { errorMessage } from '../../lib/errors';
 import { rpc, supabase } from '../../lib/supabase';
 import { canListen, listen, speak, SpeechListenError, stopSpeaking, type Lang } from './voice';
 import { spokenRepliesEnabled } from './preferences';
-import { sttInputMode } from './sttPreferences';
+import { chooseVoiceRoute, iosVoiceDevice, type VoiceRoute } from './voiceRoute';
 import { listenSarvam } from './sarvamRealtime';
 import { captureMalayalamBackup, transcribeFailedNative, type MalayalamClip } from './malayalamBackup';
 import { sarvamReadiness } from './sarvamStatus';
@@ -17,7 +18,7 @@ import './ai.css';
 type Action = { tool: string; ok: boolean; summary: string; undo?: { rpc: string; args: Record<string, unknown> }; undone?: boolean };
 type Turn = { role: 'user' | 'assistant'; content: string; actions?: Action[]; tone?: 'bad'; id?: string; voicePending?: boolean };
 type State = 'idle' | 'thinking';
-type MicDialog = 'denied' | 'unavailable' | 'service' | 'unsupported' | 'enable-ml' | 'setup-ml' | null;
+type MicDialog = 'denied' | 'unavailable' | 'service' | 'unsupported' | 'setup-ml' | null;
 
 type HoldSession = {
   pointerId: number | null;
@@ -25,6 +26,9 @@ type HoldSession = {
   cancelled: boolean;
   settled: boolean;
   cloud: boolean;
+  language: Lang;
+  route: VoiceRoute;
+  complete: boolean;
   backup: ReturnType<typeof captureMalayalamBackup> | null;
   backupClip: Promise<MalayalamClip | null> | null;
   nativeFailed: boolean;
@@ -68,18 +72,19 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
   const [text, setText] = useState('');
   const [copiedTurn, setCopiedTurn] = useState<number | null>(null);
   const [holding, setHolding] = useState(false);
+  const [keyboardOpen, setKeyboardOpen] = useState(false);
+  const [transcribing, setTranscribing] = useState(false);
+  const [liveTranscript, setLiveTranscript] = useState('');
   const [micDialog, setMicDialog] = useState<MicDialog>(null);
   const [, setSpeechIssue] = useState<{ code: string; locale: string } | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const holdRef = useRef<HoldSession | null>(null);
+  const pendingVoice = useRef(new Set<HoldSession>());
+  const releasedVoice = useRef<HoldSession[]>([]);
   const activePointer = useRef<number | null>(null);
   const keyboardHeld = useRef(false);
   const pendingUnavailable = useRef(false);
-  const unavailableMalayalam = useRef((() => {
-    try { return localStorage.getItem('xs-ai-native-ml-unavailable') === '1'; }
-    catch { return false; }
-  })());
   const suppressClickUntil = useRef(0);
   const [alternateMalayalam, setAlternateMalayalam] = useState(false);
   const closingRef = useRef(false);
@@ -104,14 +109,25 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
     holdRef.current = null;
     listeningBusy.current = false;
     commandQueue.current = [];
-    if (session) {
+    // Closing a conversation also cancels previous recordings still waiting
+    // for Malayalam transcription; never leave a mic track or delayed send.
+    for (const active of pendingVoice.current) {
+      active.cancelled = true;
+      if (active.watchdog) clearTimeout(active.watchdog);
+      active.abort();
+      active.backup?.abort();
+    }
+    pendingVoice.current.clear();
+    releasedVoice.current = [];
+    if (session && !session.cancelled) {
       session.cancelled = true;
-      if (session.watchdog) clearTimeout(session.watchdog);
       session.abort();
-      session.backup?.abort(); // never leave a local mic stream running
+      session.backup?.abort();
     }
     stopSpeaking();
     setHolding(false);
+    setTranscribing(false);
+    setLiveTranscript('');
   }, []);
   useEffect(() => () => { stopInteraction(); }, [stopInteraction]);
 
@@ -119,10 +135,10 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
   // appears in the chat, and the microphone never waits for speech playback.
   // Serialize money-changing commands: holding again while the first request
   // is pending queues the new text without overlapping server actions.
-  function ask(content: string, fromVoice = false, pendingId?: string, cloudVoice = false) {
+  function ask(content: string, fromVoice = false, pendingId?: string, cloudVoice = false, language: Lang = lang) {
     const q = content.trim();
     if (!q || closingRef.current) return;
-    const command = { content: q, language: lang, id: crypto.randomUUID(), cloudVoice };
+    const command = { content: q, language, id: crypto.randomUUID(), cloudVoice };
     commandQueue.current.push(command);
     // Messenger behavior: replace the provisional outgoing voice bubble in-place
     // instead of popping it off and appending a second copy.
@@ -197,71 +213,71 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
     }
   }
 
-  // iPhone and Android use pointerdown/up, not click-to-toggle. Browser speech
-  // starts first. Consent-enabled Sarvam retries after a browser failure.
-  function finishTranscript(session: HoldSession) {
-    if (holdRef.current !== session || session.cancelled || !session.released) return;
-    if (session.watchdog) clearTimeout(session.watchdog);
-    holdRef.current = null;
-    listeningBusy.current = false;
-    setHolding(false);
-    if (closingRef.current) return;
-    if (session.failed) {
+  // A new hold can start while the preceding phrase is being transcribed.
+  // Dispatch in release order so gym commands stay serialized and intuitive.
+  function drainVoiceQueue() {
+    while (releasedVoice.current.length && releasedVoice.current[0].complete) {
+      const session = releasedVoice.current.shift()!;
+      if (!pendingVoice.current.has(session)) continue;
+      pendingVoice.current.delete(session);
+      if (session.watchdog) clearTimeout(session.watchdog);
       session.backup?.abort();
-      removeVoicePending(session.pendingId);
-      // Only an actual recognition failure shows a short inline message.
-      // Normal releases never display banners or spoken status.
-      const error = session.failed;
-      if (error instanceof SpeechListenError) {
-        // iOS synthesizes a click after pointerup. Mounting a modal inside that
-        // event can put its retry/dismiss control under the releasing finger.
-        // Open after the gesture finishes, so it cannot be clicked accidentally.
-        setTimeout(() => {
-          if (closingRef.current || holdRef.current) return;
-          setSpeechIssue({ code: error.browserCode, locale: error.locale });
-          // Tell the user what actually failed. Browser-recognition failure
-          // is NOT proof that the microphone could not hear them.
-          if (error.reason === 'denied' || error.reason === 'audio') {
-            setMicDialog('denied');
-            return;
-          }
-          if (lang === 'ml') {
-            // An explicit per-device opt-in is required before uploading audio.
-            if (sttInputMode() !== 'sarvam') {
-              setMicDialog('enable-ml');
+      if (closingRef.current || session.cancelled) continue;
+      if (session.failed) {
+        removeVoicePending(session.pendingId);
+        const error = session.failed;
+        if (error instanceof SpeechListenError) {
+          setTimeout(() => {
+            if (closingRef.current || holdRef.current) return;
+            setSpeechIssue({ code: error.browserCode, locale: error.locale });
+            if (error.reason === 'denied' || error.reason === 'audio') {
+              setMicDialog('denied');
               return;
             }
-            void sarvamReadiness().then(({ ready }) => {
-              if (closingRef.current || holdRef.current) return;
-              setMicDialog(ready ? 'service' : 'setup-ml');
-            });
-            return;
-          }
-          setMicDialog(error.reason === 'unsupported' ? 'unsupported' : 'service');
-        }, 80);
-      } else setMicDialog('service');
-      return;
+            if (session.language === 'ml') {
+              void sarvamReadiness().then(({ ready }) => {
+                if (!closingRef.current && !holdRef.current)
+                  setMicDialog(ready ? 'service' : 'setup-ml');
+              });
+              return;
+            }
+            setMicDialog(error.reason === 'unsupported' ? 'unsupported' : 'service');
+          }, 80);
+        } else setMicDialog('service');
+        continue;
+      }
+      const heard = (session.cloud ? session.final : session.final || session.latest).trim();
+      if (heard) ask(heard, true, session.pendingId ?? undefined, session.cloud, session.language);
+      else removeVoicePending(session.pendingId);
     }
-    // Cloud transcripts require an actual finalized result; browser interim text
-    // may be used on Safari when onend is dropped after finger-up.
-    const heard = (session.cloud ? session.final : session.final || session.latest).trim();
-    session.backup?.abort();
-    if (heard) ask(heard, true, session.pendingId ?? undefined, session.cloud);
-    else removeVoicePending(session.pendingId);
+    if (!closingRef.current)
+      setTranscribing([...pendingVoice.current].some((session) => session.released && !session.complete));
+  }
+
+  function finishTranscript(session: HoldSession) {
+    if (!pendingVoice.current.has(session) || session.cancelled || !session.released || session.complete) return;
+    session.complete = true;
+    if (session.watchdog) clearTimeout(session.watchdog);
+    if (holdRef.current === session) {
+      holdRef.current = null;
+      listeningBusy.current = false;
+      setHolding(false);
+    }
+    drainVoiceQueue();
   }
 
   // The captured clip is local until native recognition actually fails.
   // Uploading only after finger-up preserves the beginning of the sentence.
   function recoverMalayalam(session: HoldSession) {
     if (!session.released || session.cancelled || session.uploading ||
-      holdRef.current !== session || !session.backup) return;
+      !pendingVoice.current.has(session) || !session.backup) return;
     session.uploading = true;
     session.cloud = true; // server enforces READ-ONLY actions for cloud speech
     session.settled = false;
     session.failed = null;
     if (session.watchdog) clearTimeout(session.watchdog);
     session.watchdog = setTimeout(() => {
-      if (holdRef.current !== session || session.cancelled) return;
+      if (!pendingVoice.current.has(session) || session.cancelled) return;
       session.failed = new SpeechListenError('service', 'Malayalam transcription timed out.', 'cloud-timeout', 'ml-IN');
       session.settled = true;
       finishTranscript(session);
@@ -269,16 +285,12 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
     void (session.backupClip ?? session.backup.stop())
       .then((clip) => transcribeFailedNative(gym.id, clip))
       .then((text) => {
-        if (session.cancelled || holdRef.current !== session) return;
+        if (session.cancelled || !pendingVoice.current.has(session)) return;
         session.final = text.trim();
         session.settled = true;
-        if (text.trim()) {
-          unavailableMalayalam.current = true;
-          try { localStorage.setItem('xs-ai-native-ml-unavailable', '1'); } catch { /* private mode */ }
-        }
         finishTranscript(session);
       }, (error: unknown) => {
-        if (session.cancelled || holdRef.current !== session) return;
+        if (session.cancelled || !pendingVoice.current.has(session)) return;
         session.failed = error;
         session.settled = true;
         finishTranscript(session);
@@ -292,12 +304,13 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
     session.released = true;
     holdRef.current = null;
     listeningBusy.current = false;
+    pendingVoice.current.delete(session);
     setHolding(false);
     if (session.watchdog) clearTimeout(session.watchdog);
     session.abort();
     session.backup?.abort();
     removeVoicePending(session.pendingId);
-    if (!closingRef.current) setText('');
+    if (!closingRef.current) { setText(''); setLiveTranscript(''); }
   }
 
   function releaseHold() {
@@ -308,9 +321,16 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
     // browser finalizes text and the previous AI reply is processing.
     setHolding(false);
     setText('');
+    setLiveTranscript('');
     // Stop local capture immediately. Its bytes are uploaded ONLY if browser
     // Malayalam fails, after the user already released the button.
     if (session.backup) session.backupClip = session.backup.stop();
+    // Another hold can begin as soon as this finger lifts. Transcription
+    // completes asynchronously, while releasedVoice preserves message order.
+    releasedVoice.current.push(session);
+    holdRef.current = null;
+    listeningBusy.current = false;
+    setTranscribing(true);
     // Place the message in the conversation immediately. The actual text
     // replaces this quiet placeholder once speech recognition finalizes.
     const pendingId = crypto.randomUUID();
@@ -321,11 +341,12 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
     // Do not call stop() again when the browser has already ended/failed;
     // WebKit iOS 27 has a reported repeated-recognition regression.
     if (!session.settled) session.stop();
-    if (session.nativeFailed && session.backup) recoverMalayalam(session);
+    if ((session.route === 'recording' || session.nativeFailed) && session.backup)
+      recoverMalayalam(session);
     else if (session.settled) finishTranscript(session);
     else {
       session.watchdog = setTimeout(() => {
-        if (holdRef.current !== session || session.cancelled) return;
+        if (!pendingVoice.current.has(session) || session.cancelled) return;
         if (session.backup && !session.cloud && !(session.final || session.latest).trim()) {
           session.nativeFailed = true;
           recoverMalayalam(session);
@@ -341,13 +362,14 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
   function beginHold(): boolean {
     if (closingRef.current || holdRef.current || listeningBusy.current) return false;
     setMicDialog(null);
-    // Sarvam is never first choice unless this session has already seen
-    // a browser Malayalam failure (or there is no browser speech API).
-    const canFallback = lang === 'ml' && sttInputMode() === 'sarvam';
-    const useSarvam = canFallback && (unavailableMalayalam.current || !canListen());
-    if (!useSarvam && !canListen()) {
-      // Delay the error overlay until pointerup. If it appears while a finger
-      // is down, releasing can click an action in the newly mounted dialog.
+    // iOS Safari/WebKit can mute a second getUserMedia stream during Web Speech.
+    // Route iOS Malayalam through ONE recorder from press to release; elsewhere
+    // browser recognition runs first with automatic Sarvam fallback.
+    const native = canListen();
+    const recorder = typeof MediaRecorder !== 'undefined' &&
+      typeof navigator.mediaDevices?.getUserMedia === 'function';
+    const route = chooseVoiceRoute(lang, { native, recorder, ios: iosVoiceDevice() });
+    if (route === 'unavailable') {
       pendingUnavailable.current = true;
       setSpeechIssue({ code: 'api-unavailable', locale: lang === 'ml' ? 'ml-IN' : 'en-IN' });
       return true;
@@ -356,25 +378,27 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
     listeningBusy.current = true;
     setSpeechIssue(null);
     setText('');
+    setLiveTranscript('');
     setHolding(true);
+    setKeyboardOpen(false);
     const session: HoldSession = {
       pointerId: null, released: false, cancelled: false, settled: false,
-      cloud: useSarvam,
-      backup: !useSarvam && canFallback ? captureMalayalamBackup() : null,
+      cloud: route === 'recording' || route === 'realtime',
+      language: lang, route, complete: false,
+      backup: lang === 'ml' && route !== 'realtime' ? captureMalayalamBackup() : null,
       backupClip: null, nativeFailed: false, uploading: false,
       pendingId: null, latest: '', final: '', failed: null,
       stop: () => {}, abort: () => {}, watchdog: null,
     };
+    pendingVoice.current.add(session);
     holdRef.current = session;
     try {
       const onPartial = (partial: string) => {
-        if (holdRef.current !== session || session.cancelled) return;
+        if (!pendingVoice.current.has(session) || session.cancelled) return;
         session.latest = partial;
-        if (!closingRef.current && !session.released) setText(partial);
+        if (holdRef.current === session && !closingRef.current && !session.released) setLiveTranscript(partial);
       };
-      // Try both native Malayalam locale tags before invoking a previously
-      // consented cloud provider; Safari support varies by browser version.
-      let browserShortLocale = alternateMalayalam && lang === 'ml';
+      const browserShortLocale = alternateMalayalam && lang === 'ml';
       const startProvider = (cloud: boolean) => {
         session.cloud = cloud;
         const recognition = cloud
@@ -383,89 +407,59 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
         session.stop = recognition.stop;
         session.abort = recognition.abort;
         void recognition.done.then((result) => {
-          if (holdRef.current !== session || session.cancelled) return;
+          if (!pendingVoice.current.has(session) || session.cancelled) return;
           session.final = result.trim();
           if (!cloud && session.backup && (
             !session.final ||
             (!/[\u0D00-\u0D7F]/u.test(session.final) &&
               /[A-Za-z]/u.test(session.final) && session.final.split(/\s+/u).length >= 2)
           )) {
-            // Empty or Latin-only transcription while Malayalam is selected:
-            // recover the ORIGINAL audio rather than asking to repeat speech.
+            // Native returned silence or the wrong language. The locally
+            // buffered audio is submitted just once, after finger-up.
             session.nativeFailed = true;
             if (session.released) recoverMalayalam(session);
             return;
           }
-          if (!cloud && !session.final && lang === 'ml' && !session.latest.trim()) {
-            if (!browserShortLocale) setAlternateMalayalam(true);
-            else if (canFallback) unavailableMalayalam.current = true;
-          }
-          if (!cloud && session.final && lang === 'ml' && /[\u0D00-\u0D7F]/u.test(session.final)) {
-            unavailableMalayalam.current = false;
-            try { localStorage.removeItem('xs-ai-native-ml-unavailable'); } catch { /* private mode */ }
-          }
-          session.backup?.abort(); // native transcript succeeded: discard local audio
+          if (!cloud && !session.final && lang === 'ml') setAlternateMalayalam(true);
+          session.backup?.abort(); // native succeeded; never upload its audio
           session.settled = true;
           if (session.released) finishTranscript(session);
         }, (error: unknown) => {
-          if (holdRef.current !== session || session.cancelled) return;
-          const browserError = error instanceof SpeechListenError ? error : null;
-          if (!cloud && session.backup && browserError &&
-              ['no-speech', 'language-not-supported', 'service-not-allowed', 'network'].includes(browserError.browserCode)) {
-            // Keep capturing until finger-up; no cloud upload before failure.
+          if (!pendingVoice.current.has(session) || session.cancelled) return;
+          if (!cloud && session.backup) {
+            // Any native interruption is automatically recoverable. A denied
+            // microphone will still fail cleanly if no audio was captured.
             session.nativeFailed = true;
             if (session.released) recoverMalayalam(session);
             return;
           }
-          if (!cloud && browserError?.browserCode === 'no-speech') {
-            if (lang === 'ml') {
-              if (!browserShortLocale) setAlternateMalayalam(true);
-              else if (canFallback) unavailableMalayalam.current = true;
-            }
-            // A silent press never creates an error message or AI command.
+          if (!cloud && lang === 'ml' && !session.released) {
+            // MediaRecorder unavailable: hand off to live Sarvam while the
+            // finger is still down instead of waiting for another attempt.
+            session.route = 'realtime';
             session.final = '';
             session.latest = '';
             session.failed = null;
-            session.settled = true;
-            if (session.released) finishTranscript(session);
+            session.settled = false;
+            startProvider(true);
             return;
           }
-          const eligible = browserError &&
-            ['unsupported', 'service', 'network'].includes(browserError.reason);
-          // The short 'ml' locale succeeds on some builds that reject ml-IN.
-          // Retry within the same physical hold (never after release).
-          if (!cloud && lang === 'ml' && eligible &&
-              browserError.reason === 'unsupported' && !browserShortLocale) {
-            browserShortLocale = true;
-            setAlternateMalayalam(true);
-            if (!session.released) {
-              session.final = '';
-              session.latest = '';
-              session.failed = null;
-              session.settled = false;
-              startProvider(false);
-              return;
-            }
-          }
-          if (!cloud && canFallback && eligible) {
-            // Browser speech has failed. Cloud audio is never sent without the
-            // explicit per-device Settings opt-in.
-            unavailableMalayalam.current = browserError.reason !== 'network';
-            if (!session.released) {
-              session.final = '';
-              session.latest = '';
-              session.failed = null;
-              session.settled = false;
-              startProvider(true);
-              return;
-            }
-          }
-          session.failed = error;
+          const browserError = error instanceof SpeechListenError ? error : null;
+          if (!cloud && browserError?.browserCode === 'no-speech') {
+            session.final = '';
+            session.latest = '';
+            session.failed = null;
+          } else session.failed = error;
           session.settled = true;
           if (session.released) finishTranscript(session);
         });
       };
-      startProvider(useSarvam);
+      if (session.route === 'recording' && !session.backup) {
+        session.route = 'realtime'; // recorder unsupported despite feature check
+        startProvider(true);
+      } else if (session.route !== 'recording') {
+        startProvider(session.route === 'realtime');
+      }
     } catch (error) {
       session.backup?.abort();
       holdRef.current = null;
@@ -481,7 +475,7 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
     if (pendingUnavailable.current) {
       pendingUnavailable.current = false;
       setTimeout(() => {
-        if (!closingRef.current) setMicDialog(lang === 'ml' ? 'enable-ml' : 'unavailable');
+        if (!closingRef.current) setMicDialog(lang === 'ml' ? 'service' : 'unavailable');
       }, 80);
       return;
     }
@@ -529,15 +523,24 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
     finishGesture();
   }
 
+  function toggleKeyboard() {
+    if (keyboardOpen) {
+      setKeyboardOpen(false);
+      inputRef.current?.blur();
+    } else {
+      // Safari requires focus during the SAME trusted tap to open iOS keyboard.
+      flushSync(() => setKeyboardOpen(true));
+      inputRef.current?.focus();
+    }
+    setMicDialog(null);
+  }
+
   function onAccessibleClick(event: ReactMouseEvent<HTMLButtonElement>) {
     // Ignore synthetic clicks after a pointer/keyboard release. VoiceOver's
     // click without a pointer has detail=0, so it can toggle accessibly.
     if (event.detail > 0 || Date.now() < suppressClickUntil.current) return;
     if (holdRef.current) releaseHold();
-    else if (!canListen() && !(lang === 'ml' && sttInputMode() === 'sarvam')) {
-      setSpeechIssue({ code: 'api-unavailable', locale: lang === 'ml' ? 'ml-IN' : 'en-IN' });
-      setMicDialog('unavailable');
-    } else beginHold();
+    else beginHold();
   }
 
   // Visibility loss cancels (rather than sends) a partial voice command.
@@ -545,20 +548,27 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
   useEffect(() => {
     function onHidden() {
       if (!document.hidden) return;
-      const session = holdRef.current;
-      if (!session) return;
-      session.cancelled = true;
+      if (!pendingVoice.current.size) return;
+      // Suspend every outstanding audio request, including older released
+      // sessions still awaiting a provider. Never send speech on backgrounding.
+      for (const session of pendingVoice.current) {
+        session.cancelled = true;
+        if (session.watchdog) clearTimeout(session.watchdog);
+        session.abort();
+        session.backup?.abort();
+        removeVoicePending(session.pendingId);
+      }
+      pendingVoice.current.clear();
+      releasedVoice.current = [];
       holdRef.current = null;
       activePointer.current = null;
       keyboardHeld.current = false;
       pendingUnavailable.current = false;
       listeningBusy.current = false;
-      if (session.watchdog) clearTimeout(session.watchdog);
-      session.abort();
-      session.backup?.abort();
-      removeVoicePending(session.pendingId);
       setHolding(false);
       setText('');
+      setLiveTranscript('');
+      setTranscribing(false);
     }
     document.addEventListener('visibilitychange', onHidden);
     return () => document.removeEventListener('visibilitychange', onHidden);
@@ -567,13 +577,15 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
   // Keep real backend actions and their audit trail untouched. This is a
   // UI-only reset and cannot run while requests or microphone use are active.
   function newConversation() {
-    if (requestBusy.current || commandQueue.current.length || holdRef.current || listeningBusy.current) return;
+    if (requestBusy.current || commandQueue.current.length || pendingVoice.current.size || holdRef.current || listeningBusy.current) return;
     stopSpeaking();
     processedHistory.current = [];
     commandQueue.current = [];
     turnsRef.current = [];
     setTurns([]);
     setText('');
+    setKeyboardOpen(false);
+    setLiveTranscript('');
     setCopiedTurn(null);
     setMicDialog(null);
     setSpeechIssue(null);
@@ -698,9 +710,14 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
           )}
         </div>
 
-        <div className={`xsai-controls ${holding ? 'is-listening' : ''}`}>
+        <div className={'xsai-controls' + (holding ? ' is-listening' : '')}>
+          {holding && liveTranscript && (
+            <div className="xsai-live-transcript" aria-live="off" lang={lang === 'ml' ? 'ml-IN' : 'en-IN'}>
+              {liveTranscript}
+            </div>
+          )}
           <div className="xsai-voice-zone">
-            <button type="button" className={`xsai-orb ${holding ? 'listening' : ''}`}
+            <button type="button" className={'xsai-orb' + (holding ? ' listening' : '')}
               onPointerDown={onPressDown} onPointerUp={onPressUp} onPointerCancel={onPressCancel}
               onLostPointerCapture={onPressCancel}
               onKeyDown={onHoldKeyDown} onKeyUp={onHoldKeyUp}
@@ -713,39 +730,52 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
               <Mic size={27} strokeWidth={1.85} aria-hidden="true" />
               <span className="xsai-hold-waves" aria-hidden="true"><i /><i /><i /><i /></span>
             </button>
-            <span className="xsai-voice-caption" aria-hidden="true">
-              {holding ? 'Release to send' : 'Hold to talk'}
+            <span className="xsai-voice-caption" aria-live="polite">
+              {holding ? 'Release to send' : transcribing ? 'Transcribing…' : 'Hold to talk'}
             </span>
+            <button type="button" className={'xsai-keyboard-toggle' + (keyboardOpen ? ' is-active' : '')}
+              onClick={toggleKeyboard} disabled={holding}
+              aria-pressed={keyboardOpen} title={keyboardOpen ? 'Hide keyboard' : 'Open keyboard'}
+              aria-label={keyboardOpen ? 'Hide keyboard' : 'Open keyboard'}>
+              <Keyboard size={22} strokeWidth={1.9} aria-hidden="true" />
+            </button>
           </div>
-          <div className="xsai-composer">
-            <form className="xsai-type" onSubmit={(event) => { event.preventDefault(); ask(text); }}>
-              <input ref={inputRef} className="input" lang={lang === 'ml' ? 'ml-IN' : 'en-IN'}
-                value={text} onChange={(event) => setText(event.target.value)}
-                placeholder={lang === 'ml' ? 'എന്തെങ്കിലും ചോദിക്കൂ…' : 'Ask XS AI anything…'}
-                aria-label="Message XS AI" enterKeyHint="send" />
-              <button className="xsai-send" disabled={!text.trim() || holding} aria-label="Send">
-                <ArrowUp size={19} strokeWidth={2.4} />
-              </button>
-            </form>
-          </div>
-          <span className="sr-only" role="status">{holding ? 'Listening' : ''}</span>
+          {keyboardOpen && (
+            <div className="xsai-composer">
+              <form className="xsai-type" onSubmit={(event) => {
+                event.preventDefault();
+                if (!text.trim()) return;
+                ask(text);
+                setText('');
+              }}>
+                <input ref={inputRef} className="input" lang={lang === 'ml' ? 'ml-IN' : 'en-IN'}
+                  value={text} onChange={(event) => setText(event.target.value)}
+                  placeholder={lang === 'ml' ? 'എന്തെങ്കിലും ചോദിക്കൂ…' : 'Ask XS AI anything…'}
+                  aria-label="Message XS AI" enterKeyHint="send" />
+                <button className="xsai-send" disabled={!text.trim() || holding} aria-label="Send">
+                  <ArrowUp size={19} strokeWidth={2.4} />
+                </button>
+              </form>
+            </div>
+          )}
+          <span className="sr-only" role="status">{holding ? 'Listening' : transcribing ? 'Transcribing audio' : ''}</span>
           {micDialog && (
             <div className="xsai-inline-issue" role="status">
               <span>
                 {micDialog === 'denied' ? 'Microphone access needed' :
-                  micDialog === 'enable-ml' ? 'Enable Malayalam voice fallback' :
-                  micDialog === 'setup-ml' ? 'Malayalam speech needs server setup' :
-                  micDialog === 'unsupported' ? 'Voice not supported here' : 'Could not transcribe audio'}
+                  micDialog === 'setup-ml' ? 'Malayalam voice temporarily unavailable' :
+                  micDialog === 'unsupported' ? 'Voice not supported here' : 'Voice unavailable — try again'}
               </span>
-              <button type="button" onClick={() => {
-                const settings = micDialog === 'enable-ml' || micDialog === 'setup-ml';
-                setMicDialog(null);
-                if (settings) {
-                  onClose();
-                  navigate(`/g/${gym.slug}/settings`);
-                } else inputRef.current?.focus();
-              }}>{micDialog === 'enable-ml' || micDialog === 'setup-ml' ? 'Settings' : 'Type'}</button>
-              <button type="button" aria-label="Dismiss voice message" onClick={() => setMicDialog(null)}><X size={14} /></button>
+              <button type="button" aria-label="Type message" title="Type message"
+                onClick={() => {
+                  setMicDialog(null);
+                  flushSync(() => setKeyboardOpen(true));
+                  inputRef.current?.focus();
+                }}>
+                <Keyboard size={18} aria-hidden="true" />
+              </button>
+              <button type="button" aria-label="Dismiss voice message"
+                onClick={() => setMicDialog(null)}><X size={14} /></button>
             </div>
           )}
         </div>

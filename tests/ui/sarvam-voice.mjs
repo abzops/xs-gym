@@ -9,7 +9,7 @@ const browser = await chromium.launch();
 const context = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
 await context.addInitScript(([key, sessionJson]) => {
   window.localStorage.setItem(key, sessionJson);
-  window.localStorage.setItem('xs-ai-voice-input-mode', 'sarvam');
+  window.localStorage.setItem('xs-ai-voice-input-mode', 'browser'); // legacy disabled mode is ignored
 }, ['sb-' + REF + '-auth-token', JSON.stringify(session)]);
 await context.addInitScript(() => {
   // Explicitly test the WebSocket-only fallback on devices without MediaRecorder.
@@ -118,7 +118,7 @@ await page.evaluate(() => window.__sarvam.processor?.onaudioprocess?.({
 }));
 await page.waitForFunction(() => window.__sarvam.messages.some(m => m.event === 'audio_input'));
 await page.evaluate(() => window.__sarvam.ws.emit({ event: 'transcript.partial', text: 'ഇന്ന് എത്ര' }));
-await page.waitForFunction(() => document.querySelector('input[aria-label="Message XS AI"]')?.value === 'ഇന്ന് എത്ര');
+await page.waitForFunction(() => document.querySelector('.xsai-live-transcript')?.textContent === 'ഇന്ന് എത്ര');
 assert.equal(agentCalls.length, 0, 'partials must never trigger AI');
 await gesture.up();
 await page.waitForFunction(() => window.__sarvam.stopCalls > 0);

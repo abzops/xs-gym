@@ -184,8 +184,38 @@
 }
 .xsai-voice-caption {
   font-size: .77rem; font-weight: 700; letter-spacing: -.01em;
-  color: var(--graphite); min-width: 96px; margin-left: 24px; pointer-events: none;
+  color: var(--graphite); min-width: 98px; margin-left: 20px; pointer-events: none;
   /* Reserve space for the recording waveform even while it is hidden. */
+}
+/* Voice-first composer. Typing is an optional keyboard icon, not an
+   always-present input. CSS only applies inside XS AI's sheet. */
+.xsai-keyboard-toggle {
+  flex: none; display: grid; place-items: center;
+  width: 46px; height: 46px; border-radius: 16px;
+  border: 1px solid var(--hair-strong); background: var(--paper);
+  color: var(--graphite); cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation; transition: transform 130ms ease, background 130ms ease;
+}
+.xsai-keyboard-toggle:active { transform: scale(.94); }
+.xsai-keyboard-toggle.is-active { color: var(--ink); background: var(--paper-2); }
+.xsai-keyboard-toggle:focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
+.xsai-keyboard-toggle:disabled { opacity: .55; cursor: default; }
+.xsai-live-transcript {
+  max-width: min(100%, 400px); min-height: 30px; padding: 7px 12px;
+  align-self: center; border-radius: 15px;
+  background: var(--paper-2); color: var(--ink);
+  overflow-wrap: anywhere; font-size: 14px; text-align: center;
+  animation: xsai-live-appear 150ms ease-out both;
+}
+@keyframes xsai-live-appear {
+  from { opacity: .6; transform: translateY(3px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@media (max-width: 380px) {
+  .xsai-voice-zone { gap: 9px; }
+  .xsai-voice-caption { margin-left: 12px; min-width: 90px; }
+  .xsai-keyboard-toggle { width: 44px; height: 44px; }
 }
 .xsai-composer {
   display: flex; align-items: center; gap: 8px;
@@ -273,7 +303,7 @@
   .xsai-shortcuts { margin-top: 16px; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .xsai-orbit, .xsai-dots i, .xsai-turn, .xsai-orb-glow, .xsai-hold-waves i { animation: none !important; }
+  .xsai-orbit, .xsai-dots i, .xsai-turn, .xsai-orb-glow, .xsai-hold-waves i, .xsai-live-transcript { animation: none !important; }
   .xsai-shortcut, .xsai-orb, .xsai-composer, .xsai-send { transition: none; }
 }
 @media (prefers-contrast: more) {

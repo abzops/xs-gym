@@ -17,7 +17,7 @@ function check(name, condition, detail = '') {
 async function waitValue(page, value) {
   try {
     await page.waitForFunction((expected) =>
-      document.querySelector('input[aria-label="Message XS AI"]')?.value === expected,
+      document.querySelector('.xsai-live-transcript')?.textContent?.trim() === expected,
     value, { timeout: 1800 });
     return true;
   } catch { return false; }
@@ -30,6 +30,8 @@ async function waitCount(page, count) {
   count, { timeout: 11000 });
 }
 function fakeSpeech({ noSpeech }) {
+  // Dedicated native-WebSpeech regression. Other tests mock MediaRecorder.
+  window.MediaRecorder = undefined;
   window.__micCaptureCalls = 0;
   window.__clipboard = [];
   Object.defineProperty(navigator, 'clipboard', { configurable: true, value: {
@@ -171,7 +173,9 @@ for (const [label, mobile] of [['phone touch', true], ['desktop mouse', false]])
   const { ctx, page, logs, tap, errors, open } = await setup({ mobile });
   const dialog = await open();
   const mic = dialog.locator('.xsai-orb');
-  check(label + ': text-first minimal UI has no voice toggle or hints',
+  check(label + ': voice-first UI has keyboard icon and no unwanted text input',
+    await dialog.getByRole('button', { name: 'Open keyboard' }).count() === 1 &&
+    await dialog.getByRole('textbox', { name: 'Message XS AI' }).count() === 0 &&
     await dialog.getByRole('button', { name: 'Voice on' }).count() === 0 &&
     await dialog.locator('.xsai-empty').count() === 0 &&
     await dialog.locator('.xsai-mic-backdrop').count() === 0 &&
@@ -264,49 +268,24 @@ for (const [label, mobile] of [['phone touch', true], ['desktop mouse', false]])
   await ctx.close();
 }
 
-// Only an actual browser failure shows a compact inline message, not a large
-// pop-up or a persistent diagnostic paragraph.
+// Native Malayalam browser failure after a release is a real failure.
+// The error UI is a compact hint + keyboard icon; users need no opt-in toggle.
 {
   const { ctx, page, logs, open, tap } = await setup();
   const dialog = await open();
   await tap(dialog.getByRole('group', { name: 'Language' }).getByRole('button', { name: 'മലയാളം' }));
   const contact = await hold(page, dialog.locator('.xsai-orb'));
-  await page.evaluate(() => window.__browserError('language-not-supported'));
-  await page.waitForFunction(() => window.__speech.last?.lang === 'ml');
-  check('language error: automatically tries short Malayalam locale in the same hold',
-    await page.evaluate(() => window.__speech.last?.lang === 'ml'));
-  await page.evaluate(() => window.__browserError('language-not-supported'));
+  await page.evaluate(() => { window.__speech.delayEnd = true; });
   await contact.release();
+  await page.evaluate(() => window.__browserError('language-not-supported'));
   await dialog.locator('.xsai-inline-issue').waitFor({ timeout: 3500 });
-  check('error: one concise inline hint, no modal or provider details',
-    (await dialog.locator('.xsai-inline-issue').innerText()).includes('Enable Malayalam voice fallback') &&
-    await dialog.locator('.xsai-mic-backdrop').count() === 0 &&
-    await dialog.getByRole('button', { name: 'Try ml' }).count() === 0 &&
+  check('browser Malayalam error: keyboard icon offered, no extra settings prompt',
+    await dialog.locator('.xsai-inline-issue').getByRole('button', { name: 'Type message' }).count() === 1 &&
+    await dialog.getByRole('textbox', { name: 'Message XS AI' }).count() === 0 &&
     logs.agent.length === 0);
-  const next = await hold(page, dialog.locator('.xsai-orb'));
-  check('error: automatically switches to alternate browser Malayalam locale',
-    await page.evaluate(() => window.__speech.last?.lang === 'ml'));
-  await next.release();
-  await ctx.close();
-}
-
-// On an unsupported iPhone browser the inline action leads directly to
-// the actual Settings permission, instead of implying the user spoke quietly.
-{
-  const { ctx, page, open, tap } = await setup({ noSpeech: true });
-  const dialog = await open();
-  await tap(dialog.getByRole('group', { name: 'Language' }).getByRole('button', { name: 'മലയാളം' }));
-  const gesture = await hold(page, dialog.locator('.xsai-orb'));
-  await gesture.release();
-  await dialog.locator('.xsai-inline-issue').waitFor({ timeout: 3500 });
-  check('unsupported Malayalam: error explains fallback setup',
-    (await dialog.locator('.xsai-inline-issue').innerText()).includes('Enable Malayalam voice fallback') &&
-    await dialog.locator('.xsai-mic-backdrop').count() === 0);
-  await tap(dialog.locator('.xsai-inline-issue').getByRole('button', { name: 'Settings' }));
-  await page.waitForURL(/\/settings$/);
-  await page.getByRole('switch', { name: 'Use Sarvam cloud speech for Malayalam' }).waitFor({ timeout: 9000 });
-  check('Malayalam recovery button opens the actual cloud consent control',
-    await page.getByRole('switch', { name: 'Use Sarvam cloud speech for Malayalam' }).count() === 1);
+  await tap(dialog.locator('.xsai-inline-issue').getByRole('button', { name: 'Type message' }));
+  check('keyboard icon opens a real editable text field',
+    await dialog.getByRole('textbox', { name: 'Message XS AI' }).count() === 1);
   await ctx.close();
 }
 
@@ -336,7 +315,7 @@ for (const [label, mobile] of [['phone touch', true], ['desktop mouse', false]])
   await dialog.locator('.xsai-inline-issue').waitFor({ timeout: 3500 });
   check('no browser recognition: compact fallback without sending audio',
     await dialog.locator('.xsai-mic-backdrop').count() === 0 && logs.transcribe.length === 0);
-  await tap(dialog.getByRole('button', { name: 'Type' }));
+  await tap(dialog.locator('.xsai-inline-issue').getByRole('button', { name: 'Type message' }));
   await dialog.getByRole('textbox', { name: 'Message XS AI' }).fill('Typed message');
   await tap(dialog.getByRole('button', { name: 'Send' }));
   await waitCount(page, 1);
@@ -352,6 +331,7 @@ for (const [label, mobile] of [['phone touch', true], ['desktop mouse', false]])
   const contact = await hold(page, dialog.locator('.xsai-orb'));
   await page.evaluate(() => { window.__speech.delayEnd = true; window.__partial('Voice phrase'); });
   await contact.release();
+  await dialog.getByRole('button', { name: 'Open keyboard' }).tap();
   const input = dialog.getByRole('textbox', { name: 'Message XS AI' });
   await input.fill('My typed draft');
   await waitCount(page, 1);
@@ -363,8 +343,8 @@ for (const [label, mobile] of [['phone touch', true], ['desktop mouse', false]])
   await ctx.close();
 }
 
-// A genuine Settings switch must persist across page reload and enable voice
-// only when chosen; normal text messages are always retained.
+// Spoken AI replies remain optional. Malayalam transcription has no switch.
+// Test that changing TTS never controls microphone fallback.
 {
   const { ctx, page, logs, open, tap } = await setup();
   const dialog = await open();
@@ -374,6 +354,9 @@ for (const [label, mobile] of [['phone touch', true], ['desktop mouse', false]])
   await page.goto(baseUrl + 'g/' + gym.slug + '/settings', { waitUntil: 'networkidle' });
   const sw = page.getByRole('switch', { name: 'XS AI spoken replies' });
   await sw.waitFor();
+  check('Malayalam STT has no opt-in toggle, with a transparent privacy disclosure',
+    await page.getByRole('switch', { name: 'Use Sarvam cloud speech for Malayalam' }).count() === 0 &&
+    await page.getByText('Audio is captured only during your hold', { exact: false }).count() === 1);
   check('settings: spoken replies default OFF', !(await sw.isChecked()));
   await sw.check();
   check('settings: toggle ON is stored on this device',
@@ -383,6 +366,7 @@ for (const [label, mobile] of [['phone touch', true], ['desktop mouse', false]])
   check('settings: ON survives reload', await page.getByRole('switch', { name: 'XS AI spoken replies' }).isChecked());
   await page.goto(baseUrl + 'g/' + gym.slug, { waitUntil: 'networkidle' });
   const again = await open();
+  await again.getByRole('button', { name: 'Open keyboard' }).tap();
   await again.getByRole('textbox', { name: 'Message XS AI' }).fill('Please answer');
   await tap(again.getByRole('button', { name: 'Send' }));
   await waitCount(page, 1);
@@ -449,9 +433,11 @@ for (const [label, mobile] of [['phone touch', true], ['desktop mouse', false]])
   await page.evaluate(() => { document.documentElement.dataset.theme = 'dark'; });
   await page.waitForTimeout(500); // wait for segmented control/color transitions
   await page.screenshot({ path: screenshotDir + '/03-mobile-agent-dark.png' });
-  check('agent dark appearance: designed hero and composer remain visible',
+  check('agent dark appearance: hero and voice-first keyboard control remain visible',
     await dialog.locator('.xsai-welcome-visual').isVisible() &&
-    await dialog.locator('.xsai-composer').isVisible() && errors.length === 0, errors.join(' | '));
+    await dialog.getByRole('button', { name: 'Open keyboard' }).isVisible() &&
+    await dialog.locator('.xsai-composer').count() === 0 &&
+    errors.length === 0, errors.join(' | '));
   await ctx.close();
 }
 {
