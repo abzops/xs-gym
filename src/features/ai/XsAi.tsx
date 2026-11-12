@@ -397,9 +397,7 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
         session.latest = partial;
         if (holdRef.current === session && !closingRef.current && !session.released) setText(partial);
       };
-      // Try both native Malayalam locale tags before invoking a previously
-      // consented cloud provider; Safari support varies by browser version.
-      let browserShortLocale = alternateMalayalam && lang === 'ml';
+      const browserShortLocale = alternateMalayalam && lang === 'ml';
       const startProvider = (cloud: boolean) => {
         session.cloud = cloud;
         const recognition = cloud
@@ -408,89 +406,59 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
         session.stop = recognition.stop;
         session.abort = recognition.abort;
         void recognition.done.then((result) => {
-          if (holdRef.current !== session || session.cancelled) return;
+          if (!pendingVoice.current.has(session) || session.cancelled) return;
           session.final = result.trim();
           if (!cloud && session.backup && (
             !session.final ||
             (!/[\u0D00-\u0D7F]/u.test(session.final) &&
               /[A-Za-z]/u.test(session.final) && session.final.split(/\s+/u).length >= 2)
           )) {
-            // Empty or Latin-only transcription while Malayalam is selected:
-            // recover the ORIGINAL audio rather than asking to repeat speech.
+            // Native returned silence or the wrong language. The locally
+            // buffered audio is submitted just once, after finger-up.
             session.nativeFailed = true;
             if (session.released) recoverMalayalam(session);
             return;
           }
-          if (!cloud && !session.final && lang === 'ml' && !session.latest.trim()) {
-            if (!browserShortLocale) setAlternateMalayalam(true);
-            else if (canFallback) unavailableMalayalam.current = true;
-          }
-          if (!cloud && session.final && lang === 'ml' && /[\u0D00-\u0D7F]/u.test(session.final)) {
-            unavailableMalayalam.current = false;
-            try { localStorage.removeItem('xs-ai-native-ml-unavailable'); } catch { /* private mode */ }
-          }
-          session.backup?.abort(); // native transcript succeeded: discard local audio
+          if (!cloud && !session.final && lang === 'ml') setAlternateMalayalam(true);
+          session.backup?.abort(); // native succeeded; never upload its audio
           session.settled = true;
           if (session.released) finishTranscript(session);
         }, (error: unknown) => {
-          if (holdRef.current !== session || session.cancelled) return;
-          const browserError = error instanceof SpeechListenError ? error : null;
-          if (!cloud && session.backup && browserError &&
-              ['no-speech', 'language-not-supported', 'service-not-allowed', 'network'].includes(browserError.browserCode)) {
-            // Keep capturing until finger-up; no cloud upload before failure.
+          if (!pendingVoice.current.has(session) || session.cancelled) return;
+          if (!cloud && session.backup) {
+            // Any native interruption is automatically recoverable. A denied
+            // microphone will still fail cleanly if no audio was captured.
             session.nativeFailed = true;
             if (session.released) recoverMalayalam(session);
             return;
           }
-          if (!cloud && browserError?.browserCode === 'no-speech') {
-            if (lang === 'ml') {
-              if (!browserShortLocale) setAlternateMalayalam(true);
-              else if (canFallback) unavailableMalayalam.current = true;
-            }
-            // A silent press never creates an error message or AI command.
+          if (!cloud && lang === 'ml' && !session.released) {
+            // MediaRecorder unavailable: hand off to live Sarvam while the
+            // finger is still down instead of waiting for another attempt.
+            session.route = 'realtime';
             session.final = '';
             session.latest = '';
             session.failed = null;
-            session.settled = true;
-            if (session.released) finishTranscript(session);
+            session.settled = false;
+            startProvider(true);
             return;
           }
-          const eligible = browserError &&
-            ['unsupported', 'service', 'network'].includes(browserError.reason);
-          // The short 'ml' locale succeeds on some builds that reject ml-IN.
-          // Retry within the same physical hold (never after release).
-          if (!cloud && lang === 'ml' && eligible &&
-              browserError.reason === 'unsupported' && !browserShortLocale) {
-            browserShortLocale = true;
-            setAlternateMalayalam(true);
-            if (!session.released) {
-              session.final = '';
-              session.latest = '';
-              session.failed = null;
-              session.settled = false;
-              startProvider(false);
-              return;
-            }
-          }
-          if (!cloud && canFallback && eligible) {
-            // Browser speech has failed. Cloud audio is never sent without the
-            // explicit per-device Settings opt-in.
-            unavailableMalayalam.current = browserError.reason !== 'network';
-            if (!session.released) {
-              session.final = '';
-              session.latest = '';
-              session.failed = null;
-              session.settled = false;
-              startProvider(true);
-              return;
-            }
-          }
-          session.failed = error;
+          const browserError = error instanceof SpeechListenError ? error : null;
+          if (!cloud && browserError?.browserCode === 'no-speech') {
+            session.final = '';
+            session.latest = '';
+            session.failed = null;
+          } else session.failed = error;
           session.settled = true;
           if (session.released) finishTranscript(session);
         });
       };
-      startProvider(useSarvam);
+      if (session.route === 'recording' && !session.backup) {
+        session.route = 'realtime'; // recorder unsupported despite feature check
+        startProvider(true);
+      } else if (session.route !== 'recording') {
+        startProvider(session.route === 'realtime');
+      }
     } catch (error) {
       session.backup?.abort();
       holdRef.current = null;
