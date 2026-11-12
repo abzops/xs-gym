@@ -12,7 +12,23 @@ await context.addInitScript(([key, sessionJson]) => {
   window.localStorage.setItem('xs-ai-voice-input-mode', 'sarvam');
 }, ['sb-' + REF + '-auth-token', JSON.stringify(session)]);
 await context.addInitScript(() => {
-  window.__sarvam = { microphoneCalls: 0, stopCalls: 0, ws: null, messages: [], processor: null };
+  window.__sarvam = { microphoneCalls: 0, stopCalls: 0, ws: null, messages: [], processor: null, nativeStarts: 0 };
+  // Simulate a real browser that exposes SpeechRecognition but rejects Malayalam
+  // after a press. Sarvam must not start unless this actual browser failure occurs.
+  window.SpeechRecognition = class {
+    lang = ''; interimResults = false; continuous = false; maxAlternatives = 1;
+    onresult = null; onerror = null; onend = null;
+    start() {
+      window.__sarvam.nativeStarts++;
+      window.setTimeout(() => {
+        this.onerror?.({ error: 'language-not-supported' });
+        this.onend?.();
+      }, 80);
+    }
+    stop() { this.onend?.(); }
+    abort() { this.onend?.(); }
+  };
+  window.webkitSpeechRecognition = window.SpeechRecognition;
   const fakeTrack = () => ({ stop() { window.__sarvam.stopCalls++; } });
   Object.defineProperty(navigator, 'mediaDevices', { configurable: true, value: {
     getUserMedia: async () => {
@@ -81,7 +97,13 @@ async function down() {
   };
 }
 const gesture = await down();
+assert.equal(await page.evaluate(() => window.__sarvam.nativeStarts), 1,
+  'browser speech must be tried before Sarvam');
+assert.equal(await page.evaluate(() => window.__sarvam.ws === null), true,
+  'provider must not connect until browser speech fails');
 await page.waitForFunction(() => window.__sarvam.ws !== null);
+assert.equal(await dialog.locator('.xsai-inline-issue').count(), 0,
+  'the automatic recovery must not display a provider warning');
 const protocol = await page.evaluate(() => ({ url: window.__sarvam.ws.url, protocols: window.__sarvam.ws.protocols }));
 assert.ok(protocol.url.includes('/functions/v1/xs-ai-sarvam?gym_id='));
 assert.ok(!protocol.url.includes('jwt.') && !protocol.url.includes('SARVAM_API_KEY'));
