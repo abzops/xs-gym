@@ -9,6 +9,7 @@ import { formatDate } from '../../lib/dates';
 import { errorMessage } from '../../lib/errors';
 import { rpc } from '../../lib/supabase';
 import { ROLE_LABEL, type Role, type StaffRow } from '../../lib/types';
+import { setSpokenReplies, spokenRepliesEnabled } from '../ai/preferences';
 
 export function SettingsPage() {
   const { can, subscription } = useGym();
@@ -19,6 +20,7 @@ export function SettingsPage() {
         <h2>Appearance</h2>
         <AppearanceControl />
       </section>
+      <SpokenRepliesSetting />
       {can('gym.settings') && <GymSettings />}
       <StaffSection />
       <section className="card stack">
@@ -32,6 +34,28 @@ export function SettingsPage() {
         ) : <p className="muted">No subscription found.</p>}
       </section>
     </div>
+  );
+}
+
+function SpokenRepliesSetting() {
+  const [enabled, setEnabled] = useState(spokenRepliesEnabled);
+  return (
+    <section className="card" aria-label="XS AI settings">
+      <div className="row between" style={{ alignItems: 'center', gap: 16 }}>
+        <div className="stack" style={{ gap: 4 }}>
+          <h2>XS AI</h2>
+          <label htmlFor="xs-ai-spoken-replies">Spoken replies</label>
+          <span className="muted" style={{ fontSize: 13 }}>Off by default · this device only</span>
+        </div>
+        <input id="xs-ai-spoken-replies" type="checkbox" role="switch"
+          checked={enabled} aria-label="XS AI spoken replies"
+          onChange={(event) => {
+            const next = event.target.checked;
+            setSpokenReplies(next);
+            setEnabled(next);
+          }} />
+      </div>
+    </section>
   );
 }
 

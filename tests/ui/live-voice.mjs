@@ -1,5 +1,4 @@
-// XS AI live interim transcription on browser SpeechRecognition, including
-// installed iPhone PWA when its engine exists. No real gym data/API calls.
+// Synthetic browser-only XS AI regression. No real customer API/audio.
 // node tests/ui/live-voice.mjs <playwright-module-path> <base-url>
 import { createRequire } from 'node:module';
 import { REF, gym, session, body } from './mock.mjs';
@@ -8,111 +7,138 @@ const [pwPath, baseUrl] = process.argv.slice(2);
 const { chromium } = createRequire(import.meta.url)(pwPath);
 const browser = await chromium.launch({ args: ['--autoplay-policy=no-user-gesture-required'] });
 let failures = 0;
-const check = (label, ok, detail = '') => {
-  if (!ok) failures++;
-  console.log((ok ? 'ok   ' : 'FAIL ') + label + (detail ? ' — ' + detail : ''));
-};
-
-// React commits state updates asynchronously after the speech event handler.
-// Allow one render tick, but never wait for the recording to finish.
-async function liveValue(page, expected) {
+function check(name, condition, detail = '') {
+  if (!condition) failures++;
+  console.log((condition ? 'ok   ' : 'FAIL ') + name + (detail ? ' — ' + detail : ''));
+}
+async function waitValue(page, value) {
   try {
-    await page.waitForFunction((value) =>
-      document.querySelector('input[aria-label="Message XS AI"]')?.value === value,
-      expected, { timeout: 1500 });
+    await page.waitForFunction((expected) =>
+      document.querySelector('input[aria-label="Message XS AI"]')?.value === expected,
+    value, { timeout: 1800 });
     return true;
   } catch { return false; }
 }
-
-const fakeSpeech = ({ standalone, noSpeech }) => {
-  if (standalone) Object.defineProperty(navigator, 'standalone', { configurable: true, value: true });
+async function waitCount(page, count) {
+  await page.waitForFunction((n) =>
+    document.querySelectorAll('.xsai-turn.user').length >= n &&
+    document.querySelectorAll('.xsai-turn.assistant .xsai-bubble:not(.xsai-dots)').length >= n &&
+    !document.querySelector('.xsai-dots'),
+  count, { timeout: 11000 });
+}
+function fakeSpeech({ noSpeech }) {
   window.__micCaptureCalls = 0;
   if (navigator.mediaDevices) {
-    const original = navigator.mediaDevices.getUserMedia?.bind(navigator.mediaDevices);
-    navigator.mediaDevices.getUserMedia = (...args) => {
+    navigator.mediaDevices.getUserMedia = () => {
       window.__micCaptureCalls++;
-      if (original) return original(...args);
-      return Promise.reject(new Error('Unexpected microphone capture'));
+      return Promise.reject(new Error('Unexpected raw mic access'));
     };
   }
-  if (noSpeech) {
+  window.__speech = { started: 0, stopped: 0, last: null, delayEnd: false };
+  if (!noSpeech) {
+    class FakeSpeech {
+      lang = ''; continuous = false; interimResults = false; maxAlternatives = 1;
+      onresult = null; onerror = null; onend = null;
+      start() { window.__speech.started++; window.__speech.last = this; }
+      stop() {
+        window.__speech.stopped++;
+        if (window.__speech.delayEnd) setTimeout(() => this.onend?.(), 250);
+        else queueMicrotask(() => this.onend?.());
+      }
+      abort() { window.__speech.stopped++; queueMicrotask(() => this.onend?.()); }
+    }
+    window.SpeechRecognition = FakeSpeech;
+    window.webkitSpeechRecognition = FakeSpeech;
+  } else {
     window.SpeechRecognition = undefined;
     window.webkitSpeechRecognition = undefined;
-    return;
   }
-  window.__speech = { started: 0, stopped: 0, last: null };
-  class FakeSpeechRecognition {
-    lang = ''; continuous = false; interimResults = false; maxAlternatives = 1;
-    onresult = null; onerror = null; onend = null;
-    start() { window.__speech.started++; window.__speech.last = this; }
-    stop() { window.__speech.stopped++; queueMicrotask(() => this.onend?.()); }
-    abort() { window.__speech.stopped++; queueMicrotask(() => this.onend?.()); }
-  }
-  window.SpeechRecognition = FakeSpeechRecognition;
-  window.webkitSpeechRecognition = FakeSpeechRecognition;
-  window.__partial = (text) => window.__speech.last?.onresult?.({ results: [[{ transcript: text }]] });
+  window.__partial = (value) => window.__speech.last?.onresult?.({
+    results: [[{ transcript: value }]],
+  });
   window.__ended = () => window.__speech.last?.onend?.();
-  window.__serviceError = () => {
-    window.__speech.last?.onerror?.({ error: 'service-not-allowed' });
+  window.__browserError = (code) => {
+    window.__speech.last?.onerror?.({ error: code });
     window.__speech.last?.onend?.();
   };
-};
-async function setup({ standalone, stt = false, mobile = true, scheme = 'light', noSpeech = false }) {
+  // Browser speech synthesis is mocked, so the test can assert that voice
+  // responses are OFF unless enabled in Settings, without audible playback.
+  window.__tts = { calls: [], cancels: 0 };
+  const voices = [
+    { name: 'Fake English', lang: 'en-IN' },
+    { name: 'Fake Malayalam', lang: 'ml-IN' },
+  ];
+  const synth = {
+    getVoices: () => voices,
+    addEventListener: () => {},
+    cancel: () => { window.__tts.cancels++; },
+    speak: (utterance) => {
+      window.__tts.calls.push(utterance.text);
+      queueMicrotask(() => utterance.onend?.());
+    },
+  };
+  Object.defineProperty(window, 'speechSynthesis', { configurable: true, value: synth });
+  window.SpeechSynthesisUtterance = class {
+    constructor(value) { this.text = value; this.onend = null; this.onerror = null; }
+  };
+}
+async function setup({ mobile = true, noSpeech = false, delay = 0 } = {}) {
   const ctx = await browser.newContext({
     viewport: mobile ? { width: 393, height: 852 } : { width: 1366, height: 860 },
-    isMobile: mobile, hasTouch: mobile, colorScheme: scheme,
+    isMobile: mobile, hasTouch: mobile,
   });
   await ctx.addInitScript(([key, value]) => localStorage.setItem(key, value),
     ['sb-' + REF + '-auth-token', JSON.stringify(session)]);
-  await ctx.addInitScript(fakeSpeech, { standalone, noSpeech });
-  const log = { agent: [], transcribe: [] };
+  await ctx.addInitScript(fakeSpeech, { noSpeech });
+  const logs = { agent: [], transcribe: [] };
   await ctx.route('https://' + REF + '.supabase.co/**', async (route) => {
-    const req = route.request(), url = req.url();
+    const request = route.request(), url = request.url();
     if (url.includes('/functions/v1/xs-ai')) {
-      if (req.method() === 'GET') return route.fulfill({
+      if (request.method() === 'GET') return route.fulfill({
         status: 200, contentType: 'application/json',
-        body: JSON.stringify({ configured: true, stt, stt_languages: { en: stt, ml: stt } }),
+        body: JSON.stringify({ configured: true, stt: false }),
       });
-      const payload = JSON.parse(req.postData() ?? '{}');
+      const payload = JSON.parse(request.postData() ?? '{}');
       if (payload.transcribe) {
-        log.transcribe.push(payload);
-        return route.fulfill({ status: 503, contentType: 'application/json',
-          body: JSON.stringify({ error: 'No cloud key in this test' }) });
+        logs.transcribe.push(payload);
+        return route.fulfill({ status: 403, contentType: 'application/json',
+          body: JSON.stringify({ error: 'Raw audio not allowed' }) });
       }
-      log.agent.push(payload);
+      logs.agent.push(payload);
+      if (delay) await new Promise((resolve) => setTimeout(resolve, delay));
       return route.fulfill({
         status: 200, contentType: 'application/json',
-        body: JSON.stringify({ reply: payload.lang === 'ml' ? 'ശരി, മനസ്സിലായി.' : 'I understood.', actions: [], changed: [] }),
+        body: JSON.stringify({ reply: payload.lang === 'ml' ? 'ശരി, മനസ്സിലായി.' : 'I understood.',
+          actions: [], changed: [] }),
       });
     }
-    const accept = req.headers()['accept'] ?? '';
+    const accept = request.headers()['accept'] ?? '';
     let data = body(url);
     if (accept.includes('vnd.pgrst.object') && Array.isArray(data)) data = data[0] ?? null;
     return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(data) });
   });
   const page = await ctx.newPage();
   const errors = [];
-  page.on('pageerror', (e) => errors.push(e.message));
+  page.on('pageerror', (error) => errors.push(error.message));
   await page.goto(baseUrl + 'g/' + gym.slug, { waitUntil: 'networkidle' });
-  const tap = (target) => mobile ? target.tap() : target.click();
-  const entry = mobile ? page.locator('.topbar .xsai-entry') : page.locator('.sidebar .xsai-side');
-  await tap(entry);
-  const dialog = page.getByRole('dialog', { name: 'XS AI' });
-  await dialog.waitFor();
-  await tap(dialog.getByRole('button', { name: 'Voice on' })); // no speech synthesis delays
-  return { ctx, page, dialog, log, errors, tap };
+  const tap = (item) => mobile ? item.tap() : item.click();
+  async function open() {
+    const entry = mobile ? page.locator('.topbar .xsai-entry') : page.locator('.sidebar .xsai-side');
+    await tap(entry);
+    const dialog = page.getByRole('dialog', { name: 'XS AI' });
+    await dialog.waitFor();
+    return dialog;
+  }
+  return { ctx, page, errors, logs, tap, open };
 }
-
-// Genuine pointer sequences on Chromium: CDP TouchStart/TouchEnd for mobile,
-// mouse down/up for desktop. Real iOS WebKit behavior needs physical-device UAT.
-async function holdOrb(page, orb, mobile) {
+async function hold(page, orb, mobile = true) {
   const box = await orb.boundingBox();
-  if (!box) throw new Error('Microphone button did not render');
-  const x = box.x + box.width / 2;
-  const y = box.y + box.height / 2;
+  if (!box) throw new Error('XS AI microphone not visible');
+  const x = box.x + box.width / 2, y = box.y + box.height / 2;
   if (mobile) {
     const cdp = await page.context().newCDPSession(page);
-    await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y, id: 1 }] });
+    await cdp.send('Input.dispatchTouchEvent',
+      { type: 'touchStart', touchPoints: [{ x, y, id: 1 }] });
     return {
       release: () => cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }),
       cancel: () => cdp.send('Input.dispatchTouchEvent', { type: 'touchCancel', touchPoints: [] }),
@@ -122,172 +148,200 @@ async function holdOrb(page, orb, mobile) {
   await page.mouse.down();
   return { release: () => page.mouse.up(), cancel: () => page.mouse.up() };
 }
-async function waitAgents(page, count) {
-  await page.waitForFunction((n) =>
-      document.querySelectorAll('.xsai-turn.user').length >= n &&
-      document.querySelectorAll('.xsai-turn.assistant .xsai-bubble:not(.xsai-dots)').length >= n &&
-      !document.querySelector('.xsai-dots'),
-    count, { timeout: 6500 });
+async function idleMic(page) {
+  try {
+    await page.waitForFunction(() => {
+      const orb = document.querySelector('.xsai-orb');
+      return orb?.getAttribute('aria-pressed') === 'false' &&
+        !orb?.classList.contains('listening') &&
+        !document.querySelector('.xsai-status');
+    }, undefined, { timeout: 1200 });
+    return true;
+  } catch { return false; }
 }
 
-for (const [name, mobile, standalone, scheme] of [
-  ['installed iPhone (Chromium touch simulation)', true, true, 'light'],
-  ['mobile browser (Chromium touch simulation)', true, false, 'dark'],
-  ['desktop browser', false, false, 'light'],
-]) {
-  const { ctx, page, dialog, log, errors, tap } = await setup({ standalone, mobile, scheme, stt: false });
-  const input = dialog.getByRole('textbox', { name: 'Message XS AI' });
-  const orb = () => dialog.locator('.xsai-orb');
+for (const [label, mobile] of [['phone touch', true], ['desktop mouse', false]]) {
+  const { ctx, page, logs, tap, errors, open } = await setup({ mobile });
+  const dialog = await open();
+  const mic = dialog.locator('.xsai-orb');
+  check(label + ': text-first minimal UI has no voice toggle or hints',
+    await dialog.getByRole('button', { name: 'Voice on' }).count() === 0 &&
+    await dialog.locator('.xsai-empty').count() === 0 &&
+    await dialog.locator('.xsai-mic-backdrop').count() === 0 &&
+    await idleMic(page));
 
-  const first = await holdOrb(page, orb(), mobile);
-  const en = await page.evaluate(() => ({ lang: window.__speech.last?.lang, interim: window.__speech.last?.interimResults }));
-  check(name + ': pressing starts native browser en-IN recognition immediately',
-    en.lang === 'en-IN' && en.interim === true);
-  await page.evaluate(() => window.__partial('Who has'));
-  check(name + ': English interim text appears before release',
-    (await liveValue(page, 'Who has')) && log.agent.length === 0);
-  await page.evaluate(() => window.__partial('Who has dues?'));
-  check(name + ': English text updates while the finger is down',
-    (await liveValue(page, 'Who has dues?')) && log.agent.length === 0);
-  await page.evaluate(() => { window.__ended(); window.__ended(); });
-  check(name + ': an early browser onend cannot send while still held', log.agent.length === 0);
+  const first = await hold(page, mic, mobile);
+  const lang = await page.evaluate(() => window.__speech.last?.lang);
+  check(label + ': press starts English browser recognition', lang === 'en-IN');
+  await page.evaluate(() => window.__partial('How much'));
+  check(label + ': interim words appear while held',
+    await waitValue(page, 'How much') && logs.agent.length === 0);
+  await page.evaluate(() => window.__partial('How much today?'));
   await first.release();
-  await waitAgents(page, 1);
-  check(name + ': lifting finger submits exactly once',
-    log.agent.length === 1 && log.agent[0].messages.at(-1).content === 'Who has dues?');
-  check(name + ': English uses no raw recording or XS Gym STT endpoint',
-    log.transcribe.length === 0 && (await input.inputValue()) === '' &&
-    (await page.evaluate(() => window.__micCaptureCalls)) === 0);
+  check(label + ': release immediately restores neutral microphone', await idleMic(page));
+  await waitCount(page, 1);
+  check(label + ': release sends one text message, without speaking by default',
+    logs.agent.length === 1 && logs.agent[0].messages.at(-1).content === 'How much today?' &&
+    await page.evaluate(() => window.__tts.calls.length === 0) && logs.transcribe.length === 0);
 
   await tap(dialog.getByRole('group', { name: 'Language' }).getByRole('button', { name: 'മലയാളം' }));
-  const second = await holdOrb(page, orb(), mobile);
-  const ml = await page.evaluate(() => ({ lang: window.__speech.last?.lang, interim: window.__speech.last?.interimResults }));
-  check(name + ': a new hold uses native ml-IN recognition',
-    ml.lang === 'ml-IN' && ml.interim === true);
-  await page.evaluate(() => window.__partial('ഇന്ന് എത്ര'));
-  check(name + ': Malayalam interim letters appear before release',
-    (await liveValue(page, 'ഇന്ന് എത്ര')) && log.agent.length === 1);
+  const second = await hold(page, mic, mobile);
+  check(label + ': Malayalam uses native ml-IN', await page.evaluate(() => window.__speech.last?.lang === 'ml-IN'));
   await page.evaluate(() => window.__partial('ഇന്ന് എത്ര രൂപ കിട്ടി?'));
-  check(name + ': Malayalam interim text updates while held',
-    (await liveValue(page, 'ഇന്ന് എത്ര രൂപ കിട്ടി?')) && log.agent.length === 1);
+  check(label + ': Malayalam live text visible while held', await waitValue(page, 'ഇന്ന് എത്ര രൂപ കിട്ടി?'));
   await second.release();
-  await waitAgents(page, 2);
-  check(name + ': Malayalam release auto-sends once, text only',
-    log.agent.length === 2 && log.agent[1].lang === 'ml' &&
-    log.agent[1].messages.at(-1).content === 'ഇന്ന് എത്ര രൂപ കിട്ടി?' &&
-    log.transcribe.length === 0 && (await page.evaluate(() => window.__micCaptureCalls)) === 0);
+  check(label + ': Malayalam mic resets immediately', await idleMic(page));
+  await waitCount(page, 2);
+  check(label + ': Malayalam submits once and keeps reply silent',
+    logs.agent.length === 2 && logs.agent[1].lang === 'ml' &&
+    logs.agent[1].messages.at(-1).content === 'ഇന്ന് എത്ര രൂപ കിട്ടി?' &&
+    await page.evaluate(() => window.__tts.calls.length === 0));
 
-  const third = await holdOrb(page, orb(), mobile);
+  const third = await hold(page, mic, mobile);
   await page.evaluate(() => window.__partial('വീണ്ടും മലയാളം'));
   await third.release();
-  await waitAgents(page, 3);
-  check(name + ': second Malayalam hold works and does not duplicate prior request',
-    log.agent.length === 3 && log.agent[2].messages.at(-1).content === 'വീണ്ടും മലയാളം' &&
-    errors.length === 0, errors.join(' | '));
+  await waitCount(page, 3);
+  check(label + ': next hold starts a fresh listening session',
+    logs.agent.length === 3 && logs.agent[2].messages.at(-1).content === 'വീണ്ടും മലയാളം' &&
+    await idleMic(page) && errors.length === 0, errors.join(' | '));
 
-  // Silence should never produce a payment command.
-  const fourth = await holdOrb(page, orb(), mobile);
-  await fourth.release();
-  await page.waitForTimeout(110);
-  check(name + ': silent quick release does not submit an empty command',
-    log.agent.length === 3);
+  const silent = await hold(page, mic, mobile);
+  await silent.release();
+  await page.waitForTimeout(200);
+  check(label + ': silence produces no toast, modal or empty command',
+    logs.agent.length === 3 && await dialog.locator('.xsai-inline-issue').count() === 0 &&
+    await idleMic(page));
   await ctx.close();
 }
 
-// Aborted iPhone touches (e.g. finger pulled away / OS interruption) MUST
-// discard the entire phrase and not run any protected XS AI action.
+// New finger-down is allowed while the previous (possibly financial) command
+// is pending, but HTTP calls must remain serialized, never overlap.
 {
-  const { ctx, page, dialog, log, errors, tap } = await setup({ standalone: true });
-  await tap(dialog.getByRole('group', { name: 'Language' }).getByRole('button', { name: 'മലയാളം' }));
-  const contact = await holdOrb(page, dialog.locator('.xsai-orb'), true);
-  await page.evaluate(() => window.__partial('രാഹുൽ 1500 UPI ആയി അടച്ചു'));
+  const { ctx, page, logs, open } = await setup({ delay: 850 });
+  const dialog = await open(), mic = dialog.locator('.xsai-orb');
+  const one = await hold(page, mic);
+  await page.evaluate(() => window.__partial('First question'));
+  await one.release();
+  await page.waitForFunction(() => document.querySelectorAll('.xsai-turn.user').length === 1);
+  check('busy queue: mic returns to normal while first request runs', await idleMic(page));
+  const two = await hold(page, mic);
+  await page.evaluate(() => window.__partial('Second question'));
+  await two.release();
+  check('busy queue: second hold works while AI is processing', await idleMic(page) &&
+    await dialog.locator('.xsai-turn.user').count() === 2);
+  await waitCount(page, 2);
+  check('busy queue: both requests are processed in order',
+    logs.agent.length === 2 &&
+    logs.agent[0].messages.at(-1).content === 'First question' &&
+    logs.agent[1].messages.at(-1).content === 'Second question');
+  await ctx.close();
+}
+
+{
+  const { ctx, page, logs, open } = await setup();
+  const dialog = await open();
+  await dialog.getByRole('group', { name: 'Language' }).getByRole('button', { name: 'മലയാളം' }).tap();
+  const contact = await hold(page, dialog.locator('.xsai-orb'));
+  await page.evaluate(() => window.__partial('Rahul paid 1000'));
   await contact.cancel();
-  await page.waitForTimeout(130);
-  check('iPhone: interrupted touch cancels Malayalam financial command, never sends',
-    log.agent.length === 0 && log.transcribe.length === 0 && errors.length === 0, errors.join(' | '));
+  await page.waitForTimeout(220);
+  check('cancelled hold: payment-like phrase never sent', logs.agent.length === 0 && await idleMic(page));
   await ctx.close();
 }
 
-// A language-service error is not a microphone-permission failure. Keep
-// the exact browser error and allow a manually selected alternate locale.
+// Only an actual browser failure shows a compact inline message, not a large
+// pop-up or a persistent diagnostic paragraph.
 {
-  const { ctx, page, dialog, log, tap, errors } = await setup({ standalone: true });
+  const { ctx, page, logs, open, tap } = await setup();
+  const dialog = await open();
   await tap(dialog.getByRole('group', { name: 'Language' }).getByRole('button', { name: 'മലയാളം' }));
-  const contact = await holdOrb(page, dialog.locator('.xsai-orb'), true);
-  await page.evaluate(() => {
-    window.__speech.last?.onerror?.({ error: 'language-not-supported' });
-    window.__speech.last?.onend?.();
-  });
+  const contact = await hold(page, dialog.locator('.xsai-orb'));
+  await page.evaluate(() => window.__browserError('language-not-supported'));
   await contact.release();
-  const warning = dialog.getByRole('dialog', { name: 'മലയാളം വോയ്സ് ഈ ബ്രൗസറിൽ പിന്തുണയ്ക്കുന്നില്ല' });
-  await warning.waitFor({ timeout: 4000 });
-  const firstError = await warning.getByRole('status').innerText();
-  check('iPhone: exact ml-IN browser language failure is shown',
-    firstError.includes('language-not-supported') && firstError.includes('ml-IN'));
-  await tap(warning.getByRole('button', { name: 'മലയാളം (ml) കോഡ് പരീക്ഷിക്കുക' }));
-  const retry = await holdOrb(page, dialog.locator('.xsai-orb'), true);
-  const ml = await page.evaluate(() => window.__speech.last?.lang);
-  check('iPhone: next finger hold uses alternative browser-only ml tag', ml === 'ml');
-  await page.evaluate(() => window.__partial('എത്ര രൂപ കിട്ടി?'));
-  await retry.release();
-  await waitAgents(page, 1);
-  check('iPhone: locale retry sends only recognized text',
-    log.agent.length === 1 && log.agent[0].messages.at(-1).content === 'എത്ര രൂപ കിട്ടി?' &&
-    log.transcribe.length === 0 && errors.length === 0, errors.join(' | '));
+  await dialog.locator('.xsai-inline-issue').waitFor({ timeout: 3500 });
+  check('error: one concise inline message, no modal or verbose warnings',
+    (await dialog.locator('.xsai-inline-issue').innerText()).includes('Language unavailable') &&
+    await dialog.locator('.xsai-mic-backdrop').count() === 0 &&
+    logs.agent.length === 0);
+  await tap(dialog.getByRole('button', { name: 'Try ml' }));
+  const next = await hold(page, dialog.locator('.xsai-orb'));
+  check('error: optional alternate browser locale', await page.evaluate(() => window.__speech.last?.lang === 'ml'));
+  await next.release();
   await ctx.close();
 }
 
-// A service-not-allowed error must not be represented as a permission grant
-// or falsely claimed to have been repaired by changing the language tag.
 {
-  const { ctx, page, dialog, log, tap, errors } = await setup({ standalone: true });
-  await tap(dialog.getByRole('group', { name: 'Language' }).getByRole('button', { name: 'മലയാളം' }));
-  const contact = await holdOrb(page, dialog.locator('.xsai-orb'), true);
-  await page.evaluate(() => window.__serviceError());
-  await page.waitForTimeout(55);
-  check('iPhone: service failure dialog waits until touch release',
-    await dialog.locator('.xsai-mic-dialog').count() === 0 && log.agent.length === 0);
+  const { ctx, page, logs, open, tap } = await setup({ noSpeech: true });
+  const dialog = await open();
+  const contact = await hold(page, dialog.locator('.xsai-orb'));
   await contact.release();
-  const help = dialog.getByRole('dialog', { name: 'ലൈവ് വോയ്സ് ലഭ്യമല്ല' });
-  await help.waitFor({ timeout: 4000 });
-  const detail = await help.getByRole('status').innerText();
-  check('iPhone: service-not-allowed reports actual code without recording/upload',
-    detail.includes('service-not-allowed') && detail.includes('ml-IN') &&
-    log.agent.length === 0 && log.transcribe.length === 0 && errors.length === 0, errors.join(' | '));
-  await tap(help.getByRole('button', { name: 'കീബോർഡ് ഉപയോഗിക്കുക' }));
-  await page.waitForTimeout(140); // React restores the input on animation frame
-  const focusInfo = await page.evaluate(() => ({
-    target: document.activeElement?.getAttribute('aria-label'),
-    tag: document.activeElement?.tagName,
-  }));
-  check('iPhone: keyboard fallback retains focus',
-    focusInfo.target === 'Message XS AI', JSON.stringify(focusInfo));
-  await ctx.close();
-}
-
-// Some installed browser contexts expose no SpeechRecognition API whatsoever.
-{
-  const { ctx, page, dialog, log, tap, errors } = await setup({
-    standalone: true, mobile: true, noSpeech: true, stt: true,
-  });
-  await tap(dialog.getByRole('group', { name: 'Language' }).getByRole('button', { name: 'മലയാളം' }));
-  const contact = await holdOrb(page, dialog.locator('.xsai-orb'), true);
-  await contact.release();
-  const help = dialog.getByRole('dialog', { name: 'ബ്രൗസർ വോയ്സ് ലഭ്യമല്ല' });
-  await help.waitFor({ timeout: 4000 });
-  check('iPhone without recognition API: safe text-only guidance',
-    await help.getByRole('button', { name: 'കീബോർഡ് ഉപയോഗിക്കുക' }).isVisible() &&
-    log.transcribe.length === 0 && errors.length === 0, errors.join(' | '));
-  await tap(help.getByRole('button', { name: 'കീബോർഡ് ഉപയോഗിക്കുക' }));
-  const input = dialog.getByRole('textbox', { name: 'Message XS AI' });
-  await input.fill('ഹലോ, ഞാൻ പറയുന്നത് കേൾക്കുന്നുണ്ടോ?');
+  await dialog.locator('.xsai-inline-issue').waitFor({ timeout: 3500 });
+  check('no browser recognition: compact fallback without sending audio',
+    await dialog.locator('.xsai-mic-backdrop').count() === 0 && logs.transcribe.length === 0);
+  await tap(dialog.getByRole('button', { name: 'Type' }));
+  await dialog.getByRole('textbox', { name: 'Message XS AI' }).fill('Typed message');
   await tap(dialog.getByRole('button', { name: 'Send' }));
-  await waitAgents(page, 1);
-  check('iPhone text fallback: typed Malayalam sends without audio',
-    log.agent.length === 1 && log.agent[0].messages.at(-1).content === 'ഹലോ, ഞാൻ പറയുന്നത് കേൾക്കുന്നുണ്ടോ?' &&
-    log.transcribe.length === 0 && errors.length === 0, errors.join(' | '));
+  await waitCount(page, 1);
+  check('text fallback still sends one command', logs.agent.length === 1);
   await ctx.close();
 }
+
+// Final words may arrive after release. Do not erase a draft typed while
+// speech recognition is still finalizing its response.
+{
+  const { ctx, page, logs, open } = await setup();
+  const dialog = await open();
+  const contact = await hold(page, dialog.locator('.xsai-orb'));
+  await page.evaluate(() => { window.__speech.delayEnd = true; window.__partial('Voice phrase'); });
+  await contact.release();
+  const input = dialog.getByRole('textbox', { name: 'Message XS AI' });
+  await input.fill('My typed draft');
+  await waitCount(page, 1);
+  check('late browser onend: typed draft is preserved and voice submits once',
+    (await input.inputValue()) === 'My typed draft' &&
+    logs.agent.length === 1 &&
+    logs.agent[0].messages.at(-1).content === 'Voice phrase' &&
+    await idleMic(page));
+  await ctx.close();
+}
+
+// A genuine Settings switch must persist across page reload and enable voice
+// only when chosen; normal text messages are always retained.
+{
+  const { ctx, page, logs, open, tap } = await setup();
+  const dialog = await open();
+  check('settings: panel has no unnecessary spoken-reply toggle', await dialog.getByText('Voice on').count() === 0);
+  await tap(dialog.getByRole('button', { name: 'Close' }));
+  await dialog.waitFor({ state: 'hidden' });
+  await page.goto(baseUrl + 'g/' + gym.slug + '/settings', { waitUntil: 'networkidle' });
+  const sw = page.getByRole('switch', { name: 'XS AI spoken replies' });
+  await sw.waitFor();
+  check('settings: spoken replies default OFF', !(await sw.isChecked()));
+  await sw.check();
+  check('settings: toggle ON is stored on this device',
+    (await sw.isChecked()) &&
+    await page.evaluate(() => localStorage.getItem('xs-ai-spoken-replies') === 'on'));
+  await page.reload({ waitUntil: 'networkidle' });
+  check('settings: ON survives reload', await page.getByRole('switch', { name: 'XS AI spoken replies' }).isChecked());
+  await page.goto(baseUrl + 'g/' + gym.slug, { waitUntil: 'networkidle' });
+  const again = await open();
+  await again.getByRole('textbox', { name: 'Message XS AI' }).fill('Please answer');
+  await tap(again.getByRole('button', { name: 'Send' }));
+  await waitCount(page, 1);
+  check('settings: opted-in reply appears as text and speaks once',
+    logs.agent.length === 1 && (await page.evaluate(() => window.__tts.calls.length)) === 1 &&
+    (await again.getByText('I understood.').count()) === 1 && await idleMic(page));
+  await tap(again.getByRole('button', { name: 'Close' }));
+  await again.waitFor({ state: 'hidden' });
+  await page.goto(baseUrl + 'g/' + gym.slug + '/settings', { waitUntil: 'networkidle' });
+  const onSwitch = page.getByRole('switch', { name: 'XS AI spoken replies' });
+  await onSwitch.uncheck();
+  check('settings: OFF is persisted immediately',
+    !(await onSwitch.isChecked()) &&
+    await page.evaluate(() => localStorage.getItem('xs-ai-spoken-replies') === 'off'));
+  await ctx.close();
+}
+
 await browser.close();
-console.log(failures ? failures + ' LIVE VOICE FAILURES' : 'TEXT-ONLY VOICE OK');
+console.log(failures ? failures + ' XS AI MINIMAL VOICE FAILURES' : 'XS AI MINIMAL VOICE OK');
 process.exit(failures ? 1 : 0);

@@ -1,17 +1,18 @@
 import { useQueryClient } from '@tanstack/react-query';
-import { ArrowUp, Check, Keyboard, Mic, RotateCcw, Square, X } from 'lucide-react';
+import { ArrowUp, Check, Mic, RotateCcw, X } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type MouseEvent as ReactMouseEvent } from 'react';
 import { useNavigate } from 'react-router';
 import { useGym } from '../../app/gym';
 import { Segmented, Sheet, useToast } from '../../components/ui';
 import { errorMessage } from '../../lib/errors';
 import { rpc, supabase } from '../../lib/supabase';
-import { canListen, listen, speak, SpeechListenError, stopSpeaking, voiceFor, type Lang } from './voice';
+import { canListen, listen, speak, SpeechListenError, stopSpeaking, type Lang } from './voice';
+import { spokenRepliesEnabled } from './preferences';
 import './ai.css';
 
 type Action = { tool: string; ok: boolean; summary: string; undo?: { rpc: string; args: Record<string, unknown> }; undone?: boolean };
 type Turn = { role: 'user' | 'assistant'; content: string; actions?: Action[]; tone?: 'bad' };
-type State = 'idle' | 'listening' | 'thinking' | 'speaking';
+type State = 'idle' | 'thinking';
 type MicDialog = 'denied' | 'unavailable' | 'service' | 'unsupported' | null;
 
 type HoldSession = {
@@ -31,27 +32,6 @@ type HoldSession = {
 // Live word-by-word recognition uses the browser's SpeechRecognition interface.
 
 const LANG_KEY = 'xs-ai-lang';
-const HINTS: Record<Lang, string[]> = {
-  en: ['How much did we collect today?', 'Who has dues?', 'Rahul paid 1500 by UPI', 'Renew Anjali on Monthly'],
-  ml: ['ഇന്ന് എത്ര രൂപ കിട്ടി?', 'ആർക്കൊക്കെ കുടിശ്ശികയുണ്ട്?', 'രാഹുൽ 1500 UPI ആയി അടച്ചു', 'അഞ്ജലിയുടെ Monthly പുതുക്കൂ'],
-};
-
-type MicCopy = { title: string; detail: string; button: string };
-const MIC_COPY: Record<Lang, Record<Exclude<MicDialog, null>, MicCopy>> = {
-  en: {
-    denied: { title: 'Microphone permission needed', detail: 'Your device did not allow live speech recognition. Try again if permission can be requested, or use your keyboard microphone to dictate.', button: 'Try live voice again' },
-    service: { title: 'Live speech unavailable', detail: 'Live speech recognition is not available in this browser or installed app. XS AI will not record or upload audio. Use the microphone on your keyboard to dictate instead.', button: 'Try live voice again' },
-    unavailable: { title: 'Browser speech is unavailable', detail: 'This browser does not expose SpeechRecognition. You can type your message instead.', button: '' },
-    unsupported: { title: 'Speech language not supported', detail: 'Your browser rejected the requested language. XS Gym cannot install recognition languages into the iPhone browser.', button: 'Try browser voice again' },
-  },
-  ml: {
-    denied: { title: 'ബ്രൗസർ വോയ്സ് അനുമതി നിഷേധിച്ചു', detail: 'ബ്രൗസർ സ്പീച്ച് തിരിച്ചറിയൽ നിരസിച്ചു. ഇത് മലയാളം മോഡൽ ലഭ്യമാണെന്നതിന് തെളിവല്ല. വീണ്ടും ശ്രമിക്കാം, അല്ലെങ്കിൽ മലയാളത്തിൽ ടൈപ്പ് ചെയ്യാം.', button: 'വീണ്ടും ശ്രമിക്കുക' },
-    service: { title: 'ലൈവ് വോയ്സ് ലഭ്യമല്ല', detail: 'iPhone ബ്രൗസറിലെ വോയ്സ് സേവനം മലയാളം തിരിച്ചറിയൽ നിരസിച്ചു. മറ്റൊരു മലയാളം ഭാഷാ കോഡ് പരീക്ഷിക്കാം. പിന്തുണയില്ലെങ്കിൽ XS Gym-ന് ബ്രൗസറിനെ നിർബന്ധിച്ച് തിരിച്ചറിയിക്കാൻ കഴിയില്ല.', button: 'വീണ്ടും ശ്രമിക്കുക' },
-    unavailable: { title: 'ബ്രൗസർ വോയ്സ് ലഭ്യമല്ല', detail: 'ഈ ബ്രൗസറിൽ SpeechRecognition API ഇല്ല. മലയാളം ടൈപ്പ് ചെയ്യാം.', button: '' },
-    unsupported: { title: 'മലയാളം വോയ്സ് ഈ ബ്രൗസറിൽ പിന്തുണയ്ക്കുന്നില്ല', detail: 'iPhone-ന്റെ സ്പീച്ച് സേവനം ഈ ഭാഷാ കോഡ് നിരസിച്ചു. ഒരു ബദൽ മലയാളം കോഡ് പരീക്ഷിക്കാം; അത് പ്രവർത്തിക്കുമെന്ന് ഉറപ്പില്ല.', button: 'വീണ്ടും ശ്രമിക്കുക' },
-  },
-};
-
 /** XS AI: talk to the gym. Opens as a sheet; every action shows a card with Undo. */
 export function XsAiPanel({ onClose }: { onClose: () => void }) {
   const { gym } = useGym();
@@ -62,11 +42,11 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
   const [turns, setTurns] = useState<Turn[]>([]);
   const [state, setState] = useState<State>('idle');
   const [text, setText] = useState('');
-  const [mute, setMute] = useState(false);
+  const [holding, setHolding] = useState(false);
   const [micDialog, setMicDialog] = useState<MicDialog>(null);
   const [speechIssue, setSpeechIssue] = useState<{ code: string; locale: string } | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-  const micActionRef = useRef<HTMLButtonElement>(null);
+
   const holdRef = useRef<HoldSession | null>(null);
   const activePointer = useRef<number | null>(null);
   const keyboardHeld = useRef(false);
@@ -77,13 +57,15 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
   const requestBusy = useRef(false);
   const listeningBusy = useRef(false);
   const undoBusy = useRef(new Set<string>());
+  const commandQueue = useRef<Array<{ content: string; language: Lang; id: string }>>([]);
+  const processedHistory = useRef<Array<{ role: 'user' | 'assistant'; content: string }>>([]);
   const scroller = useRef<HTMLDivElement>(null);
   const turnsRef = useRef(turns); turnsRef.current = turns;
-  const voiceOk = canListen();
+
 
   useEffect(() => { try { localStorage.setItem(LANG_KEY, lang); } catch { /* storage blocked */ } }, [lang]);
   useEffect(() => { scroller.current?.scrollTo({ top: scroller.current.scrollHeight, behavior: 'smooth' }); }, [turns, state]);
-  useEffect(() => { if (micDialog) micActionRef.current?.focus(); }, [micDialog]);
+
   const stopInteraction = useCallback(() => {
     closingRef.current = true;
     activePointer.current = null;
@@ -92,48 +74,80 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
     const session = holdRef.current;
     holdRef.current = null;
     listeningBusy.current = false;
+    commandQueue.current = [];
     if (session) {
       session.cancelled = true;
       if (session.watchdog) clearTimeout(session.watchdog);
       session.abort();
     }
     stopSpeaking();
+    setHolding(false);
   }, []);
   useEffect(() => () => { stopInteraction(); }, [stopInteraction]);
 
-  // One request at a time: rapid taps must not record the same payment twice.
-  async function ask(content: string) {
+  // Voice replies are opt-in per device. A request's typed response always
+  // appears in the chat, and the microphone never waits for speech playback.
+  // Serialize money-changing commands: holding again while the first request
+  // is pending queues the new text without overlapping server actions.
+  function ask(content: string, fromVoice = false) {
     const q = content.trim();
-    if (!q || requestBusy.current || listeningBusy.current || closingRef.current) return;
+    if (!q || closingRef.current) return;
+    const command = { content: q, language: lang, id: crypto.randomUUID() };
+    commandQueue.current.push(command);
+    const updated: Turn[] = [...turnsRef.current, { role: 'user', content: q }];
+    turnsRef.current = updated;
+    setTurns(updated);
+    // A late speech result must not clear text the user started typing after release.
+    if (!fromVoice) setText('');
+    void drainQueue();
+  }
+
+  async function drainQueue() {
+    if (requestBusy.current || closingRef.current) return;
     requestBusy.current = true;
-    stopSpeaking();
-    const history = [...turnsRef.current, { role: 'user' as const, content: q }];
-    setTurns(history); setText(''); setState('thinking');
+    setState('thinking');
     try {
-      const { data, error } = await supabase.functions.invoke('xs-ai', {
-        // One UUID per user command lets the database deduplicate a repeated
-        // HTTP request without deduplicating a genuinely new payment command.
-        body: { gym_id: gym.id, lang, request_id: crypto.randomUUID(),
-          messages: history.filter((t) => !t.tone).map(({ role, content: c }) => ({ role, content: c })) },
-      });
-      if (error) {
-        let msg = errorMessage(error);
-        try { const body = await (error as { context?: Response }).context?.json(); if (body?.error) msg = body.error; } catch { /* not JSON */ }
-        throw new Error(msg);
+      while (!closingRef.current && commandQueue.current.length) {
+        const next = commandQueue.current.shift()!;
+        stopSpeaking();
+        const history = [...processedHistory.current, { role: 'user' as const, content: next.content }];
+        processedHistory.current = history;
+        try {
+          const { data, error } = await supabase.functions.invoke('xs-ai', {
+            body: {
+              gym_id: gym.id, lang: next.language, request_id: next.id,
+              messages: history,
+            },
+          });
+          if (error) {
+            let msg = errorMessage(error);
+            try { const body = await (error as { context?: Response }).context?.json(); if (body?.error) msg = body.error; }
+            catch { /* not JSON */ }
+            throw new Error(msg);
+          }
+          const reply = String(data?.reply ?? '');
+          for (const key of data?.changed ?? []) void qc.invalidateQueries({ queryKey: [key, gym.id] });
+          if (closingRef.current) break;
+          const answer: Turn = { role: 'assistant', content: reply, actions: data?.actions };
+          turnsRef.current = [...turnsRef.current, answer];
+          setTurns(turnsRef.current);
+          processedHistory.current = [...history, { role: 'assistant', content: reply }];
+          if (typeof data?.navigate === 'string') {
+            navigate(`/g/${gym.slug}${data.navigate ? `/${data.navigate}` : ''}`);
+          }
+          if (reply && spokenRepliesEnabled()) {
+            // Never hold up the microphone waiting for TTS completion.
+            void speak(reply, next.language);
+          }
+        } catch (error) {
+          if (closingRef.current) break;
+          const answer: Turn = {
+            role: 'assistant', content: error instanceof Error ? error.message : String(error), tone: 'bad',
+          };
+          turnsRef.current = [...turnsRef.current, answer];
+          setTurns(turnsRef.current);
+        }
       }
-      const reply = String(data?.reply ?? '');
-      // A write may already have succeeded when dismissed. Refresh the app,
-      // but never speak or navigate from a closed conversation.
-      for (const key of data?.changed ?? []) void qc.invalidateQueries({ queryKey: [key, gym.id] });
-      if (closingRef.current) return;
-      setTurns((t) => [...t, { role: 'assistant', content: reply, actions: data?.actions }]);
-      if (typeof data?.navigate === 'string') navigate(`/g/${gym.slug}${data.navigate ? `/${data.navigate}` : ''}`);
-      if (!mute && reply) {
-        setState('speaking');
-        await speak(reply, lang);
-      }
-    } catch (e) {
-      if (!closingRef.current) setTurns((t) => [...t, { role: 'assistant', content: e instanceof Error ? e.message : String(e), tone: 'bad' }]);
     } finally {
       requestBusy.current = false;
       if (!closingRef.current) setState('idle');
@@ -148,34 +162,27 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
     if (session.watchdog) clearTimeout(session.watchdog);
     holdRef.current = null;
     listeningBusy.current = false;
+    setHolding(false);
     if (closingRef.current) return;
     if (session.failed) {
-      // Delay the modal until finger-up. Showing it while a finger is still
-      // touching the orb can accidentally activate or dismiss the new dialog.
-      setState('idle');
+      // Only an actual recognition failure shows a short inline message.
+      // Normal releases never display banners or spoken status.
       const error = session.failed;
       if (error instanceof SpeechListenError) {
         // iOS synthesizes a click after pointerup. Mounting a modal inside that
         // event can put its retry/dismiss control under the releasing finger.
         // Open after the gesture finishes, so it cannot be clicked accidentally.
         setTimeout(() => {
-          if (closingRef.current) return;
+          if (closingRef.current || holdRef.current) return;
           setSpeechIssue({ code: error.browserCode, locale: error.locale });
           setMicDialog(error.reason === 'denied' || error.reason === 'audio' ? 'denied'
             : error.reason === 'unsupported' ? 'unsupported' : 'service');
         }, 80);
-      } else toast(error instanceof Error ? error.message : String(error), 'bad');
+      } else setMicDialog('service');
       return;
     }
     const heard = (session.final || session.latest).trim();
-    if (heard) {
-      setText('');
-      void ask(heard); // Only release can send; silence/end while held cannot.
-    } else {
-      setText('');
-      setState('idle');
-      toast(lang === 'ml' ? 'വാക്കുകൾ ലഭിച്ചില്ല. വീണ്ടും അമർത്തിപ്പിടിച്ച് പറയൂ.' : 'No words heard. Hold to speak again.');
-    }
+    if (heard) ask(heard, true); // Only release can send; silence sends nothing.
   }
 
   function cancelHold() {
@@ -185,18 +192,20 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
     session.released = true;
     holdRef.current = null;
     listeningBusy.current = false;
+    setHolding(false);
     if (session.watchdog) clearTimeout(session.watchdog);
     session.abort();
-    if (!closingRef.current) {
-      setText('');
-      setState('idle');
-    }
+    if (!closingRef.current) setText('');
   }
 
   function releaseHold() {
     const session = holdRef.current;
     if (!session || session.released) return;
     session.released = true;
+    // The mic is visually idle IMMEDIATELY on finger-up, even while the
+    // browser finalizes text and the previous AI reply is processing.
+    setHolding(false);
+    setText('');
     // Do not call stop() again when the browser has already ended/failed;
     // WebKit iOS 27 has a reported repeated-recognition regression.
     if (!session.settled) session.stop();
@@ -209,7 +218,8 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
   }
 
   function beginHold(): boolean {
-    if (closingRef.current || micDialog || holdRef.current || requestBusy.current || listeningBusy.current) return false;
+    if (closingRef.current || holdRef.current || listeningBusy.current) return false;
+    setMicDialog(null);
     if (!canListen()) {
       // Delay the error overlay until pointerup. If it appears while a finger
       // is down, releasing can click an action in the newly mounted dialog.
@@ -221,7 +231,7 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
     listeningBusy.current = true;
     setSpeechIssue(null);
     setText('');
-    setState('listening');
+    setHolding(true);
     const session: HoldSession = {
       pointerId: null, released: false, cancelled: false, settled: false,
       latest: '', final: '', failed: null, stop: () => {}, abort: () => {}, watchdog: null,
@@ -231,7 +241,7 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
       const recognition = listen(lang, (partial) => {
         if (holdRef.current !== session || session.cancelled) return;
         session.latest = partial;
-        if (!closingRef.current) setText(partial);
+        if (!closingRef.current && !session.released) setText(partial);
       }, alternateMalayalam && lang === 'ml');
       session.stop = recognition.stop;
       session.abort = recognition.abort;
@@ -251,8 +261,8 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
     } catch (error) {
       holdRef.current = null;
       listeningBusy.current = false;
-      setState('idle');
-      toast(error instanceof Error ? error.message : String(error), 'bad');
+      setHolding(false);
+      setMicDialog('service');
       return false;
     }
     return true;
@@ -321,15 +331,6 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
     } else beginHold();
   }
 
-  function useKeyboard() {
-    setMicDialog(null);
-    // iOS only opens the keyboard reliably from the direct tap gesture.
-    inputRef.current?.focus();
-    requestAnimationFrame(() => {
-      if (document.activeElement !== inputRef.current) inputRef.current?.focus();
-    });
-  }
-
   // Visibility loss cancels (rather than sends) a partial voice command.
   // Only a deliberate release of the held microphone can auto-send.
   useEffect(() => {
@@ -345,8 +346,8 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
       listeningBusy.current = false;
       if (session.watchdog) clearTimeout(session.watchdog);
       session.abort();
+      setHolding(false);
       setText('');
-      setState('idle');
     }
     document.addEventListener('visibilitychange', onHidden);
     return () => document.removeEventListener('visibilitychange', onHidden);
@@ -369,14 +370,6 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
     }
   }
 
-  const status = state === 'listening' ? (lang === 'ml' ? 'പിടിച്ചുനിൽക്കൂ · വിട്ടാൽ അയയ്ക്കും' : 'Keep holding · release to send')
-    : state === 'thinking' ? (lang === 'ml' ? 'ആലോചിക്കുന്നു…' : 'Thinking…')
-    : state === 'speaking' ? (lang === 'ml' ? 'സംസാരിക്കുന്നു…' : 'Speaking…')
-      : voiceOk ? (lang === 'ml'
-        ? (alternateMalayalam ? 'മലയാളം (ml) · അമർത്തിപ്പിടിച്ച് സംസാരിക്കൂ' : 'അമർത്തിപ്പിടിച്ച് സംസാരിക്കൂ · വിട്ടാൽ അയയ്ക്കും')
-        : 'Hold to talk · Release to send')
-      : (lang === 'ml' ? 'മലയാളം ടൈപ്പ് ചെയ്യാം' : 'Type your message');
-
   return (
     <Sheet title="XS AI" onClosing={stopInteraction} onClose={() => { stopInteraction(); onClose(); }}>
       <div className="xsai">
@@ -385,94 +378,70 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
             cancelHold(); setLang(value); setMicDialog(null);
             setSpeechIssue(null); setAlternateMalayalam(false);
           }} options={[{ value: 'en', label: 'English' }, { value: 'ml', label: 'മലയാളം' }]} />
-          <button type="button" className={`btn small ghost ${mute ? '' : 'on'}`} onClick={() => { setMute((m) => !m); stopSpeaking(); }} aria-pressed={!mute}>
-            {mute ? 'Voice off' : 'Voice on'}
-          </button>
         </div>
 
         <div className="xsai-log" ref={scroller} aria-live="polite">
-          {turns.length === 0 && (
-            <div className="xsai-empty">
-              <p>{lang === 'ml' ? 'ജിമ്മിനെക്കുറിച്ച് എന്തും ചോദിക്കൂ, അല്ലെങ്കിൽ ചെയ്യാൻ പറയൂ.' : 'Ask anything about your gym, or tell me what to do.'}</p>
-              <div className="xsai-hints">
-                {HINTS[lang].map((h) => <button type="button" key={h} className="btn small" onClick={() => ask(h)}>{h}</button>)}
-              </div>
-            </div>
-          )}
           {turns.map((t, ti) => (
             <div key={ti} className={`xsai-turn ${t.role} ${t.tone ?? ''}`}>
               {t.actions?.map((a, i) => (
                 <div key={i} className={`xsai-action ${a.ok ? (a.undone ? 'undone' : 'ok') : 'bad'}`}>
                   <span className="xsai-action-ico" aria-hidden>{a.ok ? <Check size={14} strokeWidth={3} /> : <X size={14} strokeWidth={3} />}</span>
                   <span className="xsai-action-text">{a.undone ? <s>{a.summary}</s> : a.summary}</span>
-                  {a.ok && a.undo && !a.undone && <button type="button" className="btn small ghost" onClick={() => undo(ti, i)}><RotateCcw size={14} /> Undo</button>}
+                  {a.ok && a.undo && !a.undone && (
+                    <button type="button" className="btn small ghost" onClick={() => undo(ti, i)}>
+                      <RotateCcw size={14} /> Undo
+                    </button>
+                  )}
                 </div>
               ))}
-              {t.content && <p className="xsai-bubble" lang={t.role === 'assistant' ? (lang === 'ml' ? 'ml' : 'en') : undefined}>{t.content}</p>}
+              {t.content && <p className="xsai-bubble">{t.content}</p>}
             </div>
           ))}
-          {state === 'thinking' && <div className="xsai-turn assistant"><p className="xsai-bubble xsai-dots" aria-label="Thinking"><i /><i /><i /></p></div>}
+          {state === 'thinking' && (
+            <div className="xsai-turn assistant">
+              <p className="xsai-bubble xsai-dots" aria-label="Waiting for reply"><i /><i /><i /></p>
+            </div>
+          )}
         </div>
 
         <div className="xsai-controls">
-          <button type="button" className={`xsai-orb ${state}`}
+          <button type="button" className={`xsai-orb ${holding ? 'listening' : ''}`}
             onPointerDown={onPressDown} onPointerUp={onPressUp} onPointerCancel={onPressCancel}
             onLostPointerCapture={onPressCancel}
             onKeyDown={onHoldKeyDown} onKeyUp={onHoldKeyUp}
             onContextMenu={(event) => event.preventDefault()}
-            onClick={onAccessibleClick} disabled={state === 'thinking'}
-            aria-pressed={state === 'listening'}
-            aria-label={state === 'listening' ? 'Release to send' : 'Hold to talk to XS AI'}>
+            onClick={onAccessibleClick}
+            aria-pressed={holding}
+            aria-label={holding ? 'Release to send' : 'Hold to talk to XS AI'}>
             <span className="xsai-orb-glow" aria-hidden />
-            {state === 'listening' ? <Square size={22} fill="currentColor" /> : <Mic size={26} />}
+            <Mic size={26} />
           </button>
-          <p className="xsai-status" aria-live="polite">{status}{lang === 'ml' && !mute && !voiceFor('ml') ? ' · replies shown as text on this device' : ''}</p>
-          <form className="xsai-type" onSubmit={(e) => { e.preventDefault(); void ask(text); }}>
-            <input ref={inputRef} className="input" lang={lang === 'ml' ? 'ml-IN' : 'en-IN'} value={text} onChange={(e) => setText(e.target.value)} placeholder={lang === 'ml' ? 'ടൈപ്പ് ചെയ്യൂ…' : 'Type a message…'} aria-label="Message XS AI" enterKeyHint="send" />
-            <button className="btn primary icon-btn" disabled={!text.trim() || state !== 'idle'} aria-label="Send"><ArrowUp size={20} /></button>
+          <span className="sr-only" role="status">{holding ? 'Listening' : ''}</span>
+          {micDialog && (
+            <div className="xsai-inline-issue" role="status">
+              <span title={speechIssue?.code ?? ''}>
+                {micDialog === 'denied' ? 'Microphone blocked' :
+                  micDialog === 'unsupported' ? 'Language unavailable' : 'Voice unavailable'}
+              </span>
+              {lang === 'ml' && !alternateMalayalam && speechIssue?.locale === 'ml-IN' && micDialog !== 'denied' && (
+                <button type="button" onClick={() => {
+                  setAlternateMalayalam(true); setMicDialog(null); setSpeechIssue(null);
+                }}>Try ml</button>
+              )}
+              <button type="button" onClick={() => { setMicDialog(null); inputRef.current?.focus(); }}>Type</button>
+              <button type="button" aria-label="Dismiss voice message" onClick={() => setMicDialog(null)}><X size={14} /></button>
+            </div>
+          )}
+          <form className="xsai-type" onSubmit={(event) => { event.preventDefault(); ask(text); }}>
+            <input ref={inputRef} className="input" lang={lang === 'ml' ? 'ml-IN' : 'en-IN'}
+              value={text} onChange={(event) => setText(event.target.value)}
+              placeholder={lang === 'ml' ? 'ചോദിക്കൂ…' : 'Ask XS AI…'}
+              aria-label="Message XS AI" enterKeyHint="send" />
+            <button className="btn primary icon-btn" disabled={!text.trim() || holding} aria-label="Send">
+              <ArrowUp size={20} />
+            </button>
           </form>
         </div>
-
-        {micDialog && (
-          <div className="xsai-mic-backdrop">
-            <section className="xsai-mic-dialog" role="dialog" aria-modal="true" aria-labelledby="xsai-mic-heading" aria-describedby="xsai-mic-desc">
-              <span className="xsai-mic-icon" aria-hidden><Mic size={27} strokeWidth={1.8} /></span>
-              <h3 id="xsai-mic-heading">{MIC_COPY[lang][micDialog].title}</h3>
-              <p id="xsai-mic-desc">{MIC_COPY[lang][micDialog].detail}</p>
-              {speechIssue && (
-                <p className="muted" role="status">
-                  Browser error: <code>{speechIssue.code}</code> · language <code>{speechIssue.locale}</code>
-                </p>
-              )}
-              {lang === 'ml' && <p className="muted">
-                No XS Gym recording, AI model, or audio upload is used. Safari and installed iPhone apps may differ.
-                Malayalam browser recognition is not guaranteed.
-              </p>}
-              <div className="xsai-mic-actions">
-                {micDialog !== 'unavailable' && (
-                  <button ref={micActionRef} type="button" className="btn primary"
-                    onClick={() => { setMicDialog(null); setSpeechIssue(null); }}>
-                    
-                    {MIC_COPY[lang][micDialog].button}
-                  </button>
-                )}
-                {lang === 'ml' && speechIssue?.locale === 'ml-IN' && micDialog !== 'denied' && (
-                  <button type="button" className="btn ghost"
-                    onClick={() => { setAlternateMalayalam(true); setMicDialog(null); setSpeechIssue(null); }}>
-                    
-                    മലയാളം (ml) കോഡ് പരീക്ഷിക്കുക
-                  </button>
-                )}
-                <button ref={micDialog === 'unavailable' ? micActionRef : undefined}
-                  type="button" className="btn ghost" onClick={useKeyboard}>
-                  <Keyboard size={17} /> {lang === 'ml' ? 'കീബോർഡ് ഉപയോഗിക്കുക' : 'Use keyboard instead'}
-                </button>
-               </div>
-              <button type="button" className="xsai-mic-dismiss"
-                aria-label={lang === 'ml' ? 'മൈക്രോഫോൺ സഹായം അടയ്ക്കുക' : 'Dismiss microphone help'} onClick={() => setMicDialog(null)}><X size={19}/></button>
-            </section>
-          </div>
-        )}
       </div>
     </Sheet>
   );
