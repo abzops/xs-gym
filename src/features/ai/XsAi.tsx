@@ -161,11 +161,11 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
     if (session.watchdog) clearTimeout(session.watchdog);
     holdRef.current = null;
     listeningBusy.current = false;
+    setHolding(false);
     if (closingRef.current) return;
     if (session.failed) {
-      // Delay the modal until finger-up. Showing it while a finger is still
-      // touching the orb can accidentally activate or dismiss the new dialog.
-      setState('idle');
+      // Only an actual recognition failure shows a short inline message.
+      // Normal releases never display banners or spoken status.
       const error = session.failed;
       if (error instanceof SpeechListenError) {
         // iOS synthesizes a click after pointerup. Mounting a modal inside that
@@ -177,18 +177,12 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
           setMicDialog(error.reason === 'denied' || error.reason === 'audio' ? 'denied'
             : error.reason === 'unsupported' ? 'unsupported' : 'service');
         }, 80);
-      } else toast(error instanceof Error ? error.message : String(error), 'bad');
+      } else setMicDialog('service');
       return;
     }
     const heard = (session.final || session.latest).trim();
-    if (heard) {
-      setText('');
-      void ask(heard); // Only release can send; silence/end while held cannot.
-    } else {
-      setText('');
-      setState('idle');
-      toast(lang === 'ml' ? 'വാക്കുകൾ ലഭിച്ചില്ല. വീണ്ടും അമർത്തിപ്പിടിച്ച് പറയൂ.' : 'No words heard. Hold to speak again.');
-    }
+    setText('');
+    if (heard) ask(heard); // Only release can send; silence sends nothing.
   }
 
   function cancelHold() {
@@ -198,18 +192,20 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
     session.released = true;
     holdRef.current = null;
     listeningBusy.current = false;
+    setHolding(false);
     if (session.watchdog) clearTimeout(session.watchdog);
     session.abort();
-    if (!closingRef.current) {
-      setText('');
-      setState('idle');
-    }
+    if (!closingRef.current) setText('');
   }
 
   function releaseHold() {
     const session = holdRef.current;
     if (!session || session.released) return;
     session.released = true;
+    // The mic is visually idle IMMEDIATELY on finger-up, even while the
+    // browser finalizes text and the previous AI reply is processing.
+    setHolding(false);
+    setText('');
     // Do not call stop() again when the browser has already ended/failed;
     // WebKit iOS 27 has a reported repeated-recognition regression.
     if (!session.settled) session.stop();
@@ -222,7 +218,8 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
   }
 
   function beginHold(): boolean {
-    if (closingRef.current || micDialog || holdRef.current || requestBusy.current || listeningBusy.current) return false;
+    if (closingRef.current || holdRef.current || listeningBusy.current) return false;
+    setMicDialog(null);
     if (!canListen()) {
       // Delay the error overlay until pointerup. If it appears while a finger
       // is down, releasing can click an action in the newly mounted dialog.
@@ -234,7 +231,7 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
     listeningBusy.current = true;
     setSpeechIssue(null);
     setText('');
-    setState('listening');
+    setHolding(true);
     const session: HoldSession = {
       pointerId: null, released: false, cancelled: false, settled: false,
       latest: '', final: '', failed: null, stop: () => {}, abort: () => {}, watchdog: null,
@@ -244,7 +241,7 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
       const recognition = listen(lang, (partial) => {
         if (holdRef.current !== session || session.cancelled) return;
         session.latest = partial;
-        if (!closingRef.current) setText(partial);
+        if (!closingRef.current && !session.released) setText(partial);
       }, alternateMalayalam && lang === 'ml');
       session.stop = recognition.stop;
       session.abort = recognition.abort;
@@ -264,8 +261,8 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
     } catch (error) {
       holdRef.current = null;
       listeningBusy.current = false;
-      setState('idle');
-      toast(error instanceof Error ? error.message : String(error), 'bad');
+      setHolding(false);
+      setMicDialog('service');
       return false;
     }
     return true;
@@ -358,8 +355,8 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
       listeningBusy.current = false;
       if (session.watchdog) clearTimeout(session.watchdog);
       session.abort();
+      setHolding(false);
       setText('');
-      setState('idle');
     }
     document.addEventListener('visibilitychange', onHidden);
     return () => document.removeEventListener('visibilitychange', onHidden);
@@ -381,14 +378,6 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
       undoBusy.current.delete(id);
     }
   }
-
-  const status = state === 'listening' ? (lang === 'ml' ? 'പിടിച്ചുനിൽക്കൂ · വിട്ടാൽ അയയ്ക്കും' : 'Keep holding · release to send')
-    : state === 'thinking' ? (lang === 'ml' ? 'ആലോചിക്കുന്നു…' : 'Thinking…')
-    : state === 'speaking' ? (lang === 'ml' ? 'സംസാരിക്കുന്നു…' : 'Speaking…')
-      : voiceOk ? (lang === 'ml'
-        ? (alternateMalayalam ? 'മലയാളം (ml) · അമർത്തിപ്പിടിച്ച് സംസാരിക്കൂ' : 'അമർത്തിപ്പിടിച്ച് സംസാരിക്കൂ · വിട്ടാൽ അയയ്ക്കും')
-        : 'Hold to talk · Release to send')
-      : (lang === 'ml' ? 'മലയാളം ടൈപ്പ് ചെയ്യാം' : 'Type your message');
 
   return (
     <Sheet title="XS AI" onClosing={stopInteraction} onClose={() => { stopInteraction(); onClose(); }}>
