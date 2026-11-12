@@ -309,7 +309,15 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
         void recognition.done.then((result) => {
           if (holdRef.current !== session || session.cancelled) return;
           session.final = result.trim();
-          if (!cloud && session.final) browserNoSpeech.current = 0;
+          if (!cloud) {
+            if (session.final) browserNoSpeech.current = 0;
+            else if (lang === 'ml' && canFallback && !session.latest.trim()) {
+              // Safari may end silently without dispatching an error. A
+              // zero-transcript result is a failed recognition, not success.
+              // Only after an explicit cloud opt-in may the NEXT press use Sarvam.
+              unavailableMalayalam.current = true;
+            }
+          }
           session.settled = true;
           if (session.released) finishTranscript(session);
         }, (error: unknown) => {
@@ -321,8 +329,7 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
           if (!cloud && browserError?.browserCode === 'no-speech') {
             if (lang === 'ml') {
               browserNoSpeech.current++;
-              if (canFallback && browserNoSpeech.current >= 2)
-                unavailableMalayalam.current = true;
+              if (canFallback) unavailableMalayalam.current = true;
             }
             // A silent press never creates an error message or AI command.
             session.final = '';
