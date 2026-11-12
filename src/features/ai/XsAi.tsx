@@ -318,9 +318,13 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
           // Some iPhone builds silently return no transcript and 'no-speech'
           // even when the user spoke. Two consecutive failures allow the next
           // press to use Sarvam, but actual silence remains UI-silent.
-          if (!cloud && lang === 'ml' && browserError?.browserCode === 'no-speech') {
-            browserNoSpeech.current++;
-            if (canFallback && browserNoSpeech.current >= 2) unavailableMalayalam.current = true;
+          if (!cloud && browserError?.browserCode === 'no-speech') {
+            if (lang === 'ml') {
+              browserNoSpeech.current++;
+              if (canFallback && browserNoSpeech.current >= 2)
+                unavailableMalayalam.current = true;
+            }
+            // A silent press never creates an error message or AI command.
             session.final = '';
             session.latest = '';
             session.failed = null;
