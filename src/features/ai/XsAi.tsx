@@ -274,7 +274,7 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
     session.failed = null;
     if (session.watchdog) clearTimeout(session.watchdog);
     session.watchdog = setTimeout(() => {
-      if (holdRef.current !== session || session.cancelled) return;
+      if (!pendingVoice.current.has(session) || session.cancelled) return;
       session.failed = new SpeechListenError('service', 'Malayalam transcription timed out.', 'cloud-timeout', 'ml-IN');
       session.settled = true;
       finishTranscript(session);
@@ -282,16 +282,12 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
     void (session.backupClip ?? session.backup.stop())
       .then((clip) => transcribeFailedNative(gym.id, clip))
       .then((text) => {
-        if (session.cancelled || holdRef.current !== session) return;
+        if (session.cancelled || !pendingVoice.current.has(session)) return;
         session.final = text.trim();
         session.settled = true;
-        if (text.trim()) {
-          unavailableMalayalam.current = true;
-          try { localStorage.setItem('xs-ai-native-ml-unavailable', '1'); } catch { /* private mode */ }
-        }
         finishTranscript(session);
       }, (error: unknown) => {
-        if (session.cancelled || holdRef.current !== session) return;
+        if (session.cancelled || !pendingVoice.current.has(session)) return;
         session.failed = error;
         session.settled = true;
         finishTranscript(session);
@@ -346,7 +342,7 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
     else if (session.settled) finishTranscript(session);
     else {
       session.watchdog = setTimeout(() => {
-        if (holdRef.current !== session || session.cancelled) return;
+        if (!pendingVoice.current.has(session) || session.cancelled) return;
         if (session.backup && !session.cloud && !(session.final || session.latest).trim()) {
           session.nativeFailed = true;
           recoverMalayalam(session);
@@ -474,7 +470,7 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
     if (pendingUnavailable.current) {
       pendingUnavailable.current = false;
       setTimeout(() => {
-        if (!closingRef.current) setMicDialog(lang === 'ml' ? 'enable-ml' : 'unavailable');
+        if (!closingRef.current) setMicDialog(lang === 'ml' ? 'service' : 'unavailable');
       }, 80);
       return;
     }
@@ -527,10 +523,7 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
     // click without a pointer has detail=0, so it can toggle accessibly.
     if (event.detail > 0 || Date.now() < suppressClickUntil.current) return;
     if (holdRef.current) releaseHold();
-    else if (!canListen() && !(lang === 'ml' && sttInputMode() === 'sarvam')) {
-      setSpeechIssue({ code: 'api-unavailable', locale: lang === 'ml' ? 'ml-IN' : 'en-IN' });
-      setMicDialog('unavailable');
-    } else beginHold();
+    else beginHold();
   }
 
   // Visibility loss cancels (rather than sends) a partial voice command.
