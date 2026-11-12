@@ -123,7 +123,10 @@ async function holdOrb(page, orb, mobile) {
   return { release: () => page.mouse.up(), cancel: () => page.mouse.up() };
 }
 async function waitAgents(page, count) {
-  await page.waitForFunction((n) => document.querySelectorAll('.xsai-turn.user').length >= n,
+  await page.waitForFunction((n) =>
+      document.querySelectorAll('.xsai-turn.user').length >= n &&
+      document.querySelectorAll('.xsai-turn.assistant .xsai-bubble:not(.xsai-dots)').length >= n &&
+      !document.querySelector('.xsai-dots'),
     count, { timeout: 6500 });
 }
 
