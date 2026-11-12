@@ -61,7 +61,7 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
   const processedHistory = useRef<Array<{ role: 'user' | 'assistant'; content: string }>>([]);
   const scroller = useRef<HTMLDivElement>(null);
   const turnsRef = useRef(turns); turnsRef.current = turns;
-  const voiceOk = canListen();
+
 
   useEffect(() => { try { localStorage.setItem(LANG_KEY, lang); } catch { /* storage blocked */ } }, [lang]);
   useEffect(() => { scroller.current?.scrollTo({ top: scroller.current.scrollHeight, behavior: 'smooth' }); }, [turns, state]);
@@ -329,15 +329,6 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
       setSpeechIssue({ code: 'api-unavailable', locale: lang === 'ml' ? 'ml-IN' : 'en-IN' });
       setMicDialog('unavailable');
     } else beginHold();
-  }
-
-  function useKeyboard() {
-    setMicDialog(null);
-    // iOS only opens the keyboard reliably from the direct tap gesture.
-    inputRef.current?.focus();
-    requestAnimationFrame(() => {
-      if (document.activeElement !== inputRef.current) inputRef.current?.focus();
-    });
   }
 
   // Visibility loss cancels (rather than sends) a partial voice command.
