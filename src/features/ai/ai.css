@@ -55,6 +55,13 @@
 .xsai-new:active:not(:disabled) { transform: scale(.92); }
 @media (hover: hover) { .xsai-new:hover:not(:disabled) { background: var(--paper-2); } }
 
+/* Keep the original bilingual browser voice selector visible at all times. */
+.xsai-locale-row {
+  display: flex; justify-content: flex-end; align-items: center;
+  padding: 10px 3px 0; flex: none;
+}
+.xsai-locale-row .segmented { max-width: 100%; }
+
 /* The conversation is the center of the workspace. */
 .xsai-log {
   flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain;
