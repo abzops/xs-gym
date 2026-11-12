@@ -71,6 +71,7 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
   const keyboardHeld = useRef(false);
   const pendingUnavailable = useRef(false);
   const unavailableMalayalam = useRef(false);
+  const browserNoSpeech = useRef(0);
   const suppressClickUntil = useRef(0);
   const [alternateMalayalam, setAlternateMalayalam] = useState(false);
   const closingRef = useRef(false);
@@ -295,26 +296,59 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
         session.latest = partial;
         if (!closingRef.current && !session.released) setText(partial);
       };
+      // Try both native Malayalam locale tags before invoking a previously
+      // consented cloud provider; Safari support varies by browser version.
+      let browserShortLocale = alternateMalayalam && lang === 'ml';
       const startProvider = (cloud: boolean) => {
         session.cloud = cloud;
         const recognition = cloud
           ? listenSarvam(gym.id, lang, onPartial)
-          : listen(lang, onPartial, alternateMalayalam && lang === 'ml');
+          : listen(lang, onPartial, browserShortLocale);
         session.stop = recognition.stop;
         session.abort = recognition.abort;
         void recognition.done.then((result) => {
           if (holdRef.current !== session || session.cancelled) return;
           session.final = result.trim();
+          if (!cloud && session.final) browserNoSpeech.current = 0;
           session.settled = true;
           if (session.released) finishTranscript(session);
         }, (error: unknown) => {
           if (holdRef.current !== session || session.cancelled) return;
-          const eligible = error instanceof SpeechListenError &&
-            ['unsupported', 'service', 'network'].includes(error.reason);
+          const browserError = error instanceof SpeechListenError ? error : null;
+          // Some iPhone builds silently return no transcript and 'no-speech'
+          // even when the user spoke. Two consecutive failures allow the next
+          // press to use Sarvam, but actual silence remains UI-silent.
+          if (!cloud && lang === 'ml' && browserError?.browserCode === 'no-speech') {
+            browserNoSpeech.current++;
+            if (canFallback && browserNoSpeech.current >= 2) unavailableMalayalam.current = true;
+            session.final = '';
+            session.latest = '';
+            session.failed = null;
+            session.settled = true;
+            if (session.released) finishTranscript(session);
+            return;
+          }
+          const eligible = browserError &&
+            ['unsupported', 'service', 'network'].includes(browserError.reason);
+          // The short 'ml' locale succeeds on some builds that reject ml-IN.
+          // Retry within the same physical hold (never after release).
+          if (!cloud && lang === 'ml' && eligible &&
+              browserError.reason === 'unsupported' && !browserShortLocale) {
+            browserShortLocale = true;
+            setAlternateMalayalam(true);
+            if (!session.released) {
+              session.final = '';
+              session.latest = '';
+              session.failed = null;
+              session.settled = false;
+              startProvider(false);
+              return;
+            }
+          }
           if (!cloud && canFallback && eligible) {
-            // From this point on, future Malayalam holds can use the fallback
-            // directly. If the user is still pressing, recover on this gesture.
-            unavailableMalayalam.current = error.reason !== 'network';
+            // Browser speech has failed. Cloud audio is never sent without the
+            // explicit per-device Settings opt-in.
+            unavailableMalayalam.current = browserError.reason !== 'network';
             if (!session.released) {
               session.final = '';
               session.latest = '';
@@ -470,29 +504,13 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
   return (
     <Sheet title="XS AI" onClosing={stopInteraction} onClose={() => { stopInteraction(); onClose(); }}>
       <div className="xsai">
-        <div className="xsai-agent-bar">
-          <div className="xsai-agent-identity">
-            <span className="xsai-agent-mark" aria-hidden="true"><Sparkles size={19} strokeWidth={1.8} /></span>
-            <span className="xsai-agent-name">
-              <strong>Gym copilot</strong>
-              <small title={gym.name}>{gym.name}</small>
-            </span>
-          </div>
-          <div className="xsai-head-actions">
-            <span className={`xsai-state-tag ${holding ? 'listening' : state === 'thinking' ? 'working' : ''}`}
-              aria-label={holding ? 'Agent listening' : state === 'thinking' ? 'Agent working' : 'Agent ready'}>
-              <i aria-hidden="true" />
-              {holding ? 'Listening' : state === 'thinking' ? 'Working' : 'Ready'}
-            </span>
-            {turns.length > 0 && (
-              <button type="button" className="xsai-new" title="New conversation" aria-label="New conversation"
-                onClick={newConversation} disabled={state === 'thinking' || holding}>
-                <Plus size={18} strokeWidth={1.8} />
-              </button>
-            )}
-          </div>
-        </div>
         <div className="xsai-locale-row">
+          {turns.length > 0 && (
+            <button type="button" className="xsai-new" title="New conversation" aria-label="New conversation"
+              onClick={newConversation} disabled={state === 'thinking' || holding}>
+              <Plus size={18} strokeWidth={1.8} />
+            </button>
+          )}
           <Segmented label="Language" value={lang} onChange={(value) => {
             cancelHold(); setLang(value); setMicDialog(null);
             setSpeechIssue(null); setAlternateMalayalam(false);
@@ -602,15 +620,10 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
           <span className="sr-only" role="status">{holding ? 'Listening' : ''}</span>
           {micDialog && (
             <div className="xsai-inline-issue" role="status">
-              <span title={speechIssue?.code ?? ''}>
-                {micDialog === 'denied' ? 'Microphone blocked' :
-                  micDialog === 'unsupported' ? 'Language unavailable' : 'Voice unavailable'}
+              <span>
+                {micDialog === 'denied' ? 'Microphone access needed' :
+                  micDialog === 'unsupported' ? 'Voice not supported here' : 'Could not hear that'}
               </span>
-              {lang === 'ml' && sttInputMode() !== 'sarvam' && !alternateMalayalam && speechIssue?.locale === 'ml-IN' && micDialog !== 'denied' && (
-                <button type="button" onClick={() => {
-                  setAlternateMalayalam(true); setMicDialog(null); setSpeechIssue(null);
-                }}>Try ml</button>
-              )}
               <button type="button" onClick={() => { setMicDialog(null); inputRef.current?.focus(); }}>Type</button>
               <button type="button" aria-label="Dismiss voice message" onClick={() => setMicDialog(null)}><X size={14} /></button>
             </div>

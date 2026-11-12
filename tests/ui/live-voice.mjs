@@ -268,13 +268,14 @@ for (const [label, mobile] of [['phone touch', true], ['desktop mouse', false]])
   await page.evaluate(() => window.__browserError('language-not-supported'));
   await contact.release();
   await dialog.locator('.xsai-inline-issue').waitFor({ timeout: 3500 });
-  check('error: one concise inline message, no modal or verbose warnings',
-    (await dialog.locator('.xsai-inline-issue').innerText()).includes('Language unavailable') &&
+  check('error: one concise inline hint, no modal or provider details',
+    (await dialog.locator('.xsai-inline-issue').innerText()).includes('Could not hear that') &&
     await dialog.locator('.xsai-mic-backdrop').count() === 0 &&
+    await dialog.getByRole('button', { name: 'Try ml' }).count() === 0 &&
     logs.agent.length === 0);
-  await tap(dialog.getByRole('button', { name: 'Try ml' }));
   const next = await hold(page, dialog.locator('.xsai-orb'));
-  check('error: optional alternate browser locale', await page.evaluate(() => window.__speech.last?.lang === 'ml'));
+  check('error: automatically switches to alternate browser Malayalam locale',
+    await page.evaluate(() => window.__speech.last?.lang === 'ml'));
   await next.release();
   await ctx.close();
 }
@@ -358,9 +359,10 @@ for (const [label, mobile] of [['phone touch', true], ['desktop mouse', false]])
   const dialog = await open();
   const welcome = dialog.locator('.xsai-welcome');
   await welcome.waitFor();
-  check('agent welcome: identity, status and three useful read-only shortcuts',
-    await dialog.locator('.xsai-agent-mark').count() === 1 &&
-    await dialog.getByLabel('Agent ready').isVisible() &&
+  check('agent welcome: no duplicate copilot/ready box and three shortcuts',
+    await dialog.locator('.xsai-agent-bar').count() === 0 &&
+    await dialog.getByText('Gym copilot').count() === 0 &&
+    await dialog.getByText('Ready', { exact: true }).count() === 0 &&
     await dialog.locator('.xsai-shortcut').count() === 3);
   check('agent welcome: no horizontal overflow on iPhone',
     await page.evaluate(() => {
@@ -415,7 +417,7 @@ for (const [label, mobile] of [['phone touch', true], ['desktop mouse', false]])
   await page.screenshot({ path: screenshotDir + '/05-desktop-agent-conversation.png' });
   check('agent desktop: shortcut and copy controls fit the wider workspace',
     logs.agent.length === 1 &&
-    await dialog.locator('.xsai-agent-bar').isVisible() &&
+    await dialog.locator('.xsai-locale-row').isVisible() &&
     await dialog.getByRole('button', { name: 'Copy reply' }).isVisible() &&
     await page.evaluate(() => {
       const el = document.querySelector('.xsai');

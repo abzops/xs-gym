@@ -96,7 +96,14 @@ export function listen(lang: Lang, onText: (text: string) => void, shortMalayala
       onText(text);
     };
     r.onerror = (e) => {
-      if (e.error === 'no-speech' || e.error === 'aborted') return;
+      if (e.error === 'no-speech') {
+        // Treat a browser's failed-to-hear result as a recoverable state.
+        // The UI hides a single silence; repeated Malayalam misses can use
+        // previously consented cloud fallback on a later press.
+        reject(new SpeechListenError('service', 'No speech detected.', e.error, locale));
+        return;
+      }
+      if (e.error === 'aborted') return;
       if (e.error === 'not-allowed') {
         reject(new SpeechListenError('denied', 'The browser denied speech recognition.', e.error, locale));
       } else if (e.error === 'service-not-allowed') {

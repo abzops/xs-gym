@@ -13,38 +13,6 @@
 .overlay:has(.xsai) .sheet-head h2 { font-size: 1.075rem; letter-spacing: -.035em; }
 
 .xsai { display: flex; flex-direction: column; gap: 0; flex: 1; min-height: 0; color: var(--ink); }
-.xsai-agent-bar {
-  display: flex; align-items: center; justify-content: space-between; gap: 10px;
-  border-radius: 18px; padding: 11px 12px;
-  background: linear-gradient(115deg,
-    color-mix(in srgb, var(--paper-2) 78%, var(--paper)),
-    color-mix(in srgb, var(--paper) 90%, var(--ink) 2%));
-  border: 1px solid color-mix(in srgb, var(--hair) 74%, transparent);
-}
-.xsai-agent-identity { display: flex; align-items: center; gap: 11px; min-width: 0; }
-.xsai-agent-mark {
-  width: 42px; height: 42px; border-radius: 14px; flex: none; display: grid;
-  place-items: center; position: relative; isolation: isolate; overflow: hidden;
-  background: #1B1B20; color: #fff;
-  box-shadow: inset 0 1px 0 rgb(255 255 255 / 17%), 0 3px 10px rgb(0 0 0 / 13%);
-}
-.xsai-agent-mark::after {
-  content: ""; position: absolute; inset: -18px; z-index: -1; opacity: .32;
-  background: conic-gradient(from 30deg, #8d81ff, #6fd8ff, #dcb0ff, #ffe0bd, #8d81ff);
-  filter: blur(15px); animation: xsai-ambient 14s linear infinite;
-}
-.xsai-agent-name { display: grid; gap: 2px; min-width: 0; line-height: 1.2; }
-.xsai-agent-name strong { font-size: .89rem; font-weight: 700; letter-spacing: -.025em; }
-.xsai-agent-name small { color: var(--graphite); font-size: .71rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 185px; }
-.xsai-head-actions { display: flex; align-items: center; gap: 8px; flex: none; }
-.xsai-state-tag {
-  display: inline-flex; align-items: center; gap: 6px; padding: 7px 9px;
-  border: 1px solid var(--hair); border-radius: 999px; background: var(--paper);
-  color: var(--graphite); font-size: .69rem; font-weight: 650; white-space: nowrap;
-}
-.xsai-state-tag i { width: 6px; height: 6px; border-radius: 50%; background: var(--ok-vivid); }
-.xsai-state-tag.listening i { background: #7d6cf6; animation: xsai-pulse 1000ms ease-in-out infinite; }
-.xsai-state-tag.working i { background: var(--graphite); animation: xsai-pulse 1300ms ease-in-out infinite; }
 .xsai-new {
   width: 36px; height: 36px; display: grid; place-items: center; flex: none;
   border: 1px solid var(--hair); border-radius: 11px;
@@ -55,17 +23,20 @@
 .xsai-new:active:not(:disabled) { transform: scale(.92); }
 @media (hover: hover) { .xsai-new:hover:not(:disabled) { background: var(--paper-2); } }
 
-/* Keep the original bilingual browser voice selector visible at all times. */
+/* One XS AI title is provided by the sheet; keep language control compact. */
 .xsai-locale-row {
   display: flex; justify-content: flex-end; align-items: center;
-  padding: 10px 3px 0; flex: none;
+  padding: 3px 3px 0; gap: 10px; flex: none;
+}
+.xsai-locale-row .xsai-new {
+  margin-right: auto; border-color: transparent; background: transparent;
 }
 .xsai-locale-row .segmented { max-width: 100%; }
 
 /* The conversation is the center of the workspace. */
 .xsai-log {
   flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain;
-  display: flex; flex-direction: column; gap: 19px; padding: 24px 5px 22px;
+  display: flex; flex-direction: column; gap: 16px; padding: 16px 5px 22px;
   scrollbar-width: thin; scrollbar-color: var(--hair-strong) transparent;
 }
 .xsai-log::-webkit-scrollbar { width: 4px; }
@@ -247,7 +218,6 @@
 @media (min-width: 720px) {
   .overlay:has(.xsai) .sheet { max-width: 640px; height: min(88dvh, 825px); padding: 20px 26px 22px; }
   .xsai-log { padding-inline: 9px; }
-  .xsai-agent-name small { max-width: 230px; }
   /* Keep the complete agent orb visible within the desktop dialog. */
   .xsai-welcome-visual { width: 136px; height: 136px; }
   .xsai-shortcuts { margin-top: 18px; }
@@ -258,8 +228,6 @@
   .xsai-welcome-mark { width: 65px; height: 65px; border-radius: 22px; }
   .xsai-shortcuts { margin-top: 18px; }
   .xsai-shortcut { min-height: 49px; }
-  .xsai-agent-name small { max-width: 115px; }
-  .xsai-state-tag { font-size: .63rem; }
 }
 @media (max-height: 660px) {
   .xsai-welcome-visual { width: 104px; height: 104px; }
@@ -267,11 +235,11 @@
   .xsai-shortcuts { margin-top: 16px; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .xsai-agent-mark::after, .xsai-orbit, .xsai-state-tag i, .xsai-dots i, .xsai-turn { animation: none !important; }
+  .xsai-orbit, .xsai-dots i, .xsai-turn { animation: none !important; }
   .xsai-shortcut, .xsai-orb, .xsai-composer, .xsai-send { transition: none; }
 }
 @media (prefers-contrast: more) {
-  .xsai-composer, .xsai-shortcut, .xsai-bubble, .xsai-agent-bar { border-color: var(--ink); }
+  .xsai-composer, .xsai-shortcut, .xsai-bubble { border-color: var(--ink); }
   .xsai-state-tag { border-color: var(--graphite); }
 }
 
