@@ -71,7 +71,6 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
   const keyboardHeld = useRef(false);
   const pendingUnavailable = useRef(false);
   const unavailableMalayalam = useRef(false);
-  const browserNoSpeech = useRef(0);
   const suppressClickUntil = useRef(0);
   const [alternateMalayalam, setAlternateMalayalam] = useState(false);
   const closingRef = useRef(false);
@@ -310,8 +309,7 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
           if (holdRef.current !== session || session.cancelled) return;
           session.final = result.trim();
           if (!cloud) {
-            if (session.final) browserNoSpeech.current = 0;
-            else if (lang === 'ml' && canFallback && !session.latest.trim()) {
+            if (!session.final && lang === 'ml' && canFallback && !session.latest.trim()) {
               // Safari may end silently without dispatching an error. A
               // zero-transcript result is a failed recognition, not success.
               // Only after an explicit cloud opt-in may the NEXT press use Sarvam.
@@ -328,7 +326,6 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
           // press to use Sarvam, but actual silence remains UI-silent.
           if (!cloud && browserError?.browserCode === 'no-speech') {
             if (lang === 'ml') {
-              browserNoSpeech.current++;
               if (canFallback) unavailableMalayalam.current = true;
             }
             // A silent press never creates an error message or AI command.
