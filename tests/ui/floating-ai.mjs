@@ -136,8 +136,12 @@ assert.equal(await dialog.locator('.xsai-orb').count(), 1);
 assert.equal(await dialog.locator('.xsai-voice-zone > .xsai-orb').count(), 1,
   'Microphone is a dedicated control outside the typing composer');
 assert.equal(await dialog.locator('.xsai-composer .xsai-orb').count(), 0);
+assert.equal(await dialog.locator('.xsai-composer').count(), 0,
+  'Typing box must be hidden until keyboard icon is pressed');
+await dialog.getByRole('button', { name: 'Open keyboard' }).tap();
 const inputSize = await dialog.locator('.xsai-type input').evaluate((el) =>
   parseFloat(getComputedStyle(el).fontSize));
+await dialog.getByRole('button', { name: 'Hide keyboard' }).tap();
 assert.ok(inputSize >= 16, 'iOS Safari text input must be >=16px to avoid focus zoom');
 const mic = dialog.locator('.xsai-orb');
 assert.equal(await mic.evaluate((el) => getComputedStyle(el).touchAction), 'none');
@@ -157,7 +161,7 @@ const noOverlap = await page.evaluate(() => {
 });
 assert.ok(noOverlap, 'Recording animation must not overlap the release label');
 await page.evaluate(() => window.__floatEmit('How many active members?'));
-await page.waitForFunction(() => document.querySelector('input[aria-label="Message XS AI"]')?.value === 'How many active members?');
+await page.waitForFunction(() => document.querySelector('.xsai-live-transcript')?.textContent === 'How many active members?');
 assert.equal(messages.length, 0, 'Voice command must not send before finger release');
 await page.screenshot({ path: '/tmp/xs-ai-floating-screens/04-while-holding-mic.png' });
 await touchUp();
