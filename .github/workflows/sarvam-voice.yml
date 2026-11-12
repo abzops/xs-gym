@@ -5,6 +5,7 @@ on:
   workflow_dispatch:
 env:
   VITE_SUPABASE_URL: https://sarvamvoicepoc.supabase.co
+  XS_TEST_SUPABASE_REF: sarvamvoicepoc
   VITE_SUPABASE_PUBLISHABLE_KEY: sb_publishable_synthetic_test_only_public_1234567890
   VITE_BASE_PATH: /xs-gym/
 jobs:
