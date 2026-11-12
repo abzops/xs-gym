@@ -366,6 +366,7 @@ for (const [label, mobile] of [['phone touch', true], ['desktop mouse', false]])
       return !!el && el.scrollWidth <= el.clientWidth + 2 &&
         document.documentElement.scrollWidth <= window.innerWidth + 2;
     }));
+  await page.waitForTimeout(350);
   await page.screenshot({ path: screenshotDir + '/01-mobile-agent-welcome.png' });
   await tap(dialog.getByRole('button', { name: "Today's collections" }));
   await waitCount(page, 1);
@@ -374,6 +375,7 @@ for (const [label, mobile] of [['phone touch', true], ['desktop mouse', false]])
     logs.agent[0].messages.at(-1).content === 'How much did we collect today?' &&
     logs.transcribe.length === 0 &&
     await dialog.locator('.xsai-welcome').count() === 0);
+  await page.waitForTimeout(450); // capture the finished animation, not a faded frame
   await page.screenshot({ path: screenshotDir + '/02-mobile-agent-conversation.png' });
   await tap(dialog.getByRole('button', { name: 'Copy reply' }));
   check('agent response: copy button copies the visible reply',
@@ -393,6 +395,7 @@ for (const [label, mobile] of [['phone touch', true], ['desktop mouse', false]])
   await tap(dialog.getByRole('button', { name: 'New conversation' }));
   await dialog.locator('.xsai-welcome').waitFor();
   await page.evaluate(() => { document.documentElement.dataset.theme = 'dark'; });
+  await page.waitForTimeout(500); // wait for segmented control/color transitions
   await page.screenshot({ path: screenshotDir + '/03-mobile-agent-dark.png' });
   check('agent dark appearance: designed hero and composer remain visible',
     await dialog.locator('.xsai-welcome-visual').isVisible() &&
@@ -402,9 +405,11 @@ for (const [label, mobile] of [['phone touch', true], ['desktop mouse', false]])
 {
   const { ctx, page, logs, open, tap, errors } = await setup({ mobile: false });
   const dialog = await open();
+  await page.waitForTimeout(350);
   await page.screenshot({ path: screenshotDir + '/04-desktop-agent-welcome.png' });
   await tap(dialog.getByRole('button', { name: 'Upcoming renewals' }));
   await waitCount(page, 1);
+  await page.waitForTimeout(450);
   await page.screenshot({ path: screenshotDir + '/05-desktop-agent-conversation.png' });
   check('agent desktop: shortcut and copy controls fit the wider workspace',
     logs.agent.length === 1 &&
