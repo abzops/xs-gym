@@ -197,7 +197,15 @@ with sync_playwright() as p:
         page.screenshot(path=f'{OUT}/03-onboarding-done.png', full_page=True)
         rows = sql(f"select name, price_paise, duration_unit from membership_plans where gym_id = '{state['gym']}' order by name")
         assert rows == [['Day pass', '15000', 'day'], ['Monthly', '100000', 'month']], f'plans after setup: {rows}'
-        g = sql(f"select grace_days, phone, onboarded_at is not null from gyms where id = '{state['gym']}'")[0]
+        # TeamStep starts the finish mutation before advancing to Done. The
+        # UI can display "You're all set" before the async RPC has committed.
+        # Wait for the real DB commit instead of racing network latency.
+        deadline = time.monotonic() + 10
+        while True:
+            g = sql(f"select grace_days, phone, onboarded_at is not null from gyms where id = '{state['gym']}'")[0]
+            if g == ['5', '9876500077', 't'] or time.monotonic() >= deadline:
+                break
+            time.sleep(0.15)
         assert g == ['5', '9876500077', 't'], f'gym after setup: {g}'
         tap(page.get_by_role('button', name='Go to dashboard'))
         page.wait_for_url(re.compile(r'/g/[^/]+$'), timeout=8000); page.wait_for_load_state('networkidle')
