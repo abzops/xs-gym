@@ -284,6 +284,24 @@ for (const [label, mobile] of [['phone touch', true], ['desktop mouse', false]])
   await ctx.close();
 }
 
+// Safari may end with an empty transcript and no error. Silently attempt the
+// alternate native Malayalam locale on the next hold (no cloud or popups).
+{
+  const { ctx, page, logs, open, tap } = await setup();
+  const dialog = await open();
+  await tap(dialog.getByRole('group', { name: 'Language' }).getByRole('button', { name: 'മലയാളം' }));
+  const first = await hold(page, dialog.locator('.xsai-orb'));
+  await first.release();
+  await page.waitForTimeout(80);
+  const next = await hold(page, dialog.locator('.xsai-orb'));
+  check('silent Malayalam browser ending retries native short ml without error',
+    await page.evaluate(() => window.__speech.last?.lang === 'ml') &&
+    await dialog.locator('.xsai-inline-issue').count() === 0 &&
+    logs.transcribe.length === 0);
+  await next.release();
+  await ctx.close();
+}
+
 {
   const { ctx, page, logs, open, tap } = await setup({ noSpeech: true });
   const dialog = await open();
