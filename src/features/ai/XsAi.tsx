@@ -8,6 +8,8 @@ import { errorMessage } from '../../lib/errors';
 import { rpc, supabase } from '../../lib/supabase';
 import { canListen, listen, speak, SpeechListenError, stopSpeaking, type Lang } from './voice';
 import { spokenRepliesEnabled } from './preferences';
+import { sttInputMode } from './sttPreferences';
+import { listenSarvam } from './sarvamRealtime';
 import './ai.css';
 
 type Action = { tool: string; ok: boolean; summary: string; undo?: { rpc: string; args: Record<string, unknown> }; undone?: boolean };
@@ -20,6 +22,7 @@ type HoldSession = {
   released: boolean;
   cancelled: boolean;
   settled: boolean;
+  cloud: boolean;
   latest: string;
   final: string;
   failed: unknown | null;
@@ -28,8 +31,8 @@ type HoldSession = {
   watchdog: ReturnType<typeof setTimeout> | null;
 };
 
-// XS AI sends typed text only. Audio recording/upload is intentionally disabled.
-// Live word-by-word recognition uses the browser's SpeechRecognition interface.
+// XS AI sends text commands only. Native browser voice is default.
+// Opt-in Sarvam audio uses a separate authenticated relay, never xs-ai.
 
 const LANG_KEY = 'xs-ai-lang';
 // Read-only example requests: these never contain an instruction to change a
@@ -197,7 +200,13 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
       return;
     }
     const heard = (session.final || session.latest).trim();
-    if (heard) ask(heard, true); // Only release can send; silence sends nothing.
+    if (heard) {
+      if (session.cloud) {
+        // Review final cloud recognition before any AI-initiated financial write.
+        setText(heard);
+        inputRef.current?.focus();
+      } else ask(heard, true); // Browser voice preserves release-to-send.
+    }
   }
 
   function cancelHold() {
@@ -228,14 +237,19 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
     else {
       // WebKit sometimes omits onend. Never leave the mic UI stuck forever:
       // after the grace period, send the last interim text if any.
-      session.watchdog = setTimeout(() => finishTranscript(session), 1800);
+      session.watchdog = setTimeout(() => {
+        if (session.cloud && !session.settled)
+          session.failed = new SpeechListenError('service', 'Cloud speech did not finish.', 'cloud-timeout', lang);
+        finishTranscript(session);
+      }, session.cloud ? 6_000 : 1800);
     }
   }
 
   function beginHold(): boolean {
     if (closingRef.current || holdRef.current || listeningBusy.current) return false;
     setMicDialog(null);
-    if (!canListen()) {
+    const useSarvam = lang === 'ml' && sttInputMode() === 'sarvam';
+    if (!useSarvam && !canListen()) {
       // Delay the error overlay until pointerup. If it appears while a finger
       // is down, releasing can click an action in the newly mounted dialog.
       pendingUnavailable.current = true;
@@ -249,15 +263,18 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
     setHolding(true);
     const session: HoldSession = {
       pointerId: null, released: false, cancelled: false, settled: false,
-      latest: '', final: '', failed: null, stop: () => {}, abort: () => {}, watchdog: null,
+      cloud: useSarvam, latest: '', final: '', failed: null, stop: () => {}, abort: () => {}, watchdog: null,
     };
     holdRef.current = session;
     try {
-      const recognition = listen(lang, (partial) => {
+      const onPartial = (partial: string) => {
         if (holdRef.current !== session || session.cancelled) return;
         session.latest = partial;
         if (!closingRef.current && !session.released) setText(partial);
-      }, alternateMalayalam && lang === 'ml');
+      };
+      const recognition = useSarvam
+        ? listenSarvam(gym.id, lang, onPartial)
+        : listen(lang, onPartial, alternateMalayalam && lang === 'ml');
       session.stop = recognition.stop;
       session.abort = recognition.abort;
       void recognition.done.then((result) => {
@@ -340,7 +357,7 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
     // click without a pointer has detail=0, so it can toggle accessibly.
     if (event.detail > 0 || Date.now() < suppressClickUntil.current) return;
     if (holdRef.current) releaseHold();
-    else if (!canListen()) {
+    else if (!canListen() && !(lang === 'ml' && sttInputMode() === 'sarvam')) {
       setSpeechIssue({ code: 'api-unavailable', locale: lang === 'ml' ? 'ml-IN' : 'en-IN' });
       setMicDialog('unavailable');
     } else beginHold();
@@ -543,7 +560,7 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
                 {micDialog === 'denied' ? 'Microphone blocked' :
                   micDialog === 'unsupported' ? 'Language unavailable' : 'Voice unavailable'}
               </span>
-              {lang === 'ml' && !alternateMalayalam && speechIssue?.locale === 'ml-IN' && micDialog !== 'denied' && (
+              {lang === 'ml' && sttInputMode() !== 'sarvam' && !alternateMalayalam && speechIssue?.locale === 'ml-IN' && micDialog !== 'denied' && (
                 <button type="button" onClick={() => {
                   setAlternateMalayalam(true); setMicDialog(null); setSpeechIssue(null);
                 }}>Try ml</button>
