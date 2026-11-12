@@ -5,7 +5,7 @@ name: XS AI voice UI
 on:
   workflow_dispatch:
   push:
-    branches: [main, 'fix/malayalam-voice-access', 'fix/live-voice-interim-transcription', 'fix/text-only-xs-ai-voice', 'fix/member-payment-edit-delete-archive', 'fix/browser-malayalam-speech-20261112', 'feature/hold-to-talk-browser-voice-20261112', 'feature/xs-ai-minimal-voice-settings-20261112']
+    branches: [main, 'fix/malayalam-voice-access', 'fix/live-voice-interim-transcription', 'fix/text-only-xs-ai-voice', 'fix/member-payment-edit-delete-archive', 'fix/browser-malayalam-speech-20261112', 'feature/hold-to-talk-browser-voice-20261112', 'feature/xs-ai-minimal-voice-settings-20261112', 'feature/xs-ai-agent-workspace']
     paths:
       - 'src/features/ai/**'
       - 'src/features/settings/**'
@@ -48,6 +48,14 @@ jobs:
         run: |
           mkdir -p /tmp/xs-voice-screens
           node tests/ui/live-voice.mjs "$(pwd)/node_modules/playwright/index.js" "http://127.0.0.1:4173/xs-gym/"
+      - name: Upload real browser-rendered agent screenshots
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: xs-ai-agent-ui-screenshots
+          path: /tmp/xs-ai-agent-screens/
+          if-no-files-found: ignore
+          retention-days: 7
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
