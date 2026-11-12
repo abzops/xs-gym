@@ -1,6 +1,6 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { ArrowUp, Check, Keyboard, Mic, RotateCcw, Square, X } from 'lucide-react';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react';
 import { useNavigate } from 'react-router';
 import { useGym } from '../../app/gym';
 import { Segmented, Sheet, useToast } from '../../components/ui';
@@ -13,6 +13,18 @@ type Action = { tool: string; ok: boolean; summary: string; undo?: { rpc: string
 type Turn = { role: 'user' | 'assistant'; content: string; actions?: Action[]; tone?: 'bad' };
 type State = 'idle' | 'listening' | 'thinking' | 'speaking';
 type MicDialog = 'denied' | 'unavailable' | 'service' | 'unsupported' | null;
+
+type HoldSession = {
+  pointerId: number | null;
+  released: boolean;
+  cancelled: boolean;
+  settled: boolean;
+  latest: string;
+  final: string;
+  stop: () => void;
+  abort: () => void;
+  watchdog: ReturnType<typeof setTimeout> | null;
+};
 
 // XS AI sends typed text only. Audio recording/upload is intentionally disabled.
 // Live word-by-word recognition uses the browser's SpeechRecognition interface.
@@ -54,7 +66,11 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
   const [speechIssue, setSpeechIssue] = useState<{ code: string; locale: string } | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const micActionRef = useRef<HTMLButtonElement>(null);
-  const stopRef = useRef<() => void>(() => {});
+  const holdRef = useRef<HoldSession | null>(null);
+  const activePointer = useRef<number | null>(null);
+  const keyboardHeld = useRef(false);
+  const suppressClickUntil = useRef(0);
+  const [alternateMalayalam, setAlternateMalayalam] = useState(false);
   const closingRef = useRef(false);
   const requestBusy = useRef(false);
   const listeningBusy = useRef(false);
@@ -68,7 +84,16 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
   useEffect(() => { if (micDialog) micActionRef.current?.focus(); }, [micDialog]);
   const stopInteraction = useCallback(() => {
     closingRef.current = true;
-    stopRef.current();
+    activePointer.current = null;
+    keyboardHeld.current = false;
+    const session = holdRef.current;
+    holdRef.current = null;
+    listeningBusy.current = false;
+    if (session) {
+      session.cancelled = true;
+      if (session.watchdog) clearTimeout(session.watchdog);
+      session.abort();
+    }
     stopSpeaking();
   }, []);
   useEffect(() => () => { stopInteraction(); }, [stopInteraction]);
@@ -112,72 +137,188 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
     }
   }
 
-  // Primary voice path, restored from the original XS AI implementation.
-  // Browser interim results arrive while the user is still speaking; display
-  // them in the message composer immediately. A silence-triggered onend
-  // submits exactly once, without waiting for a whole WAV upload.
-  async function beginListening(shortMalayalam = false) {
-    if (closingRef.current || listeningBusy.current || requestBusy.current) return;
-    listeningBusy.current = true;
-    stopSpeaking();
-    setSpeechIssue(null);
-    setText(''); setState('listening');
-    try {
-      // listen() calls SpeechRecognition.start() synchronously before its
-      // first await, preserving the iOS user gesture from the mic button.
-      const l = listen(lang, (partial) => {
-        if (!closingRef.current) setText(partial);
-      }, shortMalayalam);
-      stopRef.current = l.stop;
-      const heard = (await l.done).trim();
-      listeningBusy.current = false;
-      stopRef.current = () => {};
-      if (closingRef.current) return;
+  // iPhone and Android use pointerdown/up, not click-to-toggle. SpeechRecognition
+  // starts synchronously inside the finger-down gesture. No separate STT model
+  // or microphone recorder is used; this is the browser's native API.
+  function finishTranscript(session: HoldSession) {
+    if (holdRef.current !== session || session.cancelled || !session.released) return;
+    if (session.watchdog) clearTimeout(session.watchdog);
+    holdRef.current = null;
+    listeningBusy.current = false;
+    if (closingRef.current) return;
+    const heard = (session.final || session.latest).trim();
+    if (heard) {
+      setText('');
+      void ask(heard); // Only release can send; silence/end while held cannot.
+    } else {
+      setText('');
       setState('idle');
-      if (heard) {
-        setText('');
-        await ask(heard); // automatic send when speech recognition ends
-      } else {
-        setText('');
-        toast(lang === 'ml' ? 'ഒന്നും കേട്ടില്ല. വീണ്ടും ശ്രമിക്കൂ.' : "Didn't hear anything. Tap to speak again.");
-      }
-    } catch (e) {
-      if (!closingRef.current) {
-        setState('idle');
-        // Preserve any partial words in the text field for manual sending.
-        if (e instanceof SpeechListenError) {
-          setSpeechIssue({ code: e.browserCode, locale: e.locale });
-          setMicDialog(e.reason === 'denied' || e.reason === 'audio' ? 'denied'
-            : e.reason === 'unsupported' ? 'unsupported' : 'service');
-        } else {
-          toast(e instanceof Error ? e.message : String(e), 'bad');
-        }
-      }
-    } finally {
-      listeningBusy.current = false;
-      stopRef.current = () => {};
+      toast(lang === 'ml' ? 'വാക്കുകൾ ലഭിച്ചില്ല. വീണ്ടും അമർത്തിപ്പിടിച്ച് പറയൂ.' : 'No words heard. Hold to speak again.');
     }
+  }
+
+  function cancelHold() {
+    const session = holdRef.current;
+    if (!session) return;
+    session.cancelled = true;
+    session.released = true;
+    holdRef.current = null;
+    listeningBusy.current = false;
+    if (session.watchdog) clearTimeout(session.watchdog);
+    session.abort();
+    if (!closingRef.current) {
+      setText('');
+      setState('idle');
+    }
+  }
+
+  function releaseHold() {
+    const session = holdRef.current;
+    if (!session || session.released) return;
+    session.released = true;
+    // stop requests a final result; a late onresult/onend is still accepted.
+    session.stop();
+    if (session.settled) finishTranscript(session);
+    else {
+      // WebKit sometimes omits onend. Never leave the mic UI stuck forever:
+      // after the grace period, send the last interim text if any.
+      session.watchdog = setTimeout(() => finishTranscript(session), 1800);
+    }
+  }
+
+  function beginHold(): boolean {
+    if (closingRef.current || micDialog || holdRef.current || requestBusy.current || listeningBusy.current) return false;
+    if (!canListen()) {
+      setSpeechIssue({ code: 'api-unavailable', locale: lang === 'ml' ? 'ml-IN' : 'en-IN' });
+      setMicDialog('unavailable');
+      return false;
+    }
+    stopSpeaking();
+    listeningBusy.current = true;
+    setSpeechIssue(null);
+    setText('');
+    setState('listening');
+    const session: HoldSession = {
+      pointerId: null, released: false, cancelled: false, settled: false,
+      latest: '', final: '', stop: () => {}, abort: () => {}, watchdog: null,
+    };
+    holdRef.current = session;
+    try {
+      const recognition = listen(lang, (partial) => {
+        if (holdRef.current !== session || session.cancelled) return;
+        session.latest = partial;
+        if (!closingRef.current) setText(partial);
+      }, alternateMalayalam && lang === 'ml');
+      session.stop = recognition.stop;
+      session.abort = recognition.abort;
+      void recognition.done.then((result) => {
+        if (holdRef.current !== session || session.cancelled) return;
+        session.final = result.trim();
+        session.settled = true;
+        if (session.released) finishTranscript(session);
+        // If the browser ends during a pause, keep recognized text until release.
+      }, (error: unknown) => {
+        if (holdRef.current !== session || session.cancelled) return;
+        if (session.watchdog) clearTimeout(session.watchdog);
+        holdRef.current = null;
+        listeningBusy.current = false;
+        if (closingRef.current) return;
+        setState('idle');
+        if (error instanceof SpeechListenError) {
+          setSpeechIssue({ code: error.browserCode, locale: error.locale });
+          setMicDialog(error.reason === 'denied' || error.reason === 'audio' ? 'denied'
+            : error.reason === 'unsupported' ? 'unsupported' : 'service');
+        } else {
+          toast(error instanceof Error ? error.message : String(error), 'bad');
+        }
+      });
+    } catch (error) {
+      holdRef.current = null;
+      listeningBusy.current = false;
+      setState('idle');
+      toast(error instanceof Error ? error.message : String(error), 'bad');
+      return false;
+    }
+    return true;
+  }
+
+  function onPressDown(event: ReactPointerEvent<HTMLButtonElement>) {
+    if (event.pointerType === 'mouse' && event.button !== 0) return;
+    if (activePointer.current !== null || !beginHold()) return;
+    activePointer.current = event.pointerId;
+    if (holdRef.current) holdRef.current.pointerId = event.pointerId;
+    event.preventDefault();
+    try { event.currentTarget.setPointerCapture(event.pointerId); } catch { /* Safari may capture implicitly */ }
+  }
+
+  function onPressUp(event: ReactPointerEvent<HTMLButtonElement>) {
+    if (activePointer.current !== event.pointerId) return;
+    activePointer.current = null;
+    suppressClickUntil.current = Date.now() + 800;
+    event.preventDefault();
+    releaseHold();
+  }
+
+  function onPressCancel(event: ReactPointerEvent<HTMLButtonElement>) {
+    if (activePointer.current !== event.pointerId) return;
+    activePointer.current = null;
+    suppressClickUntil.current = Date.now() + 800;
+    cancelHold(); // A cancelled gesture must never create a payment command.
+  }
+
+  function onHoldKeyDown(event: ReactKeyboardEvent<HTMLButtonElement>) {
+    if (event.key !== ' ' && event.key !== 'Enter') return;
+    event.preventDefault();
+    if (event.repeat || keyboardHeld.current) return;
+    keyboardHeld.current = beginHold();
+  }
+
+  function onHoldKeyUp(event: ReactKeyboardEvent<HTMLButtonElement>) {
+    if (event.key !== ' ' && event.key !== 'Enter') return;
+    event.preventDefault();
+    if (!keyboardHeld.current) return;
+    keyboardHeld.current = false;
+    suppressClickUntil.current = Date.now() + 800;
+    releaseHold();
+  }
+
+  function onAccessibleClick(event: React.MouseEvent<HTMLButtonElement>) {
+    // Ignore synthetic clicks after a pointer/keyboard release. VoiceOver's
+    // click without a pointer has detail=0, so it can toggle accessibly.
+    if (event.detail > 0 || Date.now() < suppressClickUntil.current) return;
+    if (holdRef.current) releaseHold();
+    else beginHold();
   }
 
   function useKeyboard() {
     setMicDialog(null);
-    // iOS only opens the virtual keyboard from a synchronous user gesture.
-    // Focusing in requestAnimationFrame after the tap can silently fail.
+    // iOS only opens the keyboard reliably from the direct tap gesture.
     inputRef.current?.focus();
     requestAnimationFrame(() => {
       if (document.activeElement !== inputRef.current) inputRef.current?.focus();
     });
   }
 
-  // SpeechRecognition is the ONLY voice input. Never record or upload raw audio.
-  async function talk(retry = false, shortMalayalam = false) {
-    if (closingRef.current || (micDialog && !retry)) return;
-    if (state === 'listening') { stopRef.current(); return; }
-    if (state === 'speaking') { stopSpeaking(); return; }
-    if (requestBusy.current || listeningBusy.current) return;
-    if (canListen()) { void beginListening(shortMalayalam); return; }
-    setMicDialog('unavailable');
-  }
+  // Visibility loss cancels (rather than sends) a partial voice command.
+  // Only a deliberate release of the held microphone can auto-send.
+  useEffect(() => {
+    function onHidden() {
+      if (!document.hidden) return;
+      const session = holdRef.current;
+      if (!session) return;
+      session.cancelled = true;
+      holdRef.current = null;
+      activePointer.current = null;
+      keyboardHeld.current = false;
+      listeningBusy.current = false;
+      if (session.watchdog) clearTimeout(session.watchdog);
+      session.abort();
+      setText('');
+      setState('idle');
+    }
+    document.addEventListener('visibilitychange', onHidden);
+    return () => document.removeEventListener('visibilitychange', onHidden);
+  }, []);
 
   async function undo(turn: number, i: number) {
     const a = turns[turn]?.actions?.[i];
