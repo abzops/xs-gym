@@ -191,7 +191,18 @@ for (const [label, mobile] of [['phone touch', true], ['desktop mouse', false]])
         currentScale: window.visualViewport?.scale,
       };
     }, { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 });
-    console.log('XS AI mic first-touch geometry:', JSON.stringify(diagnostics));
+    console.log('XS AI mic first-touch geometry:', JSON.stringify({ rect, ...diagnostics }));
+    console.log('XS AI mic geometry extended:', JSON.stringify(await page.evaluate(({ x, y }) => ({
+      point: [x,y], layout: [innerWidth,innerHeight], visual: [visualViewport?.width,visualViewport?.height],
+      hits: document.elementsFromPoint(x,y).slice(0,7).map(el => ({ tag: el.tagName, cls: String(el.className).slice(0,65) })),
+      sheet: document.querySelector('.sheet')?.getBoundingClientRect().toJSON(),
+      overlay: document.querySelector('.overlay')?.getBoundingClientRect().toJSON(),
+      mic: document.querySelector('.xsai-orb')?.getBoundingClientRect().toJSON(),
+      body: getComputedStyle(document.body).pointerEvents,
+      overlayPE: getComputedStyle(document.querySelector('.overlay')).pointerEvents,
+      sheetPE: getComputedStyle(document.querySelector('.sheet')).pointerEvents,
+      micPE: getComputedStyle(document.querySelector('.xsai-orb')).pointerEvents,
+    }), {x:rect.x+rect.width/2,y:rect.y+rect.height/2})));
   }
   const first = await hold(page, mic, mobile);
   if (mobile) {
