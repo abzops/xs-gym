@@ -12,6 +12,7 @@ import { pageModules, prefetchSection } from '../lib/sections';
 import { supabase } from '../lib/supabase';
 import { ROLE_LABEL } from '../lib/types';
 import '../features/ai/entry.css';
+import { FloatingXsAi } from '../features/ai/FloatingXsAi';
 import { useGym } from './gym';
 
 const XsAiPanel = lazy(() => import('../features/ai/XsAi').then((m) => ({ default: m.XsAiPanel })));
@@ -114,9 +115,6 @@ export function Shell() {
           <img className="brand-mark only-light" src={mark} alt="" width={26} height={26} />
           <img className="brand-mark only-dark" src={markOnDark} alt="" width={26} height={26} />
           <span className="gym">{gym.name}</span>
-          <button className="xsai-entry" onClick={() => setAi(true)} aria-label="XS AI" onPointerDown={() => void import('../features/ai/XsAi')}>
-            <Sparkles size={17} strokeWidth={2.2} />
-          </button>
         </header>
         <main className="main">
           {!canWrite && (
@@ -141,6 +139,7 @@ export function Shell() {
         </button>
       </nav>
 
+      {!ai && <FloatingXsAi gymId={gym.id} onOpen={() => { setMore(false); setAi(true); }} />}
       {ai && <Suspense fallback={null}><XsAiPanel onClose={() => setAi(false)} /></Suspense>}
 
       {more && (

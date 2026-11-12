@@ -168,35 +168,66 @@
 @keyframes xsai-ambient { to { transform: rotate(360deg); } }
 @keyframes xsai-pulse { 50% { opacity: .35; } }
 
-/* iOS/desktop unified composer, with a true press-and-hold browser mic.
-   Default state stays neutral immediately after pointerup, regardless of TTS. */
-.xsai-controls { display: grid; gap: 8px; padding: 12px 2px 2px; flex: none; border-top: 1px solid var(--hair); }
+/* Dedicated voice control, separate from the text input. Touch-action:none
+   stops Safari callouts/selection and accidental double-tap zoom on long press.
+   Never disable pinch zoom on the rest of the app. */
+.xsai-controls { display: grid; gap: 8px; padding: 7px 2px 2px; flex: none; border-top: 1px solid var(--hair); }
+.xsai-voice-zone {
+  min-height: 76px; display: flex; align-items: center; justify-content: center; gap: 15px;
+  -webkit-user-select: none; user-select: none; -webkit-touch-callout: none;
+}
+.xsai-voice-caption {
+  font-size: .77rem; font-weight: 700; letter-spacing: -.01em;
+  color: var(--graphite); min-width: 96px; pointer-events: none;
+}
 .xsai-composer {
   display: flex; align-items: center; gap: 8px;
   background: var(--paper); border: 1px solid var(--hair-strong);
-  box-shadow: 0 3px 13px rgb(0 0 0 / 4%), inset 0 1px 0 rgb(255 255 255 / 8%);
-  border-radius: 22px; min-height: 62px; padding: 7px;
-  transition: box-shadow 180ms ease, border-color 180ms ease;
-}
-.xsai-controls.is-listening .xsai-composer {
-  border-color: color-mix(in srgb, #8579f4 44%, var(--hair-strong));
-  box-shadow: 0 0 0 4px color-mix(in srgb, #8579f4 10%, transparent), 0 4px 16px rgb(0 0 0 / 5%);
+  box-shadow: 0 3px 13px rgb(0 0 0 / 4%);
+  border-radius: 22px; min-height: 54px; padding: 5px 8px;
 }
 .xsai-orb {
-  position: relative; display: grid; place-items: center; flex: none;
-  width: 45px; height: 45px; border-radius: 15px; border: 0; cursor: pointer;
-  background: var(--paper-2); color: var(--ink);
-  transition: background 120ms ease, transform 120ms var(--ease-out), color 120ms ease;
+  position: relative; isolation: isolate; flex: none;
+  display: grid; place-items: center; width: 66px; height: 66px;
+  border-radius: 50%; border: 1px solid rgb(255 255 255 / 25%);
+  color: #fff; background: linear-gradient(140deg, #4b4667, #17171c 72%);
+  box-shadow: 0 4px 15px rgb(0 0 0 / 17%), inset 0 1px 1px rgb(255 255 255 / 22%);
+  cursor: pointer;
   -webkit-tap-highlight-color: transparent;
-  touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none;
+  -webkit-user-select: none; user-select: none; -webkit-touch-callout: none;
+  touch-action: none;
+  transition: transform 140ms ease, box-shadow 160ms ease, background 140ms ease;
 }
-.xsai-orb.listening { color: var(--on-primary); background: var(--primary); transform: scale(.97); }
-.xsai-orb-glow { display: none; }
-.xsai-orb:focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; }
+.xsai-orb > * { pointer-events: none; -webkit-user-select: none; user-select: none; }
+.xsai-orb:focus-visible { outline: 3px solid var(--focus); outline-offset: 4px; }
+.xsai-orb-glow {
+  display: block; position: absolute; inset: -5px; z-index: -1; opacity: .36;
+  border-radius: 50%; background: conic-gradient(#a7a1ff, #66d4e8, #e2a0e8, #a7a1ff);
+  filter: blur(6px); animation: xsai-ambient 8s linear infinite;
+}
+.xsai-orb.listening {
+  transform: scale(1.09);
+  color: #fff; background: linear-gradient(140deg, #7a6edc, #3c3183 90%);
+  box-shadow: 0 0 0 6px rgb(138 122 250 / 12%), 0 7px 22px rgb(94 72 191 / 25%);
+}
+.xsai-orb.listening .xsai-orb-glow { opacity: .84; filter: blur(7px); }
+.xsai-hold-waves {
+  display: none; position: absolute; align-items: center; gap: 3px;
+  left: calc(100% + 10px); top: 50%; transform: translateY(-50%);
+}
+.xsai-orb.listening .xsai-hold-waves { display: flex; }
+.xsai-hold-waves i {
+  display: block; width: 3px; height: 10px; border-radius: 5px;
+  background: #8a79f4; animation: xsai-wave 720ms ease-in-out infinite alternate;
+}
+.xsai-hold-waves i:nth-child(2) { animation-delay: 140ms; }
+.xsai-hold-waves i:nth-child(3) { animation-delay: 280ms; }
+.xsai-hold-waves i:nth-child(4) { animation-delay: 420ms; }
+@keyframes xsai-wave { to { height: 25px; } }
 .xsai-type { flex: 1; display: flex; align-items: center; gap: 6px; min-width: 0; }
 .xsai-type .input {
   flex: 1; min-width: 0; min-height: 44px; padding: 0 5px; background: transparent;
-  box-shadow: none; border: 0; border-radius: 0; font-size: .87rem;
+  box-shadow: none; border: 0; border-radius: 0; font-size: 16px;
 }
 .xsai-type .input:focus, .xsai-type .input:hover { background: transparent; box-shadow: none; outline: 0; }
 .xsai-type .input::placeholder { color: var(--graphite); opacity: .78; }
@@ -235,7 +266,7 @@
   .xsai-shortcuts { margin-top: 16px; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .xsai-orbit, .xsai-dots i, .xsai-turn { animation: none !important; }
+  .xsai-orbit, .xsai-dots i, .xsai-turn, .xsai-orb-glow, .xsai-hold-waves i { animation: none !important; }
   .xsai-shortcut, .xsai-orb, .xsai-composer, .xsai-send { transition: none; }
 }
 @media (prefers-contrast: more) {
@@ -249,3 +280,8 @@
   display: inline-flex; align-items: center; justify-content: center;
 }
 .xsai-voice-pending svg { animation: xsai-pulse 900ms ease-in-out infinite; }
+
+@media (max-height: 650px) {
+  .xsai-voice-zone { min-height: 65px; }
+  .xsai-orb { width: 58px; height: 58px; }
+}
