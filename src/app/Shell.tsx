@@ -44,7 +44,7 @@ export function Shell() {
     // touch even though the real XS AI sheet is already rendered beneath.
     // Finish only those decorative pseudo-element animations, not the app's
     // actual content or all ongoing animations.
-    for (const animation of document.getAnimations({ subtree: true })) {
+    for (const animation of document.getAnimations()) {
       const effect = animation.effect as KeyframeEffect | null;
       if (!effect?.pseudoElement?.startsWith('::view-transition')) continue;
       try { animation.finish(); } catch { animation.cancel(); }
