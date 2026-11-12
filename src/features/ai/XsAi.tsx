@@ -512,7 +512,7 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
   }
 
   return (
-    <Sheet title="XS AI" onClosing={stopInteraction} onClose={() => { stopInteraction(); onClose(); }}>
+    <Sheet instant title="XS AI" onClosing={stopInteraction} onClose={() => { stopInteraction(); onClose(); }}>
       <div className="xsai">
         <div className="xsai-locale-row">
           {turns.length > 0 && (
