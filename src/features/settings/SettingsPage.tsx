@@ -59,9 +59,9 @@ function SpokenRepliesSetting() {
       </div>
       <div className="row between" style={{ alignItems: 'center', gap: 16, marginTop: 16, paddingTop: 16, borderTop: '1px solid var(--hair)' }}>
         <div className="stack" style={{ gap: 4 }}>
-          <label htmlFor="xs-ai-sarvam-voice">Cloud Malayalam microphone (experimental)</label>
+          <label htmlFor="xs-ai-sarvam-voice">Automatic Malayalam voice fallback</label>
           <span className="muted" style={{ fontSize: 13 }}>
-            Off by default. Sends voice audio to Sarvam while held. On release, check the recognized text and tap Send.
+            Optional. Browser recognition is tried first. If it fails, your voice audio is sent to Sarvam AI in the cloud. No repeated popups; payments and membership changes still require confirmation.
           </span>
         </div>
         <input id="xs-ai-sarvam-voice" type="checkbox" role="switch"

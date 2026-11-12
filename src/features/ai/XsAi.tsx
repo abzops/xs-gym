@@ -13,7 +13,7 @@ import { listenSarvam } from './sarvamRealtime';
 import './ai.css';
 
 type Action = { tool: string; ok: boolean; summary: string; undo?: { rpc: string; args: Record<string, unknown> }; undone?: boolean };
-type Turn = { role: 'user' | 'assistant'; content: string; actions?: Action[]; tone?: 'bad' };
+type Turn = { role: 'user' | 'assistant'; content: string; actions?: Action[]; tone?: 'bad'; id?: string; voicePending?: boolean };
 type State = 'idle' | 'thinking';
 type MicDialog = 'denied' | 'unavailable' | 'service' | 'unsupported' | null;
 
@@ -23,6 +23,7 @@ type HoldSession = {
   cancelled: boolean;
   settled: boolean;
   cloud: boolean;
+  pendingId: string | null;
   latest: string;
   final: string;
   failed: unknown | null;
@@ -69,13 +70,14 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
   const activePointer = useRef<number | null>(null);
   const keyboardHeld = useRef(false);
   const pendingUnavailable = useRef(false);
+  const unavailableMalayalam = useRef(false);
   const suppressClickUntil = useRef(0);
   const [alternateMalayalam, setAlternateMalayalam] = useState(false);
   const closingRef = useRef(false);
   const requestBusy = useRef(false);
   const listeningBusy = useRef(false);
   const undoBusy = useRef(new Set<string>());
-  const commandQueue = useRef<Array<{ content: string; language: Lang; id: string }>>([]);
+  const commandQueue = useRef<Array<{ content: string; language: Lang; id: string; cloudVoice: boolean }>>([]);
   const processedHistory = useRef<Array<{ role: 'user' | 'assistant'; content: string }>>([]);
   const scroller = useRef<HTMLDivElement>(null);
   const turnsRef = useRef(turns); turnsRef.current = turns;
@@ -107,17 +109,29 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
   // appears in the chat, and the microphone never waits for speech playback.
   // Serialize money-changing commands: holding again while the first request
   // is pending queues the new text without overlapping server actions.
-  function ask(content: string, fromVoice = false) {
+  function ask(content: string, fromVoice = false, pendingId?: string, cloudVoice = false) {
     const q = content.trim();
     if (!q || closingRef.current) return;
-    const command = { content: q, language: lang, id: crypto.randomUUID() };
+    const command = { content: q, language: lang, id: crypto.randomUUID(), cloudVoice };
     commandQueue.current.push(command);
-    const updated: Turn[] = [...turnsRef.current, { role: 'user', content: q }];
+    // Messenger behavior: replace the provisional outgoing voice bubble in-place
+    // instead of popping it off and appending a second copy.
+    const containsPending = !!pendingId && turnsRef.current.some((turn) => turn.id === pendingId);
+    const updated: Turn[] = containsPending
+      ? turnsRef.current.map((turn) => turn.id === pendingId
+          ? { role: 'user', content: q, id: pendingId } : turn)
+      : [...turnsRef.current, { role: 'user', content: q }];
     turnsRef.current = updated;
     setTurns(updated);
-    // A late speech result must not clear text the user started typing after release.
+    // Do not erase a new typed draft when a delayed recognition finishes.
     if (!fromVoice) setText('');
     void drainQueue();
+  }
+  function removeVoicePending(pendingId: string | null) {
+    if (!pendingId) return;
+    const updated = turnsRef.current.filter((turn) => turn.id !== pendingId);
+    turnsRef.current = updated;
+    setTurns(updated);
   }
 
   async function drainQueue() {
@@ -134,6 +148,7 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
           const { data, error } = await supabase.functions.invoke('xs-ai', {
             body: {
               gym_id: gym.id, lang: next.language, request_id: next.id,
+              cloudVoice: next.cloudVoice,
               messages: history,
             },
           });
@@ -172,9 +187,8 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
     }
   }
 
-  // iPhone and Android use pointerdown/up, not click-to-toggle. SpeechRecognition
-  // starts synchronously inside the finger-down gesture. No separate STT model
-  // or microphone recorder is used; this is the browser's native API.
+  // iPhone and Android use pointerdown/up, not click-to-toggle. Browser speech
+  // starts first. Consent-enabled Sarvam retries after a browser failure.
   function finishTranscript(session: HoldSession) {
     if (holdRef.current !== session || session.cancelled || !session.released) return;
     if (session.watchdog) clearTimeout(session.watchdog);
@@ -183,6 +197,7 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
     setHolding(false);
     if (closingRef.current) return;
     if (session.failed) {
+      removeVoicePending(session.pendingId);
       // Only an actual recognition failure shows a short inline message.
       // Normal releases never display banners or spoken status.
       const error = session.failed;
@@ -199,14 +214,11 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
       } else setMicDialog('service');
       return;
     }
-    const heard = (session.final || session.latest).trim();
-    if (heard) {
-      if (session.cloud) {
-        // Review final cloud recognition before any AI-initiated financial write.
-        setText(heard);
-        inputRef.current?.focus();
-      } else ask(heard, true); // Browser voice preserves release-to-send.
-    }
+    // Cloud transcripts require an actual finalized result; browser interim text
+    // may be used on Safari when onend is dropped after finger-up.
+    const heard = (session.cloud ? session.final : session.final || session.latest).trim();
+    if (heard) ask(heard, true, session.pendingId ?? undefined, session.cloud);
+    else removeVoicePending(session.pendingId);
   }
 
   function cancelHold() {
@@ -219,6 +231,7 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
     setHolding(false);
     if (session.watchdog) clearTimeout(session.watchdog);
     session.abort();
+    removeVoicePending(session.pendingId);
     if (!closingRef.current) setText('');
   }
 
@@ -230,6 +243,13 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
     // browser finalizes text and the previous AI reply is processing.
     setHolding(false);
     setText('');
+    // Place the message in the conversation immediately. The actual text
+    // replaces this quiet placeholder once speech recognition finalizes.
+    const pendingId = crypto.randomUUID();
+    session.pendingId = pendingId;
+    const placeholder: Turn = { role: 'user', id: pendingId, content: session.latest, voicePending: true };
+    turnsRef.current = [...turnsRef.current, placeholder];
+    setTurns(turnsRef.current);
     // Do not call stop() again when the browser has already ended/failed;
     // WebKit iOS 27 has a reported repeated-recognition regression.
     if (!session.settled) session.stop();
@@ -248,7 +268,10 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
   function beginHold(): boolean {
     if (closingRef.current || holdRef.current || listeningBusy.current) return false;
     setMicDialog(null);
-    const useSarvam = lang === 'ml' && sttInputMode() === 'sarvam';
+    // Sarvam is never first choice unless this session has already seen
+    // a browser Malayalam failure (or there is no browser speech API).
+    const canFallback = lang === 'ml' && sttInputMode() === 'sarvam';
+    const useSarvam = canFallback && (unavailableMalayalam.current || !canListen());
     if (!useSarvam && !canListen()) {
       // Delay the error overlay until pointerup. If it appears while a finger
       // is down, releasing can click an action in the newly mounted dialog.
@@ -263,7 +286,7 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
     setHolding(true);
     const session: HoldSession = {
       pointerId: null, released: false, cancelled: false, settled: false,
-      cloud: useSarvam, latest: '', final: '', failed: null, stop: () => {}, abort: () => {}, watchdog: null,
+      cloud: useSarvam, pendingId: null, latest: '', final: '', failed: null, stop: () => {}, abort: () => {}, watchdog: null,
     };
     holdRef.current = session;
     try {
@@ -272,24 +295,41 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
         session.latest = partial;
         if (!closingRef.current && !session.released) setText(partial);
       };
-      const recognition = useSarvam
-        ? listenSarvam(gym.id, lang, onPartial)
-        : listen(lang, onPartial, alternateMalayalam && lang === 'ml');
-      session.stop = recognition.stop;
-      session.abort = recognition.abort;
-      void recognition.done.then((result) => {
-        if (holdRef.current !== session || session.cancelled) return;
-        session.final = result.trim();
-        session.settled = true;
-        if (session.released) finishTranscript(session);
-        // If the browser ends during a pause, keep recognized text until release.
-      }, (error: unknown) => {
-        if (holdRef.current !== session || session.cancelled) return;
-        session.failed = error;
-        session.settled = true;
-        // Finger may still be held. Wait for release before showing any modal.
-        if (session.released) finishTranscript(session);
-      });
+      const startProvider = (cloud: boolean) => {
+        session.cloud = cloud;
+        const recognition = cloud
+          ? listenSarvam(gym.id, lang, onPartial)
+          : listen(lang, onPartial, alternateMalayalam && lang === 'ml');
+        session.stop = recognition.stop;
+        session.abort = recognition.abort;
+        void recognition.done.then((result) => {
+          if (holdRef.current !== session || session.cancelled) return;
+          session.final = result.trim();
+          session.settled = true;
+          if (session.released) finishTranscript(session);
+        }, (error: unknown) => {
+          if (holdRef.current !== session || session.cancelled) return;
+          const eligible = error instanceof SpeechListenError &&
+            ['unsupported', 'service', 'network'].includes(error.reason);
+          if (!cloud && canFallback && eligible) {
+            // From this point on, future Malayalam holds can use the fallback
+            // directly. If the user is still pressing, recover on this gesture.
+            unavailableMalayalam.current = error.reason !== 'network';
+            if (!session.released) {
+              session.final = '';
+              session.latest = '';
+              session.failed = null;
+              session.settled = false;
+              startProvider(true);
+              return;
+            }
+          }
+          session.failed = error;
+          session.settled = true;
+          if (session.released) finishTranscript(session);
+        });
+      };
+      startProvider(useSarvam);
     } catch (error) {
       holdRef.current = null;
       listeningBusy.current = false;
@@ -378,6 +418,7 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
       listeningBusy.current = false;
       if (session.watchdog) clearTimeout(session.watchdog);
       session.abort();
+      removeVoicePending(session.pendingId);
       setHolding(false);
       setText('');
     }
@@ -487,12 +528,17 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
             </div>
           )}
           {turns.map((t, ti) => (
-            <div key={ti} className={`xsai-turn ${t.role} ${t.tone ?? ''}`}>
+            <div key={t.id ?? ti} className={`xsai-turn ${t.role} ${t.tone ?? ''}`}>
               {t.role === 'assistant' && (
                 <span className="xsai-turn-avatar" aria-hidden="true"><Sparkles size={15} strokeWidth={1.8} /></span>
               )}
               <div className="xsai-turn-body">
-                {t.content && <p className="xsai-bubble">{t.content}</p>}
+                {(t.content || t.voicePending) && (
+                  <p className={'xsai-bubble' + (t.voicePending ? ' xsai-voice-pending' : '')}
+                    aria-label={t.voicePending ? 'Finishing voice message' : undefined}>
+                    {t.content || (t.voicePending ? <Mic size={15} strokeWidth={1.8} aria-hidden="true" /> : null)}
+                  </p>
+                )}
                 {t.actions?.map((a, i) => (
                   <div key={i} className={`xsai-action ${a.ok ? (a.undone ? 'undone' : 'ok') : 'bad'}`}>
                     <span className="xsai-action-ico" aria-hidden="true">

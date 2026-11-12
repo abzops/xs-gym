@@ -15,7 +15,7 @@
 //   came from XS AI; every change lands in the audit log under the user.
 
 export type ChatMessage = { role: 'user' | 'assistant'; content: string };
-export type AgentRequest = { gym_id: string; messages: ChatMessage[]; lang?: 'en' | 'ml'; request_id?: string };
+export type AgentRequest = { gym_id: string; messages: ChatMessage[]; lang?: 'en' | 'ml'; request_id?: string; cloudVoice?: boolean };
 export type Action = { tool: string; ok: boolean; summary: string; summaryMl?: string; undo?: { rpc: string; args: Record<string, unknown> }; error?: string };
 export type AgentResponse = { reply: string; actions: Action[]; navigate?: string; changed: string[] };
 export type LlmProvider = {
@@ -348,7 +348,7 @@ export async function requestLlmWithFailover(
   if (!providers.length) throw new ApiError(
     'XS AI is not set up yet. The gym owner needs to add an AI key in Supabase.', 503,
   );
-  const HEDGE_MS = timing.hedgeMs ?? 5_000;   // start a backup provider after this
+  const HEDGE_MS = timing.hedgeMs ?? 1_500;   // start a backup provider after this
   const PER_MS = timing.perMs ?? 15_000;      // one provider's limit
   const TOTAL_MS = timing.totalMs ?? 30_000;  // the user never waits longer
   const deadline = Date.now() + TOTAL_MS;
@@ -514,10 +514,16 @@ export async function runAgent(req: AgentRequest, env: AgentEnv): Promise<AgentR
       actions: [], changed: [] };
   }
 
-  const tools = TOOLS.filter((t) => !t.perm || perms.has(t.perm));
+  // Speech recognition can mishear member names, dates and monetary amounts.
+  // A cloud-sourced voice turn is read-only; a typed follow-up can execute writes.
+  const tools = TOOLS.filter((t) => (!t.perm || perms.has(t.perm)) &&
+    !(req.cloudVoice === true && t.write));
   const byName = new Map(tools.map((t) => [t.name, t]));
   const llmTools = tools.map((t) => ({ type: 'function', function: { name: t.name, description: t.description, parameters: t.parameters } }));
-  const convo: Json[] = [{ role: 'system', content: systemPrompt(ctx, lang) }, ...messages];
+  const cloudSafety = req.cloudVoice === true
+    ? 'This message came from cloud voice transcription. You have READ-ONLY tools for this request. If it asks to create, edit, sell, record money, cancel or delete, do not perform or claim the action. Ask the user to confirm the text with a typed message instead.'
+    : '';
+  const convo: Json[] = [{ role: 'system', content: systemPrompt(ctx, lang) + cloudSafety }, ...messages];
   const providers: LlmProvider[] = env.providers ?? (
     env.llmApiKey && env.llmBaseUrl && env.llmModel
       ? [{ name: 'Default', apiKey: env.llmApiKey, baseUrl: env.llmBaseUrl, model: env.llmModel }]
