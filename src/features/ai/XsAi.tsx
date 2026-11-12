@@ -1,6 +1,6 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { ArrowUp, Check, Keyboard, Mic, RotateCcw, Square, X } from 'lucide-react';
-import { useCallback, useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react';
+import { useCallback, useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type MouseEvent as ReactMouseEvent } from 'react';
 import { useNavigate } from 'react-router';
 import { useGym } from '../../app/gym';
 import { Segmented, Sheet, useToast } from '../../components/ui';
@@ -282,7 +282,7 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
     releaseHold();
   }
 
-  function onAccessibleClick(event: React.MouseEvent<HTMLButtonElement>) {
+  function onAccessibleClick(event: ReactMouseEvent<HTMLButtonElement>) {
     // Ignore synthetic clicks after a pointer/keyboard release. VoiceOver's
     // click without a pointer has detail=0, so it can toggle accessibly.
     if (event.detail > 0 || Date.now() < suppressClickUntil.current) return;
@@ -337,18 +337,21 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
     }
   }
 
-  const status = state === 'listening' ? (lang === 'ml' ? 'കേൾക്കുന്നു…' : 'Listening…')
+  const status = state === 'listening' ? (lang === 'ml' ? 'പിടിച്ചുനിൽക്കൂ · വിട്ടാൽ അയയ്ക്കും' : 'Keep holding · release to send')
     : state === 'thinking' ? (lang === 'ml' ? 'ആലോചിക്കുന്നു…' : 'Thinking…')
     : state === 'speaking' ? (lang === 'ml' ? 'സംസാരിക്കുന്നു…' : 'Speaking…')
-      : voiceOk ? (lang === 'ml' ? 'സംസാരിക്കാൻ ടാപ്പ് ചെയ്യൂ' : 'Tap to talk')
-      : (lang === 'ml' ? 'കീബോർഡിലെ മൈക്ക് ഉപയോഗിക്കൂ' : 'Use keyboard dictation');
+      : voiceOk ? (lang === 'ml'
+        ? (alternateMalayalam ? 'മലയാളം (ml) · അമർത്തിപ്പിടിച്ച് സംസാരിക്കൂ' : 'അമർത്തിപ്പിടിച്ച് സംസാരിക്കൂ · വിട്ടാൽ അയയ്ക്കും')
+        : 'Hold to talk · Release to send')
+      : (lang === 'ml' ? 'മലയാളം ടൈപ്പ് ചെയ്യാം' : 'Type your message');
 
   return (
     <Sheet title="XS AI" onClosing={stopInteraction} onClose={() => { stopInteraction(); onClose(); }}>
       <div className="xsai">
         <div className="xsai-bar">
           <Segmented label="Language" value={lang} onChange={(value) => {
-            setLang(value); setMicDialog(null); setSpeechIssue(null);
+            cancelHold(); setLang(value); setMicDialog(null);
+            setSpeechIssue(null); setAlternateMalayalam(false);
           }} options={[{ value: 'en', label: 'English' }, { value: 'ml', label: 'മലയാളം' }]} />
           <button type="button" className={`btn small ghost ${mute ? '' : 'on'}`} onClick={() => { setMute((m) => !m); stopSpeaking(); }} aria-pressed={!mute}>
             {mute ? 'Voice off' : 'Voice on'}
@@ -380,13 +383,17 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
         </div>
 
         <div className="xsai-controls">
-          {
-            <button type="button" className={`xsai-orb ${state}`} onClick={() => void talk()} disabled={state === 'thinking'}
-              aria-label={state === 'listening' ? 'Stop listening' : state === 'speaking' ? 'Stop speaking' : 'Talk to XS AI'}>
-              <span className="xsai-orb-glow" aria-hidden />
-              {state === 'listening' || state === 'speaking' ? <Square size={22} fill="currentColor" /> : <Mic size={26} />}
-            </button>
-          }
+          <button type="button" className={`xsai-orb ${state}`}
+            onPointerDown={onPressDown} onPointerUp={onPressUp} onPointerCancel={onPressCancel}
+            onLostPointerCapture={onPressCancel}
+            onKeyDown={onHoldKeyDown} onKeyUp={onHoldKeyUp}
+            onContextMenu={(event) => event.preventDefault()}
+            onClick={onAccessibleClick} disabled={state === 'thinking'}
+            aria-pressed={state === 'listening'}
+            aria-label={state === 'listening' ? 'Release to send' : 'Hold to talk to XS AI'}>
+            <span className="xsai-orb-glow" aria-hidden />
+            {state === 'listening' ? <Square size={22} fill="currentColor" /> : <Mic size={26} />}
+          </button>
           <p className="xsai-status" aria-live="polite">{status}{lang === 'ml' && !mute && !voiceFor('ml') ? ' · replies shown as text on this device' : ''}</p>
           <form className="xsai-type" onSubmit={(e) => { e.preventDefault(); void ask(text); }}>
             <input ref={inputRef} className="input" lang={lang === 'ml' ? 'ml-IN' : 'en-IN'} value={text} onChange={(e) => setText(e.target.value)} placeholder={lang === 'ml' ? 'ടൈപ്പ് ചെയ്യൂ…' : 'Type a message…'} aria-label="Message XS AI" enterKeyHint="send" />
@@ -412,13 +419,15 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
               <div className="xsai-mic-actions">
                 {micDialog !== 'unavailable' && (
                   <button ref={micActionRef} type="button" className="btn primary"
-                    onClick={() => { setMicDialog(null); void talk(true); }}>
+                    onClick={() => { setMicDialog(null); setSpeechIssue(null); }}>
+                    
                     {MIC_COPY[lang][micDialog].button}
                   </button>
                 )}
                 {lang === 'ml' && speechIssue?.locale === 'ml-IN' && micDialog !== 'denied' && (
                   <button type="button" className="btn ghost"
-                    onClick={() => { setMicDialog(null); void talk(true, true); }}>
+                    onClick={() => { setAlternateMalayalam(true); setMicDialog(null); setSpeechIssue(null); }}>
+                    
                     മലയാളം (ml) കോഡ് പരീക്ഷിക്കുക
                   </button>
                 )}
