@@ -31,7 +31,7 @@ assert.match(ui, /chooseVoiceRoute/);
 assert.match(ui, /pendingVoice/);
 assert.doesNotMatch(ui, /sttInputMode/);
 assert.match(ui, /session\.cloud/);
-assert.match(ui, /unavailableMalayalam/);
+assert.doesNotMatch(ui, /unavailableMalayalam/); // no permanently broken browser mode
 assert.match(ui, /voicePending/);
 assert.match(ui, /cloudVoice: next\.cloudVoice/);
 console.log('Sarvam isolated security contract passed (no real voice inference)');
