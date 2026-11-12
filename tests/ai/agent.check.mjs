@@ -266,6 +266,26 @@ const otherGym = sql(`select g.id from gyms g join gym_staff s on s.gym_id = g.i
     !wrapper.includes('<note>') && wrapper.includes('</gym-data>'));
 }
 
+// Cloud transcripts cannot directly change payments or memberships, even
+// when a deliberately misbehaving LLM attempts to call a write tool.
+{
+  const before = sql("select count(*) from payments where member_id = '" + member[0] + "'");
+  script = (body) => toolMsgs(body).length === 0
+    ? { role: 'assistant', content: '', tool_calls: [call('record_payment', {
+        member: member[1], amount: 999, method: 'cash',
+      })] }
+    : say('Please confirm the message by typing.');
+  const out = await runAgent({ gym_id: gym, cloudVoice: true,
+    messages: [{ role: 'user', content: member[1] + ' paid 999 cash' }] }, env(owner));
+  const offered = lastBody.tools.map((tool) => tool.function.name);
+  check('cloud voice is restricted to read-only tools',
+    !offered.includes('record_payment') && !offered.includes('sell_plan') &&
+    !offered.includes('record_expense') && offered.includes('get_overview'), offered.join(','));
+  check('cloud voice cannot execute forged payment tool',
+    sql("select count(*) from payments where member_id = '" + member[0] + "'") === before &&
+    out.actions.every((a) => !a.ok));
+}
+
 llm.close();
 console.log(failures ? `${failures} AI FAILURES` : 'AI AGENT OK');
 process.exit(failures ? 1 : 0);

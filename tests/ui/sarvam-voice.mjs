@@ -97,14 +97,18 @@ await page.waitForFunction(() => document.querySelector('input[aria-label="Messa
 assert.equal(agentCalls.length, 0, 'partials must never trigger AI');
 await gesture.up();
 await page.waitForFunction(() => window.__sarvam.stopCalls > 0);
+assert.equal(await dialog.locator('.xsai-turn.user').count(), 1,
+  'a provisional outgoing bubble should appear on release');
+assert.equal(await dialog.locator('.xsai-turn.user .xsai-voice-pending').count(), 1);
+assert.equal(agentCalls.length, 0, 'partials and provisional bubble must not run AI actions');
 await page.evaluate(() => window.__sarvam.ws.emit({ event: 'transcript.final', text: 'ഇന്ന് എത്ര കളക്ഷൻ?' }));
-await page.waitForFunction(() => document.querySelector('input[aria-label="Message XS AI"]')?.value === 'ഇന്ന് എത്ര കളക്ഷൻ?');
-assert.equal(agentCalls.length, 0, 'cloud final must require human review');
-await dialog.getByRole('button', { name: 'Send' }).tap();
-await page.waitForFunction(() => document.querySelectorAll('.xsai-turn.user').length === 1);
-assert.equal(agentCalls.length, 1);
+await page.waitForFunction(() => document.querySelectorAll('.xsai-turn.user').length === 1 &&
+  document.querySelector('.xsai-turn.user .xsai-bubble')?.textContent === 'ഇന്ന് എത്ര കളക്ഷൻ?');
+await page.waitForFunction(() => document.querySelectorAll('.xsai-turn.assistant').length >= 1);
+assert.equal(agentCalls.length, 1, 'final cloud transcript sends one chat message');
 assert.equal(agentCalls[0].messages.at(-1).content, 'ഇന്ന് എത്ര കളക്ഷൻ?');
+assert.equal(agentCalls[0].cloudVoice, true, 'cloud source is marked for server read-only enforcement');
 assert.ok(!errors.length, errors.join(' | '));
-console.log('Sarvam POC synthetic iPhone: 13/13 critical assertions passed');
+console.log('Sarvam simulated iPhone: chat bubble and read-only-tagged message sent once');
 await context.close();
 await browser.close();

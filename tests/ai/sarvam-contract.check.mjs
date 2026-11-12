@@ -17,4 +17,7 @@ assert.doesNotMatch(capture, /api[.]sarvam[.]ai|SARVAM_API_KEY|api-subscription-
 assert.match(pref, /return value === 'sarvam' \? 'sarvam' : 'browser'/);
 assert.match(ui, /sttInputMode/);
 assert.match(ui, /session\.cloud/);
+assert.match(ui, /unavailableMalayalam/);
+assert.match(ui, /voicePending/);
+assert.match(ui, /cloudVoice: next\.cloudVoice/);
 console.log('Sarvam isolated security contract passed (no real voice inference)');

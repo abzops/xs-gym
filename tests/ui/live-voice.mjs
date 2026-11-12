@@ -186,6 +186,8 @@ for (const [label, mobile] of [['phone touch', true], ['desktop mouse', false]])
   await page.evaluate(() => window.__partial('How much today?'));
   await first.release();
   check(label + ': release immediately restores neutral microphone', await idleMic(page));
+  check(label + ': outgoing bubble appears on finger-up',
+    await dialog.locator('.xsai-turn.user').count() === 1);
   await waitCount(page, 1);
   check(label + ': release sends one text message, without speaking by default',
     logs.agent.length === 1 && logs.agent[0].messages.at(-1).content === 'How much today?' &&
