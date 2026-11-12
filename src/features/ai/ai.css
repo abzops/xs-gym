@@ -12,16 +12,6 @@
   animation: none !important;
   opacity: 1;
 }
-/* React Router's view-transition snapshot can cover a newly opened modal
-   for a fraction of a second. While XS AI is open, let touch events pass
-   through those visuals to the real microphone and chat beneath. */
-html:has(.xsai)::view-transition,
-html:has(.xsai)::view-transition-group(*),
-html:has(.xsai)::view-transition-image-pair(*),
-html:has(.xsai)::view-transition-old(*),
-html:has(.xsai)::view-transition-new(*) {
-  pointer-events: none !important;
-}
 .overlay:has(.xsai) .sheet-grab { flex: none; }
 .overlay:has(.xsai) .sheet-head {
   margin-bottom: 12px; padding: 0 4px 12px; border-bottom: 1px solid var(--hair);
