@@ -611,7 +611,6 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
               onLostPointerCapture={onPressCancel}
               onKeyDown={onHoldKeyDown} onKeyUp={onHoldKeyUp}
               onContextMenu={(event) => event.preventDefault()}
-              onSelectStart={(event) => event.preventDefault()}
               onDragStart={(event) => event.preventDefault()}
               onClick={onAccessibleClick}
               aria-pressed={holding}
