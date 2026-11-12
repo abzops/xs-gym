@@ -1,6 +1,6 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { ArrowUp, Check, Keyboard, Mic, RotateCcw, Square, X } from 'lucide-react';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type MouseEvent as ReactMouseEvent } from 'react';
 import { useNavigate } from 'react-router';
 import { useGym } from '../../app/gym';
 import { Segmented, Sheet, useToast } from '../../components/ui';
@@ -13,6 +13,19 @@ type Action = { tool: string; ok: boolean; summary: string; undo?: { rpc: string
 type Turn = { role: 'user' | 'assistant'; content: string; actions?: Action[]; tone?: 'bad' };
 type State = 'idle' | 'listening' | 'thinking' | 'speaking';
 type MicDialog = 'denied' | 'unavailable' | 'service' | 'unsupported' | null;
+
+type HoldSession = {
+  pointerId: number | null;
+  released: boolean;
+  cancelled: boolean;
+  settled: boolean;
+  latest: string;
+  final: string;
+  failed: unknown | null;
+  stop: () => void;
+  abort: () => void;
+  watchdog: ReturnType<typeof setTimeout> | null;
+};
 
 // XS AI sends typed text only. Audio recording/upload is intentionally disabled.
 // Live word-by-word recognition uses the browser's SpeechRecognition interface.
@@ -54,7 +67,12 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
   const [speechIssue, setSpeechIssue] = useState<{ code: string; locale: string } | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const micActionRef = useRef<HTMLButtonElement>(null);
-  const stopRef = useRef<() => void>(() => {});
+  const holdRef = useRef<HoldSession | null>(null);
+  const activePointer = useRef<number | null>(null);
+  const keyboardHeld = useRef(false);
+  const pendingUnavailable = useRef(false);
+  const suppressClickUntil = useRef(0);
+  const [alternateMalayalam, setAlternateMalayalam] = useState(false);
   const closingRef = useRef(false);
   const requestBusy = useRef(false);
   const listeningBusy = useRef(false);
@@ -68,7 +86,17 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
   useEffect(() => { if (micDialog) micActionRef.current?.focus(); }, [micDialog]);
   const stopInteraction = useCallback(() => {
     closingRef.current = true;
-    stopRef.current();
+    activePointer.current = null;
+    keyboardHeld.current = false;
+    pendingUnavailable.current = false;
+    const session = holdRef.current;
+    holdRef.current = null;
+    listeningBusy.current = false;
+    if (session) {
+      session.cancelled = true;
+      if (session.watchdog) clearTimeout(session.watchdog);
+      session.abort();
+    }
     stopSpeaking();
   }, []);
   useEffect(() => () => { stopInteraction(); }, [stopInteraction]);
@@ -112,72 +140,217 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
     }
   }
 
-  // Primary voice path, restored from the original XS AI implementation.
-  // Browser interim results arrive while the user is still speaking; display
-  // them in the message composer immediately. A silence-triggered onend
-  // submits exactly once, without waiting for a whole WAV upload.
-  async function beginListening(shortMalayalam = false) {
-    if (closingRef.current || listeningBusy.current || requestBusy.current) return;
-    listeningBusy.current = true;
-    stopSpeaking();
-    setSpeechIssue(null);
-    setText(''); setState('listening');
-    try {
-      // listen() calls SpeechRecognition.start() synchronously before its
-      // first await, preserving the iOS user gesture from the mic button.
-      const l = listen(lang, (partial) => {
-        if (!closingRef.current) setText(partial);
-      }, shortMalayalam);
-      stopRef.current = l.stop;
-      const heard = (await l.done).trim();
-      listeningBusy.current = false;
-      stopRef.current = () => {};
-      if (closingRef.current) return;
+  // iPhone and Android use pointerdown/up, not click-to-toggle. SpeechRecognition
+  // starts synchronously inside the finger-down gesture. No separate STT model
+  // or microphone recorder is used; this is the browser's native API.
+  function finishTranscript(session: HoldSession) {
+    if (holdRef.current !== session || session.cancelled || !session.released) return;
+    if (session.watchdog) clearTimeout(session.watchdog);
+    holdRef.current = null;
+    listeningBusy.current = false;
+    if (closingRef.current) return;
+    if (session.failed) {
+      // Delay the modal until finger-up. Showing it while a finger is still
+      // touching the orb can accidentally activate or dismiss the new dialog.
       setState('idle');
-      if (heard) {
-        setText('');
-        await ask(heard); // automatic send when speech recognition ends
-      } else {
-        setText('');
-        toast(lang === 'ml' ? 'ഒന്നും കേട്ടില്ല. വീണ്ടും ശ്രമിക്കൂ.' : "Didn't hear anything. Tap to speak again.");
-      }
-    } catch (e) {
-      if (!closingRef.current) {
-        setState('idle');
-        // Preserve any partial words in the text field for manual sending.
-        if (e instanceof SpeechListenError) {
-          setSpeechIssue({ code: e.browserCode, locale: e.locale });
-          setMicDialog(e.reason === 'denied' || e.reason === 'audio' ? 'denied'
-            : e.reason === 'unsupported' ? 'unsupported' : 'service');
-        } else {
-          toast(e instanceof Error ? e.message : String(e), 'bad');
-        }
-      }
-    } finally {
-      listeningBusy.current = false;
-      stopRef.current = () => {};
+      const error = session.failed;
+      if (error instanceof SpeechListenError) {
+        // iOS synthesizes a click after pointerup. Mounting a modal inside that
+        // event can put its retry/dismiss control under the releasing finger.
+        // Open after the gesture finishes, so it cannot be clicked accidentally.
+        setTimeout(() => {
+          if (closingRef.current) return;
+          setSpeechIssue({ code: error.browserCode, locale: error.locale });
+          setMicDialog(error.reason === 'denied' || error.reason === 'audio' ? 'denied'
+            : error.reason === 'unsupported' ? 'unsupported' : 'service');
+        }, 80);
+      } else toast(error instanceof Error ? error.message : String(error), 'bad');
+      return;
     }
+    const heard = (session.final || session.latest).trim();
+    if (heard) {
+      setText('');
+      void ask(heard); // Only release can send; silence/end while held cannot.
+    } else {
+      setText('');
+      setState('idle');
+      toast(lang === 'ml' ? 'വാക്കുകൾ ലഭിച്ചില്ല. വീണ്ടും അമർത്തിപ്പിടിച്ച് പറയൂ.' : 'No words heard. Hold to speak again.');
+    }
+  }
+
+  function cancelHold() {
+    const session = holdRef.current;
+    if (!session) return;
+    session.cancelled = true;
+    session.released = true;
+    holdRef.current = null;
+    listeningBusy.current = false;
+    if (session.watchdog) clearTimeout(session.watchdog);
+    session.abort();
+    if (!closingRef.current) {
+      setText('');
+      setState('idle');
+    }
+  }
+
+  function releaseHold() {
+    const session = holdRef.current;
+    if (!session || session.released) return;
+    session.released = true;
+    // Do not call stop() again when the browser has already ended/failed;
+    // WebKit iOS 27 has a reported repeated-recognition regression.
+    if (!session.settled) session.stop();
+    if (session.settled) finishTranscript(session);
+    else {
+      // WebKit sometimes omits onend. Never leave the mic UI stuck forever:
+      // after the grace period, send the last interim text if any.
+      session.watchdog = setTimeout(() => finishTranscript(session), 1800);
+    }
+  }
+
+  function beginHold(): boolean {
+    if (closingRef.current || micDialog || holdRef.current || requestBusy.current || listeningBusy.current) return false;
+    if (!canListen()) {
+      // Delay the error overlay until pointerup. If it appears while a finger
+      // is down, releasing can click an action in the newly mounted dialog.
+      pendingUnavailable.current = true;
+      setSpeechIssue({ code: 'api-unavailable', locale: lang === 'ml' ? 'ml-IN' : 'en-IN' });
+      return true;
+    }
+    stopSpeaking();
+    listeningBusy.current = true;
+    setSpeechIssue(null);
+    setText('');
+    setState('listening');
+    const session: HoldSession = {
+      pointerId: null, released: false, cancelled: false, settled: false,
+      latest: '', final: '', failed: null, stop: () => {}, abort: () => {}, watchdog: null,
+    };
+    holdRef.current = session;
+    try {
+      const recognition = listen(lang, (partial) => {
+        if (holdRef.current !== session || session.cancelled) return;
+        session.latest = partial;
+        if (!closingRef.current) setText(partial);
+      }, alternateMalayalam && lang === 'ml');
+      session.stop = recognition.stop;
+      session.abort = recognition.abort;
+      void recognition.done.then((result) => {
+        if (holdRef.current !== session || session.cancelled) return;
+        session.final = result.trim();
+        session.settled = true;
+        if (session.released) finishTranscript(session);
+        // If the browser ends during a pause, keep recognized text until release.
+      }, (error: unknown) => {
+        if (holdRef.current !== session || session.cancelled) return;
+        session.failed = error;
+        session.settled = true;
+        // Finger may still be held. Wait for release before showing any modal.
+        if (session.released) finishTranscript(session);
+      });
+    } catch (error) {
+      holdRef.current = null;
+      listeningBusy.current = false;
+      setState('idle');
+      toast(error instanceof Error ? error.message : String(error), 'bad');
+      return false;
+    }
+    return true;
+  }
+
+  function finishGesture() {
+    if (pendingUnavailable.current) {
+      pendingUnavailable.current = false;
+      setTimeout(() => {
+        if (!closingRef.current) setMicDialog('unavailable');
+      }, 80);
+      return;
+    }
+    releaseHold();
+  }
+
+  function onPressDown(event: ReactPointerEvent<HTMLButtonElement>) {
+    if (event.pointerType === 'mouse' && event.button !== 0) return;
+    if (activePointer.current !== null || !beginHold()) return;
+    activePointer.current = event.pointerId;
+    if (holdRef.current) holdRef.current.pointerId = event.pointerId;
+    event.preventDefault();
+    try { event.currentTarget.setPointerCapture(event.pointerId); } catch { /* Safari may capture implicitly */ }
+  }
+
+  function onPressUp(event: ReactPointerEvent<HTMLButtonElement>) {
+    if (activePointer.current !== event.pointerId) return;
+    activePointer.current = null;
+    suppressClickUntil.current = Date.now() + 800;
+    event.preventDefault();
+    finishGesture();
+  }
+
+  function onPressCancel(event: ReactPointerEvent<HTMLButtonElement>) {
+    if (activePointer.current !== event.pointerId) return;
+    activePointer.current = null;
+    suppressClickUntil.current = Date.now() + 800;
+    pendingUnavailable.current = false;
+    cancelHold(); // A cancelled gesture must never create a payment command.
+  }
+
+  function onHoldKeyDown(event: ReactKeyboardEvent<HTMLButtonElement>) {
+    if (event.key !== ' ' && event.key !== 'Enter') return;
+    event.preventDefault();
+    if (event.repeat || keyboardHeld.current) return;
+    keyboardHeld.current = beginHold();
+  }
+
+  function onHoldKeyUp(event: ReactKeyboardEvent<HTMLButtonElement>) {
+    if (event.key !== ' ' && event.key !== 'Enter') return;
+    event.preventDefault();
+    if (!keyboardHeld.current) return;
+    keyboardHeld.current = false;
+    suppressClickUntil.current = Date.now() + 800;
+    finishGesture();
+  }
+
+  function onAccessibleClick(event: ReactMouseEvent<HTMLButtonElement>) {
+    // Ignore synthetic clicks after a pointer/keyboard release. VoiceOver's
+    // click without a pointer has detail=0, so it can toggle accessibly.
+    if (event.detail > 0 || Date.now() < suppressClickUntil.current) return;
+    if (holdRef.current) releaseHold();
+    else if (!canListen()) {
+      setSpeechIssue({ code: 'api-unavailable', locale: lang === 'ml' ? 'ml-IN' : 'en-IN' });
+      setMicDialog('unavailable');
+    } else beginHold();
   }
 
   function useKeyboard() {
     setMicDialog(null);
-    // iOS only opens the virtual keyboard from a synchronous user gesture.
-    // Focusing in requestAnimationFrame after the tap can silently fail.
+    // iOS only opens the keyboard reliably from the direct tap gesture.
     inputRef.current?.focus();
     requestAnimationFrame(() => {
       if (document.activeElement !== inputRef.current) inputRef.current?.focus();
     });
   }
 
-  // SpeechRecognition is the ONLY voice input. Never record or upload raw audio.
-  async function talk(retry = false, shortMalayalam = false) {
-    if (closingRef.current || (micDialog && !retry)) return;
-    if (state === 'listening') { stopRef.current(); return; }
-    if (state === 'speaking') { stopSpeaking(); return; }
-    if (requestBusy.current || listeningBusy.current) return;
-    if (canListen()) { void beginListening(shortMalayalam); return; }
-    setMicDialog('unavailable');
-  }
+  // Visibility loss cancels (rather than sends) a partial voice command.
+  // Only a deliberate release of the held microphone can auto-send.
+  useEffect(() => {
+    function onHidden() {
+      if (!document.hidden) return;
+      const session = holdRef.current;
+      if (!session) return;
+      session.cancelled = true;
+      holdRef.current = null;
+      activePointer.current = null;
+      keyboardHeld.current = false;
+      pendingUnavailable.current = false;
+      listeningBusy.current = false;
+      if (session.watchdog) clearTimeout(session.watchdog);
+      session.abort();
+      setText('');
+      setState('idle');
+    }
+    document.addEventListener('visibilitychange', onHidden);
+    return () => document.removeEventListener('visibilitychange', onHidden);
+  }, []);
 
   async function undo(turn: number, i: number) {
     const a = turns[turn]?.actions?.[i];
@@ -196,18 +369,21 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
     }
   }
 
-  const status = state === 'listening' ? (lang === 'ml' ? 'കേൾക്കുന്നു…' : 'Listening…')
+  const status = state === 'listening' ? (lang === 'ml' ? 'പിടിച്ചുനിൽക്കൂ · വിട്ടാൽ അയയ്ക്കും' : 'Keep holding · release to send')
     : state === 'thinking' ? (lang === 'ml' ? 'ആലോചിക്കുന്നു…' : 'Thinking…')
     : state === 'speaking' ? (lang === 'ml' ? 'സംസാരിക്കുന്നു…' : 'Speaking…')
-      : voiceOk ? (lang === 'ml' ? 'സംസാരിക്കാൻ ടാപ്പ് ചെയ്യൂ' : 'Tap to talk')
-      : (lang === 'ml' ? 'കീബോർഡിലെ മൈക്ക് ഉപയോഗിക്കൂ' : 'Use keyboard dictation');
+      : voiceOk ? (lang === 'ml'
+        ? (alternateMalayalam ? 'മലയാളം (ml) · അമർത്തിപ്പിടിച്ച് സംസാരിക്കൂ' : 'അമർത്തിപ്പിടിച്ച് സംസാരിക്കൂ · വിട്ടാൽ അയയ്ക്കും')
+        : 'Hold to talk · Release to send')
+      : (lang === 'ml' ? 'മലയാളം ടൈപ്പ് ചെയ്യാം' : 'Type your message');
 
   return (
     <Sheet title="XS AI" onClosing={stopInteraction} onClose={() => { stopInteraction(); onClose(); }}>
       <div className="xsai">
         <div className="xsai-bar">
           <Segmented label="Language" value={lang} onChange={(value) => {
-            setLang(value); setMicDialog(null); setSpeechIssue(null);
+            cancelHold(); setLang(value); setMicDialog(null);
+            setSpeechIssue(null); setAlternateMalayalam(false);
           }} options={[{ value: 'en', label: 'English' }, { value: 'ml', label: 'മലയാളം' }]} />
           <button type="button" className={`btn small ghost ${mute ? '' : 'on'}`} onClick={() => { setMute((m) => !m); stopSpeaking(); }} aria-pressed={!mute}>
             {mute ? 'Voice off' : 'Voice on'}
@@ -239,13 +415,17 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
         </div>
 
         <div className="xsai-controls">
-          {
-            <button type="button" className={`xsai-orb ${state}`} onClick={() => void talk()} disabled={state === 'thinking'}
-              aria-label={state === 'listening' ? 'Stop listening' : state === 'speaking' ? 'Stop speaking' : 'Talk to XS AI'}>
-              <span className="xsai-orb-glow" aria-hidden />
-              {state === 'listening' || state === 'speaking' ? <Square size={22} fill="currentColor" /> : <Mic size={26} />}
-            </button>
-          }
+          <button type="button" className={`xsai-orb ${state}`}
+            onPointerDown={onPressDown} onPointerUp={onPressUp} onPointerCancel={onPressCancel}
+            onLostPointerCapture={onPressCancel}
+            onKeyDown={onHoldKeyDown} onKeyUp={onHoldKeyUp}
+            onContextMenu={(event) => event.preventDefault()}
+            onClick={onAccessibleClick} disabled={state === 'thinking'}
+            aria-pressed={state === 'listening'}
+            aria-label={state === 'listening' ? 'Release to send' : 'Hold to talk to XS AI'}>
+            <span className="xsai-orb-glow" aria-hidden />
+            {state === 'listening' ? <Square size={22} fill="currentColor" /> : <Mic size={26} />}
+          </button>
           <p className="xsai-status" aria-live="polite">{status}{lang === 'ml' && !mute && !voiceFor('ml') ? ' · replies shown as text on this device' : ''}</p>
           <form className="xsai-type" onSubmit={(e) => { e.preventDefault(); void ask(text); }}>
             <input ref={inputRef} className="input" lang={lang === 'ml' ? 'ml-IN' : 'en-IN'} value={text} onChange={(e) => setText(e.target.value)} placeholder={lang === 'ml' ? 'ടൈപ്പ് ചെയ്യൂ…' : 'Type a message…'} aria-label="Message XS AI" enterKeyHint="send" />
@@ -271,13 +451,15 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
               <div className="xsai-mic-actions">
                 {micDialog !== 'unavailable' && (
                   <button ref={micActionRef} type="button" className="btn primary"
-                    onClick={() => { setMicDialog(null); void talk(true); }}>
+                    onClick={() => { setMicDialog(null); setSpeechIssue(null); }}>
+                    
                     {MIC_COPY[lang][micDialog].button}
                   </button>
                 )}
                 {lang === 'ml' && speechIssue?.locale === 'ml-IN' && micDialog !== 'denied' && (
                   <button type="button" className="btn ghost"
-                    onClick={() => { setMicDialog(null); void talk(true, true); }}>
+                    onClick={() => { setAlternateMalayalam(true); setMicDialog(null); setSpeechIssue(null); }}>
+                    
                     മലയാളം (ml) കോഡ് പരീക്ഷിക്കുക
                   </button>
                 )}
