@@ -250,6 +250,14 @@ html[data-vt="tab"]::view-transition-new(page) { animation: vt-settle 110ms ease
    top and still, pages are clipped to their own box and painted opaque so the
    old and new screens never show through each other, and the box itself
    snaps to the new size instead of stretching the snapshots. */
+/* View-transition snapshots are decorative. They must never steal touch or
+   keyboard hit testing from the live app, especially its floating AI button. */
+::view-transition,
+::view-transition-group(*),
+::view-transition-image-pair(*),
+::view-transition-old(*),
+::view-transition-new(*) { pointer-events: none !important; }
+
 ::view-transition-group(sidebar), ::view-transition-group(tabbar) { z-index: 2; }
 ::view-transition-group(page) { z-index: 1; animation-duration: 0s; }
 ::view-transition-image-pair(page) { overflow-x: clip; }
