@@ -1,7 +1,7 @@
 import { staffQuery } from '../../lib/sections';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { UserPlus } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useGym } from '../../app/gym';
 import { AppearanceControl } from '../../components/Appearance';
 import { Field, Loading, Notice, Sheet, useToast } from '../../components/ui';
@@ -11,6 +11,7 @@ import { rpc } from '../../lib/supabase';
 import { ROLE_LABEL, type Role, type StaffRow } from '../../lib/types';
 import { setSpokenReplies, spokenRepliesEnabled } from '../ai/preferences';
 import { setSttInputMode, sttInputMode } from '../ai/sttPreferences';
+import { sarvamReadiness, type SarvamReadiness } from '../ai/sarvamStatus';
 
 export function SettingsPage() {
   const { can, subscription } = useGym();
@@ -41,6 +42,12 @@ export function SettingsPage() {
 function SpokenRepliesSetting() {
   const [enabled, setEnabled] = useState(spokenRepliesEnabled);
   const [cloudMalayalam, setCloudMalayalam] = useState(() => sttInputMode() === 'sarvam');
+  const [speechReady, setSpeechReady] = useState<SarvamReadiness | null>(null);
+  useEffect(() => {
+    let active = true;
+    void sarvamReadiness().then((value) => { if (active) setSpeechReady(value); });
+    return () => { active = false; };
+  }, []);
   return (
     <section className="card" aria-label="XS AI settings">
       <div className="row between" style={{ alignItems: 'center', gap: 16 }}>
@@ -61,7 +68,12 @@ function SpokenRepliesSetting() {
         <div className="stack" style={{ gap: 4 }}>
           <label htmlFor="xs-ai-sarvam-voice">Automatic Malayalam voice fallback</label>
           <span className="muted" style={{ fontSize: 13 }}>
-            Optional. Browser recognition is tried first. If it fails, your voice audio is sent to Sarvam AI in the cloud. No repeated popups; payments and membership changes still require confirmation.
+            Browser recognition is tried first. With your permission, only failed Malayalam audio is sent to Sarvam AI; payments and member changes still require typed confirmation.
+          </span>
+          <span className="muted" role="status" style={{ fontSize: 12 }}>
+            {!speechReady ? 'Checking Malayalam speech service…' : speechReady.ready
+              ? 'Malayalam transcription service is ready.'
+              : 'Malayalam speech service needs server setup. Ask the administrator to configure Sarvam.'}
           </span>
         </div>
         <input id="xs-ai-sarvam-voice" type="checkbox" role="switch"
