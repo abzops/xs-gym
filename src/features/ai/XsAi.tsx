@@ -63,7 +63,7 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
   const [copiedTurn, setCopiedTurn] = useState<number | null>(null);
   const [holding, setHolding] = useState(false);
   const [micDialog, setMicDialog] = useState<MicDialog>(null);
-  const [speechIssue, setSpeechIssue] = useState<{ code: string; locale: string } | null>(null);
+  const [, setSpeechIssue] = useState<{ code: string; locale: string } | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const holdRef = useRef<HoldSession | null>(null);
