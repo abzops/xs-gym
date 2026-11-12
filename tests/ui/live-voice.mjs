@@ -304,6 +304,7 @@ for (const [label, mobile] of [['phone touch', true], ['desktop mouse', false]])
     await dialog.locator('.xsai-mic-backdrop').count() === 0);
   await tap(dialog.locator('.xsai-inline-issue').getByRole('button', { name: 'Settings' }));
   await page.waitForURL(/\/settings$/);
+  await page.getByRole('switch', { name: 'Use Sarvam cloud speech for Malayalam' }).waitFor({ timeout: 9000 });
   check('Malayalam recovery button opens the actual cloud consent control',
     await page.getByRole('switch', { name: 'Use Sarvam cloud speech for Malayalam' }).count() === 1);
   await ctx.close();
