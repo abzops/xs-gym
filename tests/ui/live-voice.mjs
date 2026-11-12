@@ -34,13 +34,17 @@ function fakeSpeech({ noSpeech }) {
       return Promise.reject(new Error('Unexpected raw mic access'));
     };
   }
-  window.__speech = { started: 0, stopped: 0, last: null };
+  window.__speech = { started: 0, stopped: 0, last: null, delayEnd: false };
   if (!noSpeech) {
     class FakeSpeech {
       lang = ''; continuous = false; interimResults = false; maxAlternatives = 1;
       onresult = null; onerror = null; onend = null;
       start() { window.__speech.started++; window.__speech.last = this; }
-      stop() { window.__speech.stopped++; queueMicrotask(() => this.onend?.()); }
+      stop() {
+        window.__speech.stopped++;
+        if (window.__speech.delayEnd) setTimeout(() => this.onend?.(), 250);
+        else queueMicrotask(() => this.onend?.());
+      }
       abort() { window.__speech.stopped++; queueMicrotask(() => this.onend?.()); }
     }
     window.SpeechRecognition = FakeSpeech;
@@ -279,6 +283,25 @@ for (const [label, mobile] of [['phone touch', true], ['desktop mouse', false]])
   await tap(dialog.getByRole('button', { name: 'Send' }));
   await waitCount(page, 1);
   check('text fallback still sends one command', logs.agent.length === 1);
+  await ctx.close();
+}
+
+// Final words may arrive after release. Do not erase a draft typed while
+// speech recognition is still finalizing its response.
+{
+  const { ctx, page, logs, open } = await setup();
+  const dialog = await open();
+  const contact = await hold(page, dialog.locator('.xsai-orb'));
+  await page.evaluate(() => { window.__speech.delayEnd = true; window.__partial('Voice phrase'); });
+  await contact.release();
+  const input = dialog.getByRole('textbox', { name: 'Message XS AI' });
+  await input.fill('My typed draft');
+  await waitCount(page, 1);
+  check('late browser onend: typed draft is preserved and voice submits once',
+    (await input.inputValue()) === 'My typed draft' &&
+    logs.agent.length === 1 &&
+    logs.agent[0].messages.at(-1).content === 'Voice phrase' &&
+    await idleMic(page));
   await ctx.close();
 }
 
