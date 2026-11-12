@@ -12,6 +12,9 @@ await context.addInitScript(([key, sessionJson]) => {
   window.localStorage.setItem('xs-ai-voice-input-mode', 'sarvam');
 }, ['sb-' + REF + '-auth-token', JSON.stringify(session)]);
 await context.addInitScript(() => {
+  // Explicitly test the WebSocket-only fallback on devices without MediaRecorder.
+  // The new local-recording REST path has its own separate integration test.
+  window.MediaRecorder = undefined;
   window.__sarvam = { microphoneCalls: 0, stopCalls: 0, ws: null, messages: [], processor: null, nativeStarts: 0 };
   // Simulate a real browser that exposes SpeechRecognition but rejects Malayalam
   // after a press. Sarvam must not start unless this actual browser failure occurs.
