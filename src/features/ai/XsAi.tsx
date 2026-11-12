@@ -1,17 +1,18 @@
 import { useQueryClient } from '@tanstack/react-query';
-import { ArrowUp, Check, Keyboard, Mic, RotateCcw, Square, X } from 'lucide-react';
+import { ArrowUp, Check, Mic, RotateCcw, X } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type MouseEvent as ReactMouseEvent } from 'react';
 import { useNavigate } from 'react-router';
 import { useGym } from '../../app/gym';
 import { Segmented, Sheet, useToast } from '../../components/ui';
 import { errorMessage } from '../../lib/errors';
 import { rpc, supabase } from '../../lib/supabase';
-import { canListen, listen, speak, SpeechListenError, stopSpeaking, voiceFor, type Lang } from './voice';
+import { canListen, listen, speak, SpeechListenError, stopSpeaking, type Lang } from './voice';
+import { spokenRepliesEnabled } from './preferences';
 import './ai.css';
 
 type Action = { tool: string; ok: boolean; summary: string; undo?: { rpc: string; args: Record<string, unknown> }; undone?: boolean };
 type Turn = { role: 'user' | 'assistant'; content: string; actions?: Action[]; tone?: 'bad' };
-type State = 'idle' | 'listening' | 'thinking' | 'speaking';
+type State = 'idle' | 'thinking';
 type MicDialog = 'denied' | 'unavailable' | 'service' | 'unsupported' | null;
 
 type HoldSession = {
@@ -31,27 +32,6 @@ type HoldSession = {
 // Live word-by-word recognition uses the browser's SpeechRecognition interface.
 
 const LANG_KEY = 'xs-ai-lang';
-const HINTS: Record<Lang, string[]> = {
-  en: ['How much did we collect today?', 'Who has dues?', 'Rahul paid 1500 by UPI', 'Renew Anjali on Monthly'],
-  ml: ['ഇന്ന് എത്ര രൂപ കിട്ടി?', 'ആർക്കൊക്കെ കുടിശ്ശികയുണ്ട്?', 'രാഹുൽ 1500 UPI ആയി അടച്ചു', 'അഞ്ജലിയുടെ Monthly പുതുക്കൂ'],
-};
-
-type MicCopy = { title: string; detail: string; button: string };
-const MIC_COPY: Record<Lang, Record<Exclude<MicDialog, null>, MicCopy>> = {
-  en: {
-    denied: { title: 'Microphone permission needed', detail: 'Your device did not allow live speech recognition. Try again if permission can be requested, or use your keyboard microphone to dictate.', button: 'Try live voice again' },
-    service: { title: 'Live speech unavailable', detail: 'Live speech recognition is not available in this browser or installed app. XS AI will not record or upload audio. Use the microphone on your keyboard to dictate instead.', button: 'Try live voice again' },
-    unavailable: { title: 'Browser speech is unavailable', detail: 'This browser does not expose SpeechRecognition. You can type your message instead.', button: '' },
-    unsupported: { title: 'Speech language not supported', detail: 'Your browser rejected the requested language. XS Gym cannot install recognition languages into the iPhone browser.', button: 'Try browser voice again' },
-  },
-  ml: {
-    denied: { title: 'ബ്രൗസർ വോയ്സ് അനുമതി നിഷേധിച്ചു', detail: 'ബ്രൗസർ സ്പീച്ച് തിരിച്ചറിയൽ നിരസിച്ചു. ഇത് മലയാളം മോഡൽ ലഭ്യമാണെന്നതിന് തെളിവല്ല. വീണ്ടും ശ്രമിക്കാം, അല്ലെങ്കിൽ മലയാളത്തിൽ ടൈപ്പ് ചെയ്യാം.', button: 'വീണ്ടും ശ്രമിക്കുക' },
-    service: { title: 'ലൈവ് വോയ്സ് ലഭ്യമല്ല', detail: 'iPhone ബ്രൗസറിലെ വോയ്സ് സേവനം മലയാളം തിരിച്ചറിയൽ നിരസിച്ചു. മറ്റൊരു മലയാളം ഭാഷാ കോഡ് പരീക്ഷിക്കാം. പിന്തുണയില്ലെങ്കിൽ XS Gym-ന് ബ്രൗസറിനെ നിർബന്ധിച്ച് തിരിച്ചറിയിക്കാൻ കഴിയില്ല.', button: 'വീണ്ടും ശ്രമിക്കുക' },
-    unavailable: { title: 'ബ്രൗസർ വോയ്സ് ലഭ്യമല്ല', detail: 'ഈ ബ്രൗസറിൽ SpeechRecognition API ഇല്ല. മലയാളം ടൈപ്പ് ചെയ്യാം.', button: '' },
-    unsupported: { title: 'മലയാളം വോയ്സ് ഈ ബ്രൗസറിൽ പിന്തുണയ്ക്കുന്നില്ല', detail: 'iPhone-ന്റെ സ്പീച്ച് സേവനം ഈ ഭാഷാ കോഡ് നിരസിച്ചു. ഒരു ബദൽ മലയാളം കോഡ് പരീക്ഷിക്കാം; അത് പ്രവർത്തിക്കുമെന്ന് ഉറപ്പില്ല.', button: 'വീണ്ടും ശ്രമിക്കുക' },
-  },
-};
-
 /** XS AI: talk to the gym. Opens as a sheet; every action shows a card with Undo. */
 export function XsAiPanel({ onClose }: { onClose: () => void }) {
   const { gym } = useGym();
@@ -62,11 +42,11 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
   const [turns, setTurns] = useState<Turn[]>([]);
   const [state, setState] = useState<State>('idle');
   const [text, setText] = useState('');
-  const [mute, setMute] = useState(false);
+  const [holding, setHolding] = useState(false);
   const [micDialog, setMicDialog] = useState<MicDialog>(null);
   const [speechIssue, setSpeechIssue] = useState<{ code: string; locale: string } | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-  const micActionRef = useRef<HTMLButtonElement>(null);
+
   const holdRef = useRef<HoldSession | null>(null);
   const activePointer = useRef<number | null>(null);
   const keyboardHeld = useRef(false);
@@ -77,13 +57,15 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
   const requestBusy = useRef(false);
   const listeningBusy = useRef(false);
   const undoBusy = useRef(new Set<string>());
+  const commandQueue = useRef<Array<{ content: string; language: Lang; id: string }>>([]);
+  const processedHistory = useRef<Array<{ role: 'user' | 'assistant'; content: string }>>([]);
   const scroller = useRef<HTMLDivElement>(null);
   const turnsRef = useRef(turns); turnsRef.current = turns;
   const voiceOk = canListen();
 
   useEffect(() => { try { localStorage.setItem(LANG_KEY, lang); } catch { /* storage blocked */ } }, [lang]);
   useEffect(() => { scroller.current?.scrollTo({ top: scroller.current.scrollHeight, behavior: 'smooth' }); }, [turns, state]);
-  useEffect(() => { if (micDialog) micActionRef.current?.focus(); }, [micDialog]);
+
   const stopInteraction = useCallback(() => {
     closingRef.current = true;
     activePointer.current = null;
@@ -92,48 +74,79 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
     const session = holdRef.current;
     holdRef.current = null;
     listeningBusy.current = false;
+    commandQueue.current = [];
     if (session) {
       session.cancelled = true;
       if (session.watchdog) clearTimeout(session.watchdog);
       session.abort();
     }
     stopSpeaking();
+    setHolding(false);
   }, []);
   useEffect(() => () => { stopInteraction(); }, [stopInteraction]);
 
-  // One request at a time: rapid taps must not record the same payment twice.
-  async function ask(content: string) {
+  // Voice replies are opt-in per device. A request's typed response always
+  // appears in the chat, and the microphone never waits for speech playback.
+  // Serialize money-changing commands: holding again while the first request
+  // is pending queues the new text without overlapping server actions.
+  function ask(content: string) {
     const q = content.trim();
-    if (!q || requestBusy.current || listeningBusy.current || closingRef.current) return;
+    if (!q || closingRef.current) return;
+    const command = { content: q, language: lang, id: crypto.randomUUID() };
+    commandQueue.current.push(command);
+    const updated: Turn[] = [...turnsRef.current, { role: 'user', content: q }];
+    turnsRef.current = updated;
+    setTurns(updated);
+    setText('');
+    void drainQueue();
+  }
+
+  async function drainQueue() {
+    if (requestBusy.current || closingRef.current) return;
     requestBusy.current = true;
-    stopSpeaking();
-    const history = [...turnsRef.current, { role: 'user' as const, content: q }];
-    setTurns(history); setText(''); setState('thinking');
+    setState('thinking');
     try {
-      const { data, error } = await supabase.functions.invoke('xs-ai', {
-        // One UUID per user command lets the database deduplicate a repeated
-        // HTTP request without deduplicating a genuinely new payment command.
-        body: { gym_id: gym.id, lang, request_id: crypto.randomUUID(),
-          messages: history.filter((t) => !t.tone).map(({ role, content: c }) => ({ role, content: c })) },
-      });
-      if (error) {
-        let msg = errorMessage(error);
-        try { const body = await (error as { context?: Response }).context?.json(); if (body?.error) msg = body.error; } catch { /* not JSON */ }
-        throw new Error(msg);
+      while (!closingRef.current && commandQueue.current.length) {
+        const next = commandQueue.current.shift()!;
+        stopSpeaking();
+        const history = [...processedHistory.current, { role: 'user' as const, content: next.content }];
+        processedHistory.current = history;
+        try {
+          const { data, error } = await supabase.functions.invoke('xs-ai', {
+            body: {
+              gym_id: gym.id, lang: next.language, request_id: next.id,
+              messages: history,
+            },
+          });
+          if (error) {
+            let msg = errorMessage(error);
+            try { const body = await (error as { context?: Response }).context?.json(); if (body?.error) msg = body.error; }
+            catch { /* not JSON */ }
+            throw new Error(msg);
+          }
+          const reply = String(data?.reply ?? '');
+          for (const key of data?.changed ?? []) void qc.invalidateQueries({ queryKey: [key, gym.id] });
+          if (closingRef.current) break;
+          const answer: Turn = { role: 'assistant', content: reply, actions: data?.actions };
+          turnsRef.current = [...turnsRef.current, answer];
+          setTurns(turnsRef.current);
+          processedHistory.current = [...history, { role: 'assistant', content: reply }];
+          if (typeof data?.navigate === 'string') {
+            navigate(`/g/${gym.slug}${data.navigate ? `/${data.navigate}` : ''}`);
+          }
+          if (reply && spokenRepliesEnabled()) {
+            // Never hold up the microphone waiting for TTS completion.
+            void speak(reply, next.language);
+          }
+        } catch (error) {
+          if (closingRef.current) break;
+          const answer: Turn = {
+            role: 'assistant', content: error instanceof Error ? error.message : String(error), tone: 'bad',
+          };
+          turnsRef.current = [...turnsRef.current, answer];
+          setTurns(turnsRef.current);
+        }
       }
-      const reply = String(data?.reply ?? '');
-      // A write may already have succeeded when dismissed. Refresh the app,
-      // but never speak or navigate from a closed conversation.
-      for (const key of data?.changed ?? []) void qc.invalidateQueries({ queryKey: [key, gym.id] });
-      if (closingRef.current) return;
-      setTurns((t) => [...t, { role: 'assistant', content: reply, actions: data?.actions }]);
-      if (typeof data?.navigate === 'string') navigate(`/g/${gym.slug}${data.navigate ? `/${data.navigate}` : ''}`);
-      if (!mute && reply) {
-        setState('speaking');
-        await speak(reply, lang);
-      }
-    } catch (e) {
-      if (!closingRef.current) setTurns((t) => [...t, { role: 'assistant', content: e instanceof Error ? e.message : String(e), tone: 'bad' }]);
     } finally {
       requestBusy.current = false;
       if (!closingRef.current) setState('idle');
