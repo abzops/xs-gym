@@ -87,7 +87,7 @@ describe('browser-only Malayalam recognition (no STT model)', () => {
     await expect(result.done).resolves.toBe('ഇന്ന് എത്ര രൂപ');
   });
 
-  it.each(['language-not-supported', 'service-not-allowed', 'network'])(
+  it.each(['language-not-supported', 'service-not-allowed', 'network', 'no-speech'])(
     'preserves real browser error code %s instead of generic microphone error', async (code) => {
       const active = mockBrowser();
       const result = listen('ml', vi.fn());
