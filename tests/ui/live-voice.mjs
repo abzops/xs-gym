@@ -266,6 +266,10 @@ for (const [label, mobile] of [['phone touch', true], ['desktop mouse', false]])
   await tap(dialog.getByRole('group', { name: 'Language' }).getByRole('button', { name: 'മലയാളം' }));
   const contact = await hold(page, dialog.locator('.xsai-orb'));
   await page.evaluate(() => window.__browserError('language-not-supported'));
+  await page.waitForFunction(() => window.__speech.last?.lang === 'ml');
+  check('language error: automatically tries short Malayalam locale in the same hold',
+    await page.evaluate(() => window.__speech.last?.lang === 'ml'));
+  await page.evaluate(() => window.__browserError('language-not-supported'));
   await contact.release();
   await dialog.locator('.xsai-inline-issue').waitFor({ timeout: 3500 });
   check('error: one concise inline hint, no modal or provider details',
