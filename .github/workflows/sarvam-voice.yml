@@ -29,6 +29,11 @@ jobs:
         with:
           deno-version: v2.x
       - run: deno check supabase/functions/xs-ai-sarvam/index.ts
+      - name: Query REAL production Sarvam configuration (no user audio)
+        env:
+          XS_PRODUCTION_SUPABASE_URL: https://knuanihnxtxtyrgvsumq.supabase.co
+          XS_PRODUCTION_PUBLISHABLE_KEY: sb_publishable_2NshKjNCOJkokq3z0bezrw_21Dl7t-j
+        run: node tests/ai/sarvam-live-readiness.mjs
       - name: Synthetic mobile and desktop voice regression
         run: |
           npm install --no-save --no-package-lock playwright@1.64.1
