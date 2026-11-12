@@ -10,6 +10,7 @@ import { canListen, listen, speak, SpeechListenError, stopSpeaking, type Lang } 
 import { spokenRepliesEnabled } from './preferences';
 import { sttInputMode } from './sttPreferences';
 import { listenSarvam } from './sarvamRealtime';
+import { captureMalayalamBackup, transcribeFailedNative, type MalayalamClip } from './malayalamBackup';
 import './ai.css';
 
 type Action = { tool: string; ok: boolean; summary: string; undo?: { rpc: string; args: Record<string, unknown> }; undone?: boolean };
@@ -23,6 +24,10 @@ type HoldSession = {
   cancelled: boolean;
   settled: boolean;
   cloud: boolean;
+  backup: ReturnType<typeof captureMalayalamBackup> | null;
+  backupClip: Promise<MalayalamClip | null> | null;
+  nativeFailed: boolean;
+  uploading: boolean;
   pendingId: string | null;
   latest: string;
   final: string;
@@ -70,7 +75,10 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
   const activePointer = useRef<number | null>(null);
   const keyboardHeld = useRef(false);
   const pendingUnavailable = useRef(false);
-  const unavailableMalayalam = useRef(false);
+  const unavailableMalayalam = useRef((() => {
+    try { return localStorage.getItem('xs-ai-native-ml-unavailable') === '1'; }
+    catch { return false; }
+  })());
   const suppressClickUntil = useRef(0);
   const [alternateMalayalam, setAlternateMalayalam] = useState(false);
   const closingRef = useRef(false);
@@ -197,6 +205,7 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
     setHolding(false);
     if (closingRef.current) return;
     if (session.failed) {
+      session.backup?.abort();
       removeVoicePending(session.pendingId);
       // Only an actual recognition failure shows a short inline message.
       // Normal releases never display banners or spoken status.
@@ -217,8 +226,44 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
     // Cloud transcripts require an actual finalized result; browser interim text
     // may be used on Safari when onend is dropped after finger-up.
     const heard = (session.cloud ? session.final : session.final || session.latest).trim();
+    session.backup?.abort();
     if (heard) ask(heard, true, session.pendingId ?? undefined, session.cloud);
     else removeVoicePending(session.pendingId);
+  }
+
+  // The captured clip is local until native recognition actually fails.
+  // Uploading only after finger-up preserves the beginning of the sentence.
+  function recoverMalayalam(session: HoldSession) {
+    if (!session.released || session.cancelled || session.uploading ||
+      holdRef.current !== session || !session.backup) return;
+    session.uploading = true;
+    session.cloud = true; // server enforces READ-ONLY actions for cloud speech
+    session.settled = false;
+    session.failed = null;
+    if (session.watchdog) clearTimeout(session.watchdog);
+    session.watchdog = setTimeout(() => {
+      if (holdRef.current !== session || session.cancelled) return;
+      session.failed = new SpeechListenError('service', 'Malayalam transcription timed out.', 'cloud-timeout', 'ml-IN');
+      session.settled = true;
+      finishTranscript(session);
+    }, 27_000);
+    void (session.backupClip ?? session.backup.stop())
+      .then((clip) => transcribeFailedNative(gym.id, clip))
+      .then((text) => {
+        if (session.cancelled || holdRef.current !== session) return;
+        session.final = text.trim();
+        session.settled = true;
+        if (text.trim()) {
+          unavailableMalayalam.current = true;
+          try { localStorage.setItem('xs-ai-native-ml-unavailable', '1'); } catch { /* private mode */ }
+        }
+        finishTranscript(session);
+      }, (error: unknown) => {
+        if (session.cancelled || holdRef.current !== session) return;
+        session.failed = error;
+        session.settled = true;
+        finishTranscript(session);
+      });
   }
 
   function cancelHold() {
@@ -231,6 +276,7 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
     setHolding(false);
     if (session.watchdog) clearTimeout(session.watchdog);
     session.abort();
+    session.backup?.abort();
     removeVoicePending(session.pendingId);
     if (!closingRef.current) setText('');
   }
@@ -462,6 +508,7 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
       listeningBusy.current = false;
       if (session.watchdog) clearTimeout(session.watchdog);
       session.abort();
+      session.backup?.abort();
       removeVoicePending(session.pendingId);
       setHolding(false);
       setText('');
