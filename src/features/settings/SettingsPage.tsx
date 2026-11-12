@@ -10,7 +10,7 @@ import { errorMessage } from '../../lib/errors';
 import { rpc } from '../../lib/supabase';
 import { ROLE_LABEL, type Role, type StaffRow } from '../../lib/types';
 import { setSpokenReplies, spokenRepliesEnabled } from '../ai/preferences';
-import { setSttInputMode, sttInputMode } from '../ai/sttPreferences';
+
 import { sarvamReadiness, type SarvamReadiness } from '../ai/sarvamStatus';
 
 export function SettingsPage() {
@@ -41,7 +41,6 @@ export function SettingsPage() {
 
 function SpokenRepliesSetting() {
   const [enabled, setEnabled] = useState(spokenRepliesEnabled);
-  const [cloudMalayalam, setCloudMalayalam] = useState(() => sttInputMode() === 'sarvam');
   const [speechReady, setSpeechReady] = useState<SarvamReadiness | null>(null);
   useEffect(() => {
     let active = true;
@@ -64,25 +63,19 @@ function SpokenRepliesSetting() {
             setEnabled(next);
           }} />
       </div>
-      <div className="row between" style={{ alignItems: 'center', gap: 16, marginTop: 16, paddingTop: 16, borderTop: '1px solid var(--hair)' }}>
-        <div className="stack" style={{ gap: 4 }}>
-          <label htmlFor="xs-ai-sarvam-voice">Automatic Malayalam voice fallback</label>
-          <span className="muted" style={{ fontSize: 13 }}>
-            Browser recognition is tried first. With your permission, only failed Malayalam audio is sent to Sarvam AI; payments and member changes still require typed confirmation.
-          </span>
-          <span className="muted" role="status" style={{ fontSize: 12 }}>
-            {!speechReady ? 'Checking Malayalam speech service…' : speechReady.ready
-              ? 'Malayalam transcription service is ready.'
-              : 'Malayalam speech service needs server setup. Ask the administrator to configure Sarvam.'}
-          </span>
-        </div>
-        <input id="xs-ai-sarvam-voice" type="checkbox" role="switch"
-          checked={cloudMalayalam} aria-label="Use Sarvam cloud speech for Malayalam"
-          onChange={(event) => {
-            const next = event.target.checked;
-            setSttInputMode(next ? 'sarvam' : 'browser');
-            setCloudMalayalam(next);
-          }} />
+      <div className="stack" style={{ gap: 5, marginTop: 16, paddingTop: 16, borderTop: '1px solid var(--hair)' }}>
+        <strong style={{ fontSize: 14 }}>Malayalam voice</strong>
+        <span className="muted" style={{ fontSize: 13 }}>
+          Works automatically when you hold the microphone. On iPhones, Sarvam AI
+          transcribes Malayalam securely; on other browsers it is used when
+          built-in recognition fails. Audio is captured only during your hold,
+          never in the background. No additional setting is needed.
+        </span>
+        <span className="muted" role="status" style={{ fontSize: 12 }}>
+          {!speechReady ? 'Checking speech service…' : speechReady.ready
+            ? 'Malayalam speech service ready.'
+            : 'Malayalam voice service unavailable. Contact your administrator.'}
+        </span>
       </div>
     </section>
   );
