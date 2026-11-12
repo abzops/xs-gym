@@ -1,5 +1,5 @@
 import { useQueryClient } from '@tanstack/react-query';
-import { ArrowUp, Check, CheckCheck, Copy, Mic, Plus, RotateCcw, Sparkles, Users, Wallet, CalendarClock, X } from 'lucide-react';
+import { ArrowUp, Check, CheckCheck, Copy, Keyboard, Mic, Plus, RotateCcw, Sparkles, Users, Wallet, CalendarClock, X } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type MouseEvent as ReactMouseEvent } from 'react';
 import { useNavigate } from 'react-router';
 import { useGym } from '../../app/gym';
@@ -8,7 +8,7 @@ import { errorMessage } from '../../lib/errors';
 import { rpc, supabase } from '../../lib/supabase';
 import { canListen, listen, speak, SpeechListenError, stopSpeaking, type Lang } from './voice';
 import { spokenRepliesEnabled } from './preferences';
-import { sttInputMode } from './sttPreferences';
+import { chooseVoiceRoute, iosVoiceDevice, type VoiceRoute } from './voiceRoute';
 import { listenSarvam } from './sarvamRealtime';
 import { captureMalayalamBackup, transcribeFailedNative, type MalayalamClip } from './malayalamBackup';
 import { sarvamReadiness } from './sarvamStatus';
@@ -17,7 +17,7 @@ import './ai.css';
 type Action = { tool: string; ok: boolean; summary: string; undo?: { rpc: string; args: Record<string, unknown> }; undone?: boolean };
 type Turn = { role: 'user' | 'assistant'; content: string; actions?: Action[]; tone?: 'bad'; id?: string; voicePending?: boolean };
 type State = 'idle' | 'thinking';
-type MicDialog = 'denied' | 'unavailable' | 'service' | 'unsupported' | 'enable-ml' | 'setup-ml' | null;
+type MicDialog = 'denied' | 'unavailable' | 'service' | 'unsupported' | 'setup-ml' | null;
 
 type HoldSession = {
   pointerId: number | null;
@@ -25,6 +25,7 @@ type HoldSession = {
   cancelled: boolean;
   settled: boolean;
   cloud: boolean;
+  route: VoiceRoute;
   backup: ReturnType<typeof captureMalayalamBackup> | null;
   backupClip: Promise<MalayalamClip | null> | null;
   nativeFailed: boolean;
@@ -68,18 +69,17 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
   const [text, setText] = useState('');
   const [copiedTurn, setCopiedTurn] = useState<number | null>(null);
   const [holding, setHolding] = useState(false);
+  const [keyboardOpen, setKeyboardOpen] = useState(false);
+  const [transcribing, setTranscribing] = useState(false);
   const [micDialog, setMicDialog] = useState<MicDialog>(null);
   const [, setSpeechIssue] = useState<{ code: string; locale: string } | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const holdRef = useRef<HoldSession | null>(null);
+  const pendingVoice = useRef(new Set<HoldSession>());
   const activePointer = useRef<number | null>(null);
   const keyboardHeld = useRef(false);
   const pendingUnavailable = useRef(false);
-  const unavailableMalayalam = useRef((() => {
-    try { return localStorage.getItem('xs-ai-native-ml-unavailable') === '1'; }
-    catch { return false; }
-  })());
   const suppressClickUntil = useRef(0);
   const [alternateMalayalam, setAlternateMalayalam] = useState(false);
   const closingRef = useRef(false);
@@ -104,14 +104,23 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
     holdRef.current = null;
     listeningBusy.current = false;
     commandQueue.current = [];
-    if (session) {
+    // Closing a conversation also cancels previous recordings still waiting
+    // for Malayalam transcription; never leave a mic track or delayed send.
+    for (const active of pendingVoice.current) {
+      active.cancelled = true;
+      if (active.watchdog) clearTimeout(active.watchdog);
+      active.abort();
+      active.backup?.abort();
+    }
+    pendingVoice.current.clear();
+    if (session && !session.cancelled) {
       session.cancelled = true;
-      if (session.watchdog) clearTimeout(session.watchdog);
       session.abort();
-      session.backup?.abort(); // never leave a local mic stream running
+      session.backup?.abort();
     }
     stopSpeaking();
     setHolding(false);
+    setTranscribing(false);
   }, []);
   useEffect(() => () => { stopInteraction(); }, [stopInteraction]);
 
