@@ -1,6 +1,7 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { ArrowUp, Check, CheckCheck, Copy, Keyboard, Mic, Plus, RotateCcw, Sparkles, Users, Wallet, CalendarClock, X } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type MouseEvent as ReactMouseEvent } from 'react';
+import { flushSync } from 'react-dom';
 import { useNavigate } from 'react-router';
 import { useGym } from '../../app/gym';
 import { Segmented, Sheet, useToast } from '../../components/ui';
@@ -527,8 +528,9 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
       setKeyboardOpen(false);
       inputRef.current?.blur();
     } else {
-      setKeyboardOpen(true);
-      requestAnimationFrame(() => inputRef.current?.focus());
+      // Safari requires focus during the SAME trusted tap to open iOS keyboard.
+      flushSync(() => setKeyboardOpen(true));
+      inputRef.current?.focus();
     }
     setMicDialog(null);
   }
@@ -767,8 +769,8 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
               <button type="button" aria-label="Type message" title="Type message"
                 onClick={() => {
                   setMicDialog(null);
-                  setKeyboardOpen(true);
-                  requestAnimationFrame(() => inputRef.current?.focus());
+                  flushSync(() => setKeyboardOpen(true));
+                  inputRef.current?.focus();
                 }}>
                 <Keyboard size={18} aria-hidden="true" />
               </button>
