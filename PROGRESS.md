@@ -62,6 +62,13 @@
 
 ## 6. Session log
 
+### 2026-11-12 — Membership start-date restriction removal
+
+- Staged a database-only removal of the 30-days-past / 60-days-future custom membership start window.
+- Added rolled-back synthetic tests for historical and future dates, expiry dates, charges, audit and cross-gym authorization.
+- Existing memberships, payments, permissions, and price logic remain unchanged. Production deployment follows passing CI.
+
+
 ### 2026-11-06 — Text-only voice input: remove WAV/cloud transcription
 
 - Owner reported live Malayalam transcription still behaved like a delayed

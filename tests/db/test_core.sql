@@ -111,6 +111,33 @@ select t.fails($$select public.create_member(t.id('gymA'), 'Rahul Again', '+9198
 insert into t.ids select 'plan1m', id from public.save_plan(t.id('gymA'), null, 'Monthly', 'month', 1, 100000);
 insert into t.ids select 'plan3m', id from public.save_plan(t.id('gymA'), null, 'Quarterly', 'month', 3, 270000);
 
+-- Historical and future starts beyond the old +/- window are accepted.
+-- Synthetic changes are rolled back before the ordinary payment tests.
+begin;
+insert into t.ids select 'backdatedMember', id from public.create_member(t.id('gymA'), 'Backdated Test', '9000000411');
+insert into t.ids select 'backdatedSale', id from public.sell_membership(
+  t.id('gymA'), t.id('backdatedMember'), t.id('plan1m'), gen_random_uuid(), '2020-01-01'::date);
+select t.eq((select start_date from public.member_memberships where id=t.id('backdatedSale')),
+  '2020-01-01'::date, 'historical membership start date accepted');
+select t.eq((select end_date from public.member_memberships where id=t.id('backdatedSale')),
+  '2020-01-31'::date, 'historical membership expiry calculated correctly');
+select t.eq((select count(*) from public.charges where membership_id=t.id('backdatedSale'))::int,
+  1, 'backdated membership keeps its billing charge');
+select t.eq((select count(*) from public.audit_logs where entity_id=t.id('backdatedSale') and action='membership.sold')::int,
+  1, 'backdated membership retains an audit event');
+insert into t.ids select 'futureMember', id from public.create_member(t.id('gymA'), 'Future Test', '9000000412');
+insert into t.ids select 'futureSale', id from public.sell_membership(
+  t.id('gymA'), t.id('futureMember'), t.id('plan1m'), gen_random_uuid(), '2090-01-01'::date);
+select t.eq((select start_date from public.member_memberships where id=t.id('futureSale')),
+  '2090-01-01'::date, 'future start dates beyond 60 days accepted');
+select t.eq((select end_date from public.member_memberships where id=t.id('futureSale')),
+  '2090-01-31'::date, 'future date calculates original expiry');
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000b1', false);
+select t.fails($sql$select public.sell_membership(t.id('gymA'), t.id('backdatedMember'),
+  t.id('plan1m'), gen_random_uuid(), '2020-01-01'::date)$sql$,
+  'XS403', 'custom date cannot bypass cross-gym authorization');
+rollback;
+
 -- Reception sells, records payment, checks in
 select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000a2', false);
 select t.fails($$select public.save_plan(t.id('gymA'), null, 'Cheap', 'month', 1, 100)$$, 'XS403', 'reception cannot manage plans');
