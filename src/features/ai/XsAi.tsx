@@ -21,6 +21,7 @@ type HoldSession = {
   settled: boolean;
   latest: string;
   final: string;
+  failed: unknown | null;
   stop: () => void;
   abort: () => void;
   watchdog: ReturnType<typeof setTimeout> | null;
@@ -146,6 +147,18 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
     holdRef.current = null;
     listeningBusy.current = false;
     if (closingRef.current) return;
+    if (session.failed) {
+      // Delay the modal until finger-up. Showing it while a finger is still
+      // touching the orb can accidentally activate or dismiss the new dialog.
+      setState('idle');
+      const error = session.failed;
+      if (error instanceof SpeechListenError) {
+        setSpeechIssue({ code: error.browserCode, locale: error.locale });
+        setMicDialog(error.reason === 'denied' || error.reason === 'audio' ? 'denied'
+          : error.reason === 'unsupported' ? 'unsupported' : 'service');
+      } else toast(error instanceof Error ? error.message : String(error), 'bad');
+      return;
+    }
     const heard = (session.final || session.latest).trim();
     if (heard) {
       setText('');
@@ -176,8 +189,9 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
     const session = holdRef.current;
     if (!session || session.released) return;
     session.released = true;
-    // stop requests a final result; a late onresult/onend is still accepted.
-    session.stop();
+    // Do not call stop() again when the browser has already ended/failed;
+    // WebKit iOS 27 has a reported repeated-recognition regression.
+    if (!session.settled) session.stop();
     if (session.settled) finishTranscript(session);
     else {
       // WebKit sometimes omits onend. Never leave the mic UI stuck forever:
@@ -200,7 +214,7 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
     setState('listening');
     const session: HoldSession = {
       pointerId: null, released: false, cancelled: false, settled: false,
-      latest: '', final: '', stop: () => {}, abort: () => {}, watchdog: null,
+      latest: '', final: '', failed: null, stop: () => {}, abort: () => {}, watchdog: null,
     };
     holdRef.current = session;
     try {
@@ -219,18 +233,10 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
         // If the browser ends during a pause, keep recognized text until release.
       }, (error: unknown) => {
         if (holdRef.current !== session || session.cancelled) return;
-        if (session.watchdog) clearTimeout(session.watchdog);
-        holdRef.current = null;
-        listeningBusy.current = false;
-        if (closingRef.current) return;
-        setState('idle');
-        if (error instanceof SpeechListenError) {
-          setSpeechIssue({ code: error.browserCode, locale: error.locale });
-          setMicDialog(error.reason === 'denied' || error.reason === 'audio' ? 'denied'
-            : error.reason === 'unsupported' ? 'unsupported' : 'service');
-        } else {
-          toast(error instanceof Error ? error.message : String(error), 'bad');
-        }
+        session.failed = error;
+        session.settled = true;
+        // Finger may still be held. Wait for release before showing any modal.
+        if (session.released) finishTranscript(session);
       });
     } catch (error) {
       holdRef.current = null;
