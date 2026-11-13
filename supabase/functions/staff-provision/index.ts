@@ -28,7 +28,7 @@ Deno.serve(async (req: Request) => {
   const mode = input?.mode ?? 'invite';
   if (!/^[0-9a-f]{8}-[0-9a-f-]{27,36}$/i.test(gym) || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ||
       email.length>254 || !['manager','reception','trainer'].includes(role) ||
-      !['invite','password'].includes(mode)) return respond(400,{error:'Check staff email, role and action'});
+      !['invite','password','existing'].includes(mode)) return respond(400,{error:'Check staff email, role and action'});
   if (mode==='password' && (!input.password || input.password.length < 14 || input.password.length > 128))
     return respond(400,{error:'Generate a strong temporary password (14+ characters)'});
   const admin = createClient(baseUrl, serviceKey, {auth:{autoRefreshToken:false,persistSession:false}});
@@ -37,6 +37,12 @@ Deno.serve(async (req: Request) => {
   if (ownerError || !owner) return respond(403,{error:'Only an active gym owner can add staff'});
   const {data:gymRow,error:gymError} = await admin.from('gyms').select('id').eq('id',gym).eq('status','active').maybeSingle();
   if (gymError || !gymRow) return respond(403,{error:'Gym is not active'});
+  if (mode === 'existing') {
+    const {error:staffError} = await caller.rpc('save_staff',
+      {p_gym:gym,p_email:email,p_role:role,p_status:'active'});
+    if (staffError) return respond(400,{error:'No existing account with that email. Use an invitation or temporary password instead.'});
+    return respond(200,{ok:true,delivery:'existing-account'});
+  }
   let accountId: string | undefined;
   let created = false;
   if (mode === 'invite') {
