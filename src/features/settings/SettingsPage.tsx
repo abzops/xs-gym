@@ -189,7 +189,7 @@ function StaffSheet({ staff, onClose }: { staff: StaffRow | null; onClose: () =>
       if (staff) { toast('Staff saved'); onClose(); return; }
       setSavedEmail(email.trim().toLowerCase());
       setProvisioned(true);
-      toast(mode === 'invite' ? 'Invitation requested' : 'Staff account created');
+      toast(mode === 'invite' ? 'Invitation requested' : mode === 'existing' ? 'Staff access added' : 'Staff account created');
     },
   });
   const credentials = `XS Gym staff login
@@ -226,7 +226,7 @@ Change your password after signing in. Do not forward these credentials.`;
       ) : (
         <form className="stack lg" onSubmit={(e) => {
           e.preventDefault();
-          if (email.trim() && (staff || mode === 'invite' || password.length >= 14)) save.mutate();
+          if (email.trim() && (staff || mode !== 'password' || password.length >= 14)) save.mutate();
         }}>
           <Field label={staff ? 'Staff email' : 'Staff email address'}>
             <input className="input" type="email" required autoComplete="email" value={email}
