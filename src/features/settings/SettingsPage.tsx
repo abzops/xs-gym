@@ -162,7 +162,7 @@ function StaffSheet({ staff, onClose }: { staff: StaffRow | null; onClose: () =>
   const [email, setEmail] = useState(staff?.email ?? '');
   const [role, setRole] = useState<Exclude<Role, 'owner'>>((staff?.role as Exclude<Role, 'owner'>) ?? 'reception');
   const [active, setActive] = useState(staff ? staff.status === 'active' : true);
-  const [mode, setMode] = useState<'invite' | 'password'>('invite');
+  const [mode, setMode] = useState<'invite' | 'password' | 'existing'>('invite');
   const [password, setPassword] = useState('');
   const [provisioned, setProvisioned] = useState(false);
   const [savedEmail, setSavedEmail] = useState('');
@@ -204,6 +204,7 @@ Change your password after signing in. Do not forward these credentials.`;
         <div className="stack lg">
           <Notice tone="ok">{mode === 'invite'
             ? `Invitation submitted for ${savedEmail}. Check their inbox and spam folder.`
+            : mode === 'existing' ? 'Existing account added to this gym.'
             : 'Staff account created. Share these credentials privately, then ask the staff member to change their password.'}</Notice>
           {mode === 'password' && (
             <>
@@ -241,9 +242,10 @@ Change your password after signing in. Do not forward these credentials.`;
           {!staff && (
             <>
               <Field label="How should the staff member get access?">
-                <select className="input" value={mode} onChange={(e) => { setMode(e.target.value as 'invite' | 'password'); setPassword(''); }}>
+                <select className="input" value={mode} onChange={(e) => { setMode(e.target.value as 'invite' | 'password' | 'existing'); setPassword(''); }}>
                   <option value="invite">Send email invitation (recommended)</option>
                   <option value="password">Owner generates a temporary password</option>
+                  <option value="existing">Add an existing XS Gym account</option>
                 </select>
               </Field>
               {mode === 'password' && (
@@ -265,7 +267,7 @@ Change your password after signing in. Do not forward these credentials.`;
           {save.error && <Notice tone="bad">{errorMessage(save.error)}</Notice>}
           <button className="btn primary block"
             disabled={!email.trim() || save.isPending || (!staff && mode === 'password' && password.length < 14)}>
-            {save.isPending ? 'Saving…' : staff ? 'Save access' : mode === 'invite' ? 'Send invitation' : 'Create staff account'}
+            {save.isPending ? 'Saving…' : staff ? 'Save access' : mode === 'invite' ? 'Send invitation' : mode === 'existing' ? 'Add existing staff' : 'Create staff account'}
           </button>
         </form>
       )}
