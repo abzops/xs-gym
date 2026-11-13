@@ -294,13 +294,88 @@ select t.fails($sql$select public.correct_payment(t.id('gymA'),t.id('editNew'),4
   'XS403', 'reception cannot edit financial ledger');
 select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000a1', false);
 
+-- ---------------------------------------------------------------- privileged API inventory (isolated PG16)
+-- Fails closed when new SECURITY DEFINER API functions are introduced without review.
+select t.eq((select count(*) from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+  where n.nspname='public' and p.prosecdef)::int, 24,
+  'inventory: 24 privileged public API function overloads require review');
+select t.eq((select count(*) from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+  where n.nspname='public' and p.prosecdef
+    and has_function_privilege('anon',p.oid,'EXECUTE'))::int, 0,
+  'none of the privileged public API functions callable by anon');
+select t.eq((select count(*) from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+  where n.nspname='public' and p.prosecdef
+    and coalesce(array_to_string(p.proconfig,','),'') like 'search_path=%')::int, 24,
+  'all privileged API functions declare an explicit search_path');
+
+-- ---------------------------------------------------------------- pilot ledger safety regression (synthetic data ONLY)
+-- Capture current behavior without deciding whether access should be cancelled.
+-- A paid membership charge can be voided; the payment remains immutable,
+-- the amount becomes credit and the membership currently remains active.
+select t.fails($sql$select public.record_payment(t.id('gymA'), t.id('m1'),
+  0, 'upi', gen_random_uuid())$sql$, 'XS422', 'zero payment refused');
+select t.fails($sql$select public.record_payment(t.id('gymA'), t.id('m1'),
+  -1, 'cash', gen_random_uuid())$sql$, 'XS422', 'negative payment refused');
+select t.fails($sql$select public.correct_payment(t.id('gymA'), t.id('editNew'),
+  0, 'card', 'Invalid zero correction', gen_random_uuid())$sql$, 'XS422', 'zero-value correction refused');
+select t.fails($sql$select public.correct_payment(t.id('gymA'), t.id('editNew'),
+  -1, 'card', 'Invalid negative correction', gen_random_uuid())$sql$, 'XS422', 'negative correction refused');
+
+insert into t.ids select 'pilotVoidMember', id
+  from public.create_member(t.id('gymA'), 'Synthetic Ledger Test', '9000000111');
+insert into t.ids select 'pilotVoidMembership', id
+  from public.sell_membership(t.id('gymA'), t.id('pilotVoidMember'),
+    t.id('plan1m'), gen_random_uuid());
+insert into t.ids select 'pilotVoidCharge', id from public.charges
+  where gym_id=t.id('gymA') and member_id=t.id('pilotVoidMember')
+    and kind='membership' and status='open';
+insert into t.ids select 'pilotVoidPayment', id
+  from public.record_payment(t.id('gymA'), t.id('pilotVoidMember'),
+    100000, 'upi', gen_random_uuid());
+
+select t.eq((select due_paise from public.member_overview
+  where id=t.id('pilotVoidMember')), 0::bigint, 'paid synthetic charge has no dues');
+select t.eq((select credit_paise from public.member_overview
+  where id=t.id('pilotVoidMember')), 0::bigint, 'paid synthetic charge has no credit');
+select public.void_charge(t.id('gymA'), t.id('pilotVoidCharge'),
+  'Pilot policy clarification pending');
+select t.eq((select credit_paise from public.member_overview
+  where id=t.id('pilotVoidMember')), 100000::bigint, 'voided paid charge releases payment to credit');
+select t.eq((select membership_status from public.member_overview
+  where id=t.id('pilotVoidMember')), 'active', 'current behavior retains access after paid void (OPEN OWNER DECISION)');
+select t.eq((select count(*) from public.payments
+  where member_id=t.id('pilotVoidMember'))::int, 1, 'void never deletes original payment');
+select t.eq((select count(*) from public.payment_allocations
+  where payment_id=t.id('pilotVoidPayment'))::int, 1, 'void retains immutable allocation history');
+select t.eq((select count(*) from public.audit_logs
+  where entity_id=t.id('pilotVoidCharge') and action='charge.voided')::int,
+  1, 'paid void has an audit record');
+-- The owner has selected SEPARATE access cancellation.
+-- A void does not silently alter the membership period; cancellation is
+-- its own permission-checked, reasoned, auditable command.
+select public.cancel_membership(t.id('gymA'), t.id('pilotVoidMembership'),
+  'Separate membership cancellation after finance correction');
+select t.eq((select status from public.member_memberships
+  where id=t.id('pilotVoidMembership')), 'cancelled',
+  'separate explicit command cancels membership access');
+select t.eq((select credit_paise from public.member_overview
+  where id=t.id('pilotVoidMember')), 100000::bigint,
+  'separate membership cancellation preserves existing member credit');
+select t.eq((select count(*) from public.payments
+  where member_id=t.id('pilotVoidMember'))::int, 1,
+  'separate membership cancellation does not reverse the original payment');
+select t.eq((select count(*) from public.audit_logs
+  where entity_id=t.id('pilotVoidMembership') and action='membership.cancelled')::int,
+  1, 'separate membership cancellation is audited');
+
+
 -- Expired subscription: read-only
 reset role;
 update public.gym_subscriptions set trial_ends_at = now() - interval '1 minute' where gym_id = t.id('gymA');
 set role authenticated;
 select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000a1', false);
 select t.fails($$select public.create_member(t.id('gymA'), 'Late', '9000000005')$$, 'XS402', 'expired trial blocks writes');
-select t.eq((select count(*) from public.members where gym_id = t.id('gymA'))::int, 1, 'expired trial still reads');
+select t.eq((select count(*) from public.members where gym_id = t.id('gymA'))::int, 2, 'expired trial still reads both synthetic members');
 
 -- Anonymous gets nothing
 reset role;
