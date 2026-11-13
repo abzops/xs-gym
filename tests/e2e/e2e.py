@@ -734,7 +734,9 @@ with sync_playwright() as p:
                    ',9847000002,,,,\n' \
                    '"Menon, Priya",9847000003,priya@example.com,,1995-02-30,\n'
         page.locator('input[type=file]').set_input_files({'name': 'members.csv', 'mimeType': 'text/csv', 'buffer': csv_text.encode()})
-        page.wait_for_timeout(600)
+        expect(page.locator('main')).to_contain_text('dry-run preview', timeout=12000)
+        assert page.locator('main').get_by_role('button', name='Add 1 member').is_disabled(), 'Import could start without explicit confirmation'
+        assert not any(x[0] == 'Anjali Import' for x in sql(f"select full_name from members where gym_id='{state['gym']}'")), 'Preview wrote member data'
         table = page.locator('main table').inner_text()
         state['import_preview'] = table
         dup = page.locator('main tr', has_text='Rahul Duplicate').inner_text()
@@ -742,12 +744,38 @@ with sync_playwright() as p:
         if '1995-02-30' in table and 'Ready' in page.locator('main tr', has_text='Menon').inner_text():
             note('BUG', 'import accepts an impossible date of birth (30 Feb)')
         btn = page.locator('main button.btn.primary', has_text='Add')
+        tap(page.get_by_role('checkbox', name=re.compile('I reviewed this dry-run preview')))
         tap(btn)
         expect(page.locator('main')).to_contain_text('Added', timeout=15000)
         state['import_result'] = page.locator('main .notice').first.inner_text()
         names = [r[0] for r in sql(f"select full_name from members where gym_id = '{state['gym']}' order by full_name")]
         state['names'] = names
         if 'Bad Phone' in names: note('BUG', 'import added a member with a 5-digit phone')
+
+    @step('repeat import and existing-member lookup failures cannot silently add duplicates')
+    def _():
+        go(base() + '/members/import')
+        before = sql(f"select count(*) from members where gym_id='{state['gym']}'")[0][0]
+        page.locator('input[type=file]').set_input_files({'name': 'retry.csv', 'mimeType': 'text/csv',
+            'buffer': b'name,phone\nAnjali Import,9847000001\n'})
+        expect(page.locator('main')).to_contain_text('0 ready', timeout=12000)
+        assert page.get_by_role('checkbox', name=re.compile('I reviewed this dry-run preview')).is_disabled()
+        assert sql(f"select count(*) from members where gym_id='{state['gym']}'")[0][0] == before
+
+        def fail_lookup(route):
+            if 'select=' in route.request.url and 'member_no' in route.request.url:
+                route.fulfill(status=503, content_type='application/json', body='{"message":"synthetic outage"}')
+            else:
+                route.continue_()
+        page.route('**/rest/v1/members*', fail_lookup)
+        try:
+            page.locator('input[type=file]').set_input_files({'name': 'new.csv', 'mimeType': 'text/csv',
+                'buffer': b'name,phone\nShould Not Insert,9847000099\n'})
+            expect(page.locator('main')).to_contain_text('Import is blocked', timeout=12000)
+            assert page.get_by_role('button', name='Add 1 member').count() == 0
+            assert sql(f"select count(*) from members where gym_id='{state['gym']}'")[0][0] == before
+        finally:
+            page.unroute('**/rest/v1/members*', fail_lookup)
 
     @step('appearance switch works and persists')
     def _():

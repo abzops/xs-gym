@@ -1,0 +1,84 @@
+# Import validation ONLY: synthetic two-tenant local PostgreSQL and browser.
+# No production credentials, no Supabase mutations and NO deploy job.
+name: Member import isolated validation
+
+on:
+  push:
+    branches:
+      - 'feature/member-import-validation'
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: member-import-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  VITE_SUPABASE_URL: http://127.0.0.1:54321
+  VITE_SUPABASE_PUBLISHABLE_KEY: synthetic-local-only
+  VITE_BASE_PATH: /xs-gym/
+
+jobs:
+  import_app:
+    name: Import app and validation unit checks
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm test
+      - run: npm run build
+      - name: Refuse any production project reference in build
+        run: |
+          if grep -Rq 'knuanihnxtxtyrgvsumq' dist/; then
+            echo 'Production project reference found in isolated build' >&2
+            exit 1
+          fi
+
+  import_db:
+    name: Import synthetic database RLS regression
+    runs-on: ubuntu-24.04
+    env:
+      PG_RUN_AS: runner
+    steps:
+      - uses: actions/checkout@v6
+      - name: Run two-tenant synthetic database tests
+        run: bash tests/db/run.sh
+
+  import_e2e:
+    name: Import isolated ${{ matrix.device }} flow
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        device: [phone, tablet, laptop]
+    env:
+      PG_RUN_AS: runner
+      E2E_OUT: ${{ github.workspace }}/tests/e2e/out
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Install Chromium without external apt mirror dependency
+        run: |
+          python3 -m venv /tmp/import-qa-python
+          /tmp/import-qa-python/bin/pip install --disable-pip-version-check playwright
+          /tmp/import-qa-python/bin/python -m playwright install chromium
+      - name: Run browser suite against fake local gyms only
+        run: |
+          export PATH="/tmp/import-qa-python/bin:$PATH"
+          bash tests/e2e/run.sh "${{ matrix.device }}"
