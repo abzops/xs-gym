@@ -29,6 +29,12 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - name: Install Deno for staff provisioning contract
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - name: Type-check owner-only staff provisioning Edge Function
+        run: deno check supabase/functions/staff-provision/index.ts
       - run: npm run typecheck
       - run: npm run lint
       - run: npm test
