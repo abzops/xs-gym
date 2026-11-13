@@ -97,6 +97,24 @@ assert.ok(Number(await input.evaluate(el => parseFloat(getComputedStyle(el).font
 await dialog.getByRole('button',{name:'Hide keyboard'}).tap();
 assert.equal(await input.count(),0,'Keyboard can close and return to voice mode');
 
+// Regression for a real iPhone screenshot: hold caption and waveform must
+// never paint over each other or the keyboard toggle at narrow widths.
+const assertDockLayout = async () => {
+  const layout = await dialog.evaluate((el) => {
+    const box = (selector) => {
+      const r = el.querySelector(selector)?.getBoundingClientRect();
+      return r ? {left:r.left,right:r.right,top:r.top,bottom:r.bottom,width:r.width} : null;
+    };
+    return {mic:box('.xsai-orb'),caption:box('.xsai-voice-caption'),
+      keyboard:box('.xsai-keyboard-toggle'),waves:box('.xsai-hold-waves')};
+  });
+  const {mic,caption,keyboard,waves}=layout;
+  assert.ok(mic && caption && keyboard && waves, 'Voice dock controls must exist');
+  assert.ok(mic.right + 3 <= caption.left, 'Mic must not overlap caption');
+  assert.ok(caption.right + 3 <= keyboard.left, 'Caption must not overlap keyboard');
+  assert.ok(waves.left >= mic.left && waves.right <= mic.right, 'Waveform must remain inside microphone');
+};
+
 const cdp=await ctx.newCDPSession(page);
 for (let i=0; i<3; i++) {
   const mic=dialog.locator('.xsai-orb'), rect=await mic.boundingBox();
@@ -105,6 +123,7 @@ for (let i=0; i<3; i++) {
   await page.waitForFunction(() => document.querySelector('.xsai-orb')?.getAttribute('aria-pressed') === 'true');
   await page.waitForFunction(n => window.__iosVoice.recorderStarts>=n, i+1);
   assert.equal(uploads.length<=i,true, 'No upload until mic release');
+  await assertDockLayout();
   assert.equal(await page.evaluate(() => window.__iosVoice.nativeStarts),0,
     'iOS must not run browser speech concurrently with MediaRecorder');
   await cdp.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});

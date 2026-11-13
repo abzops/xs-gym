@@ -7,7 +7,7 @@ import { AppearanceControl } from '../../components/Appearance';
 import { Field, Loading, Notice, Sheet, useToast } from '../../components/ui';
 import { formatDate } from '../../lib/dates';
 import { errorMessage } from '../../lib/errors';
-import { rpc } from '../../lib/supabase';
+import { rpc, supabase } from '../../lib/supabase';
 import { ROLE_LABEL, type Role, type StaffRow } from '../../lib/types';
 import { setSpokenReplies, spokenRepliesEnabled } from '../ai/preferences';
 
@@ -141,10 +141,18 @@ function StaffSection() {
           ))}
         </ul>
       )}
-      {manage && <p className="muted" style={{ padding: '0 18px 18px' }}>Staff sign up first; then add them by email.</p>}
+      {manage && <p className="muted" style={{ padding: '0 18px 18px' }}>Owners can invite staff directly by email or create a temporary password. Staff no longer need to sign up first.</p>}
       {adding && <StaffSheet staff={adding === 'new' ? null : adding} onClose={() => setAdding(null)} />}
     </section>
   );
+}
+
+function generateStaffPassword() {
+  // A password must not come from Math.random or be embedded in a URL.
+  const characters = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%';
+  const bytes = new Uint8Array(22);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, (b) => characters[b % characters.length]).join('');
 }
 
 function StaffSheet({ staff, onClose }: { staff: StaffRow | null; onClose: () => void }) {
@@ -154,27 +162,115 @@ function StaffSheet({ staff, onClose }: { staff: StaffRow | null; onClose: () =>
   const [email, setEmail] = useState(staff?.email ?? '');
   const [role, setRole] = useState<Exclude<Role, 'owner'>>((staff?.role as Exclude<Role, 'owner'>) ?? 'reception');
   const [active, setActive] = useState(staff ? staff.status === 'active' : true);
+  const [mode, setMode] = useState<'invite' | 'password' | 'existing'>('invite');
+  const [password, setPassword] = useState('');
+  const [provisioned, setProvisioned] = useState(false);
+  const [savedEmail, setSavedEmail] = useState('');
   const save = useMutation({
-    mutationFn: () => rpc('save_staff', { p_gym: gym.id, p_email: email, p_role: role, p_status: active ? 'active' : 'inactive' }),
-    onSuccess: async () => { await qc.invalidateQueries({ queryKey: ['staff', gym.id] }); toast('Staff saved'); onClose(); },
+    mutationFn: async () => {
+      if (staff) return rpc('save_staff', { p_gym: gym.id, p_email: staff.email, p_role: role, p_status: active ? 'active' : 'inactive' });
+      const { data, error } = await supabase.functions.invoke('staff-provision', {
+        body: { gym_id: gym.id, email: email.trim().toLowerCase(), role, mode,
+          ...(mode === 'password' ? { password } : {}) },
+      });
+      if (error) {
+        let message = errorMessage(error);
+        try {
+          const body = await (error as { context?: Response }).context?.json();
+          if (typeof body?.error === 'string') message = body.error;
+        } catch { /* keep safe fallback */ }
+        throw new Error(message);
+      }
+      if (!data?.ok) throw new Error('Could not provision staff account');
+      return data;
+    },
+    onSuccess: async () => {
+      await qc.invalidateQueries({ queryKey: ['staff', gym.id] });
+      if (staff) { toast('Staff saved'); onClose(); return; }
+      setSavedEmail(email.trim().toLowerCase());
+      setProvisioned(true);
+      toast(mode === 'invite' ? 'Invitation requested' : mode === 'existing' ? 'Staff access added' : 'Staff account created');
+    },
   });
+  const credentials = `XS Gym staff login
+Gym: ${gym.name}
+Email: ${savedEmail}
+Temporary password: ${password}
+Sign in: ${window.location.origin}${import.meta.env.BASE_URL}
+Change your password after signing in. Do not forward these credentials.`;
   return (
     <Sheet title={staff ? 'Edit staff access' : 'Add staff'} onClose={onClose}>
-      <form className="stack lg" onSubmit={(e) => { e.preventDefault(); if (email.trim()) save.mutate(); }}>
-        <Field label="Email they signed up with">
-          <input className="input" type="email" value={email} onChange={(e) => setEmail(e.target.value)} disabled={!!staff} />
-        </Field>
-        <Field label="Role">
-          <select className="input" value={role} onChange={(e) => setRole(e.target.value as Exclude<Role, 'owner'>)}>
-            <option value="reception">Reception</option>
-            <option value="manager">Manager</option>
-            <option value="trainer">Trainer</option>
-          </select>
-        </Field>
-        {staff && <label className="row" style={{ gap: 10 }}><input type="checkbox" checked={active} onChange={(e) => setActive(e.target.checked)} /> Has access</label>}
-        {save.error && <Notice tone="bad">{errorMessage(save.error)}</Notice>}
-        <button className="btn primary block" disabled={!email.trim() || save.isPending}>Save</button>
-      </form>
+      {provisioned ? (
+        <div className="stack lg">
+          <Notice tone="ok">{mode === 'invite'
+            ? `Invitation submitted for ${savedEmail}. Check their inbox and spam folder.`
+            : mode === 'existing' ? 'Existing account added to this gym.'
+            : 'Staff account created. Share these credentials privately, then ask the staff member to change their password.'}</Notice>
+          {mode === 'password' && (
+            <>
+              <Field label="Temporary password — shown once">
+                <input className="input" readOnly value={password} aria-label="Generated temporary password" />
+              </Field>
+              <button type="button" className="btn block" onClick={() => void navigator.clipboard.writeText(credentials).then(
+                () => toast('Login details copied'),
+                () => toast('Could not copy login details', 'bad')
+              )}>Copy login details</button>
+              <a className="btn block" href={`mailto:${encodeURIComponent(savedEmail)}?subject=${encodeURIComponent('XS Gym staff login')}&body=${encodeURIComponent(credentials)}`}>
+                Open email draft
+              </a>
+              <p className="muted">Email drafts are not sent automatically. Sending passwords through email is less secure than an invitation link.</p>
+            </>
+          )}
+          <button type="button" className="btn primary block" onClick={onClose}>Done</button>
+        </div>
+      ) : (
+        <form className="stack lg" onSubmit={(e) => {
+          e.preventDefault();
+          if (email.trim() && (staff || mode !== 'password' || password.length >= 14)) save.mutate();
+        }}>
+          <Field label={staff ? 'Staff email' : 'Staff email address'}>
+            <input className="input" type="email" required autoComplete="email" value={email}
+              onChange={(e) => setEmail(e.target.value)} disabled={!!staff} placeholder="staff@example.com" />
+          </Field>
+          <Field label="Role">
+            <select className="input" value={role} onChange={(e) => setRole(e.target.value as Exclude<Role, 'owner'>)}>
+              <option value="reception">Reception</option>
+              <option value="manager">Manager</option>
+              <option value="trainer">Trainer</option>
+            </select>
+          </Field>
+          {!staff && (
+            <>
+              <Field label="How should the staff member get access?">
+                <select className="input" value={mode} onChange={(e) => { setMode(e.target.value as 'invite' | 'password' | 'existing'); setPassword(''); }}>
+                  <option value="invite">Send email invitation (recommended)</option>
+                  <option value="password">Owner generates a temporary password</option>
+                  <option value="existing">Add an existing XS Gym account</option>
+                </select>
+              </Field>
+              {mode === 'password' && (
+                <div className="stack" style={{gap:8}}>
+                  <Field label="Temporary password">
+                    <input className="input" type="text" readOnly value={password} placeholder="Generate a strong password" />
+                  </Field>
+                  <button type="button" className="btn" onClick={() => setPassword(generateStaffPassword())}>
+                    Generate password
+                  </button>
+                  <p className="muted">You must share the password privately after creating this account. For automatic email delivery, use the invitation option instead.</p>
+                </div>
+              )}
+            </>
+          )}
+          {staff && <label className="row" style={{ gap: 10 }}>
+            <input type="checkbox" checked={active} onChange={(e) => setActive(e.target.checked)} /> Has access
+          </label>}
+          {save.error && <Notice tone="bad">{errorMessage(save.error)}</Notice>}
+          <button className="btn primary block"
+            disabled={!email.trim() || save.isPending || (!staff && mode === 'password' && password.length < 14)}>
+            {save.isPending ? 'Saving…' : staff ? 'Save access' : mode === 'invite' ? 'Send invitation' : mode === 'existing' ? 'Add existing staff' : 'Create staff account'}
+          </button>
+        </form>
+      )}
     </Sheet>
   );
 }

@@ -180,8 +180,16 @@ export function XsAiPanel({ onClose }: { onClose: () => void }) {
           });
           if (error) {
             let msg = errorMessage(error);
-            try { const body = await (error as { context?: Response }).context?.json(); if (body?.error) msg = body.error; }
+            const context = (error as { context?: Response }).context;
+            try { const body = await context?.json(); if (body?.error) msg = body.error; }
             catch { /* not JSON */ }
+            // Don't expose server configuration and provider diagnostics as a
+            // giant red chat bubble. Logs retain the real failure for admins.
+            if (context?.status === 503 || /AI service right now|AI keys in Supabase/i.test(msg)) {
+              msg = next.language === 'ml'
+                ? 'XS AI-ക്ക് ഇപ്പോൾ മറുപടി നൽകാനായില്ല. വീണ്ടും ശ്രമിക്കൂ.'
+                : "XS AI couldn't answer right now. Please try again.";
+            }
             throw new Error(msg);
           }
           const reply = String(data?.reply ?? '');

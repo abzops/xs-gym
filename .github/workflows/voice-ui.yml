@@ -5,7 +5,7 @@ name: XS AI voice UI
 on:
   workflow_dispatch:
   push:
-    branches: [main, 'fix/malayalam-voice-access', 'fix/live-voice-interim-transcription', 'fix/text-only-xs-ai-voice', 'fix/member-payment-edit-delete-archive', 'fix/browser-malayalam-speech-20261112', 'feature/hold-to-talk-browser-voice-20261112', 'feature/xs-ai-minimal-voice-settings-20261112', 'feature/xs-ai-agent-workspace', 'fix/xs-ai-malayalam-mobile-cleanup-20261112', 'feature/draggable-xs-ai-hold-to-talk-20261112', 'fix/xsai-malayalam-error-recovery-20261113', 'fix/xsai-auto-malayalam-repeat-voice-20261113', 'fix/malayalam-real-audio-provider-20261113']
+    branches: [main, 'fix/malayalam-voice-access', 'fix/live-voice-interim-transcription', 'fix/text-only-xs-ai-voice', 'fix/member-payment-edit-delete-archive', 'fix/browser-malayalam-speech-20261112', 'feature/hold-to-talk-browser-voice-20261112', 'feature/xs-ai-minimal-voice-settings-20261112', 'feature/xs-ai-agent-workspace', 'fix/xs-ai-malayalam-mobile-cleanup-20261112', 'feature/draggable-xs-ai-hold-to-talk-20261112', 'fix/xsai-malayalam-error-recovery-20261113', 'fix/xsai-auto-malayalam-repeat-voice-20261113', 'fix/malayalam-real-audio-provider-20261113', 'fix/xsai-voice-layout-provider-503-20261113']
     paths:
       - 'src/features/ai/**'
       - 'src/features/settings/**'
