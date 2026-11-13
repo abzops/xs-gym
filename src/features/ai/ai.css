@@ -322,3 +322,41 @@
   .xsai-voice-zone { min-height: 65px; }
   .xsai-orb { width: 58px; height: 58px; }
 }
+
+/* iPhone voice dock regression guard: three stable columns, no overlapping
+   caption, keyboard or recording bars at 320-390 CSS px and above. */
+.xsai-voice-zone {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr) 46px;
+  column-gap: 12px;
+  align-items: center;
+  justify-content: stretch;
+  width: min(100%, 360px);
+  margin-inline: auto;
+  padding-inline: 4px;
+}
+.xsai-voice-caption {
+  min-width: 0; max-width: 100%; margin-left: 0;
+  font-size: .8rem; line-height: 1.35;
+  text-align: left; overflow-wrap: break-word;
+}
+.xsai-keyboard-toggle { justify-self: end; }
+.xsai-hold-waves {
+  left: 6px; right: 6px; top: 50%;
+  transform: translateY(-50%);
+  justify-content: space-between;
+  opacity: .7;
+}
+.xsai-hold-waves i { background: #fff; }
+.xsai-hold-waves i:nth-child(2),
+.xsai-hold-waves i:nth-child(3) { display: none; }
+.xsai-turn.bad .xsai-bubble {
+  font-size: .81rem; line-height: 1.5;
+  padding: 10px 12px;
+}
+@media (max-width: 380px) {
+  .xsai-voice-zone {
+    grid-template-columns: 66px minmax(0, 1fr) 44px;
+    column-gap: 8px;
+  }
+}
