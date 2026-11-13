@@ -48,7 +48,7 @@ Deno.serve(async (req: Request) => {
     accountId=result.data.user?.id; created=true;
   } else {
     const result = await admin.auth.admin.createUser({email,password:input.password,
-      email_confirm:false,user_metadata:{display_name:email.split('@')[0]}});
+      email_confirm:true,user_metadata:{display_name:email.split('@')[0]}});
     if (result.error) return respond(400,{error:result.error.message.includes('already') ?
       'This email already has an account. Do not reset their password; add their existing account.' :
       'Could not create staff login.'});
