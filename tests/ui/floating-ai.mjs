@@ -7,28 +7,13 @@ import { REF, gym, session, body } from './mock.mjs';
 
 const { chromium } = createRequire(import.meta.url)(process.argv[2]);
 const baseUrl = process.argv[3];
-const browser = await chromium.launch();
+const browser = await chromium.launch({ executablePath: process.argv[4] || undefined });
 const ctx = await browser.newContext({
   viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true,
 });
 await ctx.addInitScript(([key, value]) => {
   localStorage.setItem(key, value);
 }, ['sb-' + REF + '-auth-token', JSON.stringify(session)]);
-await ctx.addInitScript(() => {
-  window.__floatSpeech = { count: 0, current: null, stopped: 0 };
-  class MockRecognition {
-    lang = ''; interimResults = false; continuous = false; maxAlternatives = 1;
-    onresult = null; onend = null; onerror = null;
-    start() { window.__floatSpeech.count++; window.__floatSpeech.current = this; }
-    stop() { window.__floatSpeech.stopped++; queueMicrotask(() => this.onend?.()); }
-    abort() { queueMicrotask(() => this.onend?.()); }
-  }
-  window.SpeechRecognition = MockRecognition;
-  window.webkitSpeechRecognition = MockRecognition;
-  window.__floatEmit = (text) => window.__floatSpeech.current?.onresult?.({
-    results: [{ 0: { transcript: text }, length: 1, isFinal: true }],
-  });
-});
 const messages = [];
 await ctx.route('https://' + REF + '.supabase.co/**', async (route) => {
   const req = route.request();
@@ -129,49 +114,10 @@ assert.ok(rotated && rotated.x >= 0 && rotated.y >= 0 &&
 await page.setViewportSize({ width: 390, height: 844 });
 await page.waitForTimeout(170);
 
-// A short finger tap opens the chat directly and makes mic ready for a hold.
+// A short finger tap opens the chat; the chat itself is covered by tests/ui/xs-ai.mjs.
 await float.tap();
 await dialog.waitFor();
-assert.equal(await dialog.locator('.xsai-orb').count(), 1);
-assert.equal(await dialog.locator('.xsai-voice-zone > .xsai-orb').count(), 1,
-  'Microphone is a dedicated control outside the typing composer');
-assert.equal(await dialog.locator('.xsai-composer .xsai-orb').count(), 0);
-assert.equal(await dialog.locator('.xsai-composer').count(), 0,
-  'Typing box must be hidden until keyboard icon is pressed');
-await dialog.getByRole('button', { name: 'Open keyboard' }).tap();
-const inputSize = await dialog.locator('.xsai-type input').evaluate((el) =>
-  parseFloat(getComputedStyle(el).fontSize));
-await dialog.getByRole('button', { name: 'Hide keyboard' }).tap();
-assert.ok(inputSize >= 16, 'iOS Safari text input must be >=16px to avoid focus zoom');
-const mic = dialog.locator('.xsai-orb');
-assert.equal(await mic.evaluate((el) => getComputedStyle(el).touchAction), 'none');
-assert.equal(await mic.evaluate((el) => getComputedStyle(el).webkitUserSelect), 'none');
-const micBox = await mic.boundingBox();
-assert.ok(micBox.width >= 58 && micBox.height >= 58, 'Mic must have a dedicated thumb-sized target');
-await page.screenshot({ path: '/tmp/xs-ai-floating-screens/03-chat-with-dedicated-mic.png' });
-await touchDown(micBox, 12);
-await page.waitForFunction(() => document.querySelector('.xsai-orb')?.getAttribute('aria-pressed') === 'true');
-assert.ok(await dialog.locator('.xsai-voice-zone .xsai-orb.listening').isVisible());
-assert.equal(await page.evaluate(() => window.getSelection()?.toString() ?? ''), '',
-  'Holding the mic must not select page text');
-const noOverlap = await page.evaluate(() => {
-  const waves = document.querySelector('.xsai-hold-waves')?.getBoundingClientRect();
-  const caption = document.querySelector('.xsai-voice-caption')?.getBoundingClientRect();
-  return !!waves && !!caption && waves.right + 3 <= caption.left;
-});
-assert.ok(noOverlap, 'Recording animation must not overlap the release label');
-await page.evaluate(() => window.__floatEmit('How many active members?'));
-await page.waitForFunction(() => document.querySelector('.xsai-live-transcript')?.textContent === 'How many active members?');
-assert.equal(messages.length, 0, 'Voice command must not send before finger release');
-await page.screenshot({ path: '/tmp/xs-ai-floating-screens/04-while-holding-mic.png' });
-await touchUp();
-await page.waitForFunction(() => document.querySelector('.xsai-orb')?.getAttribute('aria-pressed') === 'false');
-await page.waitForFunction(() => document.querySelectorAll('.xsai-turn.user').length === 1 &&
-  !!document.querySelector('.xsai-turn.assistant .xsai-bubble:not(.xsai-dots)'));
-assert.equal(messages.length, 1, 'Release must send exactly one command');
-assert.equal(messages[0].messages.at(-1).content, 'How many active members?');
-assert.equal(await dialog.locator('.xsai-voice-zone .xsai-orb.listening').count(), 0);
-assert.ok(!errors.length, errors.join(' | '));
-console.log('XS AI floating launcher: drag, dock, persist, navigate, rotate, accessibility, mic touch/zoom and single release-send PASS');
-await ctx.close();
+assert.equal(await dialog.getByRole('button', { name: 'Talk to XS AI' }).count(), 1);
+assert.deepEqual(errors, []);
 await browser.close();
+console.log('XS AI FLOATING LAUNCHER OK');

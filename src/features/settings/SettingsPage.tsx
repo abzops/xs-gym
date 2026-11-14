@@ -1,7 +1,7 @@
 import { staffQuery } from '../../lib/sections';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { UserPlus } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useGym } from '../../app/gym';
 import { AppearanceControl } from '../../components/Appearance';
 import { Field, Loading, Notice, Sheet, useToast } from '../../components/ui';
@@ -9,9 +9,6 @@ import { formatDate } from '../../lib/dates';
 import { errorMessage } from '../../lib/errors';
 import { rpc } from '../../lib/supabase';
 import { ROLE_LABEL, type Role, type StaffRow } from '../../lib/types';
-import { setSpokenReplies, spokenRepliesEnabled } from '../ai/preferences';
-
-import { sarvamReadiness, type SarvamReadiness } from '../ai/sarvamStatus';
 
 export function SettingsPage() {
   const { can, subscription } = useGym();
@@ -22,7 +19,6 @@ export function SettingsPage() {
         <h2>Appearance</h2>
         <AppearanceControl />
       </section>
-      <SpokenRepliesSetting />
       {can('gym.settings') && <GymSettings />}
       <StaffSection />
       <section className="card stack">
@@ -36,48 +32,6 @@ export function SettingsPage() {
         ) : <p className="muted">No subscription found.</p>}
       </section>
     </div>
-  );
-}
-
-function SpokenRepliesSetting() {
-  const [enabled, setEnabled] = useState(spokenRepliesEnabled);
-  const [speechReady, setSpeechReady] = useState<SarvamReadiness | null>(null);
-  useEffect(() => {
-    let active = true;
-    void sarvamReadiness().then((value) => { if (active) setSpeechReady(value); });
-    return () => { active = false; };
-  }, []);
-  return (
-    <section className="card" aria-label="XS AI settings">
-      <div className="row between" style={{ alignItems: 'center', gap: 16 }}>
-        <div className="stack" style={{ gap: 4 }}>
-          <h2>XS AI</h2>
-          <label htmlFor="xs-ai-spoken-replies">Spoken replies</label>
-          <span className="muted" style={{ fontSize: 13 }}>Off by default · this device only</span>
-        </div>
-        <input id="xs-ai-spoken-replies" type="checkbox" role="switch"
-          checked={enabled} aria-label="XS AI spoken replies"
-          onChange={(event) => {
-            const next = event.target.checked;
-            setSpokenReplies(next);
-            setEnabled(next);
-          }} />
-      </div>
-      <div className="stack" style={{ gap: 5, marginTop: 16, paddingTop: 16, borderTop: '1px solid var(--hair)' }}>
-        <strong style={{ fontSize: 14 }}>Malayalam voice</strong>
-        <span className="muted" style={{ fontSize: 13 }}>
-          Works automatically when you hold the microphone. On iPhones, Sarvam AI
-          transcribes Malayalam securely; on other browsers it is used when
-          built-in recognition fails. Audio is captured only during your hold,
-          never in the background. No additional setting is needed.
-        </span>
-        <span className="muted" role="status" style={{ fontSize: 12 }}>
-          {!speechReady ? 'Checking speech service…' : speechReady.ready
-            ? 'Malayalam speech service ready.'
-            : 'Malayalam voice service unavailable. Contact your administrator.'}
-        </span>
-      </div>
-    </section>
   );
 }
 

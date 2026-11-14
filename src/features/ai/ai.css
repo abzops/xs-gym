@@ -1,324 +1,147 @@
-/* XS AI — an elevated, text-first agent workspace. The microphone only
-   signals an actively held gesture; response speech remains opt-in in Settings.
-   All surfaces follow XS Gym's Carbon / Porcelain design system. */
+/* XS AI — a calm chat with one microphone and clear Approve / Cancel cards.
+   Follows XS Gym's Carbon / Porcelain tokens; works in light and dark. */
 
 .overlay:has(.xsai) .sheet {
-  display: flex; flex-direction: column; height: min(92dvh, 900px); overflow: hidden;
-  background: var(--paper); padding: 8px 16px calc(16px + env(safe-area-inset-bottom));
+  display: flex; flex-direction: column; height: min(92dvh, 860px); overflow: hidden;
+  padding: 8px 14px calc(12px + env(safe-area-inset-bottom));
 }
-/* Do not fade the whole interactive layer from opacity 0: mobile browsers
-   can skip its hit testing during that first frame, losing immediate taps. */
-.overlay:has(.xsai) .sheet, .overlay:has(.xsai) .backdrop {
-  animation: none !important;
-  opacity: 1;
-}
+/* Interactive from the first frame: mobile browsers can skip hit testing on a fading layer. */
+.overlay:has(.xsai) .sheet, .overlay:has(.xsai) .backdrop { animation: none !important; opacity: 1; }
 .overlay:has(.xsai) .sheet-grab { flex: none; }
-.overlay:has(.xsai) .sheet-head {
-  margin-bottom: 12px; padding: 0 4px 12px; border-bottom: 1px solid var(--hair);
+.overlay:has(.xsai) .sheet-head { margin-bottom: 4px; padding: 0 4px 10px; }
+.overlay:has(.xsai) .sheet-head h2 { font-size: 1.075rem; letter-spacing: -.03em; }
+@media (min-width: 720px) {
+  .overlay:has(.xsai) .sheet { max-width: 560px; height: min(86dvh, 780px); padding: 18px 20px 18px; }
 }
-.overlay:has(.xsai) .sheet-head h2 { font-size: 1.075rem; letter-spacing: -.035em; }
 
-.xsai { display: flex; flex-direction: column; gap: 0; flex: 1; min-height: 0; color: var(--ink); }
-.xsai-new {
-  width: 36px; height: 36px; display: grid; place-items: center; flex: none;
-  border: 1px solid var(--hair); border-radius: 11px;
-  background: var(--paper); color: var(--ink); cursor: pointer;
-  transition: transform 150ms var(--ease-out), background 150ms ease;
-}
-.xsai-new:disabled { opacity: .4; cursor: not-allowed; }
-.xsai-new:active:not(:disabled) { transform: scale(.92); }
-@media (hover: hover) { .xsai-new:hover:not(:disabled) { background: var(--paper-2); } }
+.xsai { display: flex; flex-direction: column; flex: 1; min-height: 0; color: var(--ink); }
 
-/* One XS AI title is provided by the sheet; keep language control compact. */
-.xsai-locale-row {
-  display: flex; justify-content: flex-end; align-items: center;
-  padding: 3px 3px 0; gap: 10px; flex: none;
+/* ---- top row ---- */
+.xsai-top { display: flex; align-items: center; justify-content: flex-end; gap: 8px; padding: 0 2px 10px; flex: none; }
+.xsai-chip-btn {
+  margin-right: auto; display: inline-flex; align-items: center; gap: 5px; height: 32px; padding: 0 11px;
+  border: 1px solid var(--hair); border-radius: 999px; background: var(--paper); color: var(--graphite);
+  font: 600 13px/1 var(--font); cursor: pointer;
 }
-.xsai-locale-row .xsai-new {
-  margin-right: auto; border-color: transparent; background: transparent;
+.xsai-chip-btn:disabled { opacity: .45; }
+.xsai-lang { display: inline-flex; padding: 3px; border-radius: 999px; background: var(--paper-2); }
+.xsai-lang button {
+  height: 28px; padding: 0 12px; border: 0; border-radius: 999px; background: transparent;
+  color: var(--graphite); font: 600 13px/1 var(--font); cursor: pointer; transition: background 140ms ease, color 140ms ease;
 }
-.xsai-locale-row .segmented { max-width: 100%; }
+.xsai-lang button[aria-pressed="true"] { background: var(--paper); color: var(--ink); box-shadow: 0 1px 3px rgb(0 0 0 / 12%); }
+[data-theme="dark"] .xsai-lang button[aria-pressed="true"] { background: #48484A; }
 
-/* The conversation is the center of the workspace. */
+/* ---- conversation ---- */
 .xsai-log {
   flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain;
-  display: flex; flex-direction: column; gap: 16px; padding: 16px 5px 22px;
-  scrollbar-width: thin; scrollbar-color: var(--hair-strong) transparent;
+  display: flex; flex-direction: column; gap: 10px; padding: 6px 2px 14px; scrollbar-width: thin;
 }
-.xsai-log::-webkit-scrollbar { width: 4px; }
-.xsai-log::-webkit-scrollbar-thumb { background: var(--hair-strong); border-radius: 999px; }
-
-/* A quiet, distinctive first impression. Quick prompts are real read-only
-   AI questions, not fake buttons or predetermined data. */
-.xsai-welcome {
-  margin: auto 0; display: flex; flex-direction: column; align-items: center;
-  text-align: center; padding: 8px 0 4px; min-height: max-content;
-}
-.xsai-welcome-visual {
-  position: relative; display: grid; place-items: center;
-  width: 164px; height: 164px; margin-bottom: 6px;
-  background: radial-gradient(circle at center,
-    color-mix(in srgb, #8c80fa 8%, var(--paper)) 0%, transparent 68%);
-}
-.xsai-orbit { position: absolute; border-radius: 50%; pointer-events: none; }
-.xsai-orbit-outer {
-  inset: 11px; border: 1px solid color-mix(in srgb, var(--ink) 12%, transparent);
-  border-left-color: color-mix(in srgb, #8d81ff 50%, transparent);
-  animation: xsai-ambient 22s linear infinite;
-}
-.xsai-orbit-inner {
-  inset: 31px; border: 1px dashed color-mix(in srgb, var(--ink) 12%, transparent);
-  animation: xsai-ambient 30s linear infinite reverse;
-}
-.xsai-welcome-mark {
-  position: relative; display: grid; place-items: center;
-  width: 76px; height: 76px; border-radius: 26px;
-  color: #F8F8FA;
-  background: radial-gradient(circle at 30% 22%, #4A485C, #202025 68%, #111115);
-  box-shadow: inset 0 1px 1px rgb(255 255 255 / 25%), 0 12px 28px rgb(0 0 0 / 20%),
-    0 0 0 5px color-mix(in srgb, var(--ink) 3%, transparent);
-}
-.xsai-welcome-mark::after {
-  content: ""; position: absolute; inset: -11px; border-radius: 35px;
-  border: 1px solid color-mix(in srgb, var(--ink) 9%, transparent);
-}
-.xsai-kicker { color: var(--graphite); font-size: .66rem; font-weight: 800; letter-spacing: .18em; }
-.xsai-welcome h3 {
-  font-size: clamp(1.35rem, 4.6vw, 1.85rem); font-weight: 750;
-  line-height: 1.22; letter-spacing: -.055em; margin: 10px 0 8px;
-  text-wrap: balance;
-}
-.xsai-welcome-sub { color: var(--graphite); font-size: .81rem; line-height: 1.5; }
-.xsai-shortcuts { display: grid; grid-template-columns: 1fr; gap: 8px; width: min(100%, 450px); margin-top: 30px; }
-.xsai-shortcut {
-  border: 1px solid var(--hair); border-radius: 16px; background: var(--paper);
-  box-shadow: var(--elev-1);
-  display: flex; align-items: center; gap: 11px; min-height: 55px;
-  text-align: left; padding: 8px 12px; color: var(--ink); font-size: .82rem;
-  font-weight: 650; cursor: pointer;
-  transition: transform 150ms var(--ease-out), box-shadow 150ms ease, border-color 150ms ease;
-}
-.xsai-shortcut:active { transform: scale(.985); }
-.xsai-shortcut-icon {
-  display: grid; place-items: center; width: 34px; height: 34px; flex: none;
-  border-radius: 11px; background: var(--paper-2); color: var(--ink);
-}
-.xsai-shortcut-arrow { margin-left: auto; flex: none; transform: rotate(45deg); color: var(--graphite); opacity: .55; }
-@media (hover: hover) {
-  .xsai-shortcut:hover { transform: translateY(-2px); box-shadow: var(--elev-2); border-color: var(--hair-strong); }
-  .xsai-shortcut:hover .xsai-shortcut-arrow { opacity: 1; }
-}
-
-/* Role-aware messages: assistant replies have an agent signature and optional
-   auditable completed-action receipts. No fictional tool activity is shown. */
-.xsai-turn { display: flex; align-items: flex-start; gap: 9px; min-width: 0; animation: xsai-enter 220ms var(--ease-out) both; }
-.xsai-turn.user { justify-content: flex-end; }
-.xsai-turn-body { display: flex; flex-direction: column; align-items: flex-start; gap: 7px; min-width: 0; max-width: calc(100% - 45px); }
-.xsai-turn.user .xsai-turn-body { align-items: flex-end; max-width: 86%; }
-.xsai-turn-avatar {
-  flex: none; width: 30px; height: 30px; border-radius: 11px; display: grid; place-items: center;
-  color: #fff; background: #24242B;
-  box-shadow: inset 0 1px 0 rgb(255 255 255 / 14%);
-  margin-top: 2px;
-}
-.xsai-bubble {
-  padding: 13px 15px; border-radius: 18px; font-size: .91rem; line-height: 1.62;
-  white-space: pre-wrap; overflow-wrap: anywhere; max-width: 100%; min-width: 0;
-  background: var(--paper); color: var(--ink); border: 1px solid var(--hair);
-  box-shadow: 0 3px 13px rgb(0 0 0 / 3%);
-}
-.xsai-turn.user .xsai-bubble {
-  color: var(--on-primary); background: var(--primary); border-color: transparent;
-  border-bottom-right-radius: 6px; box-shadow: none;
-}
-.xsai-turn.assistant .xsai-bubble { border-bottom-left-radius: 6px; }
-.xsai-turn.bad .xsai-bubble { color: var(--bad); background: var(--bad-bg); border-color: transparent; }
-.xsai-copy {
-  background: none; border: 0; color: var(--graphite); cursor: pointer; padding: 4px 5px;
-  display: inline-flex; align-items: center; gap: 6px; font-size: .69rem; font-weight: 600; border-radius: 7px;
-}
-.xsai-copy:active { background: var(--paper-2); }
-@media (hover: hover) { .xsai-copy:hover { background: var(--paper-2); color: var(--ink); } }
-
-/* Actual backend actions, with reversibility preserved. */
-.xsai-action {
-  display: flex; align-items: center; gap: 10px; width: min(100%, 430px);
-  padding: 11px 12px; border: 1px solid var(--hair); border-radius: 14px;
-  background: var(--paper); box-shadow: var(--elev-1);
-}
-.xsai-action-ico {
-  display: grid; place-items: center; width: 28px; height: 28px; flex: none;
-  border-radius: 10px; background: var(--ok-bg); color: var(--ok);
-}
-.xsai-action.bad .xsai-action-ico { background: var(--bad-bg); color: var(--bad); }
-.xsai-action.undone .xsai-action-ico { background: var(--paper-2); color: var(--graphite); }
-.xsai-action-content { flex: 1; display: grid; gap: 1px; min-width: 0; }
-.xsai-action-status { font-size: .62rem; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; color: var(--ok); }
-.xsai-action.bad .xsai-action-status { color: var(--bad); }
-.xsai-action.undone .xsai-action-status { color: var(--graphite); }
-.xsai-action-text { font-size: .77rem; font-weight: 550; line-height: 1.45; overflow-wrap: anywhere; }
-.xsai-undo {
-  flex: none; display: inline-flex; align-items: center; gap: 4px;
-  border: 0; border-radius: 8px; background: var(--paper-2);
-  font-size: .71rem; font-weight: 700; padding: 8px; cursor: pointer;
-}
-.xsai-undo:active { transform: scale(.96); }
-
-/* Agent working indicator lives in the transcript, never on the microphone. */
-.xsai-dots { display: inline-flex; gap: 5px; align-items: center; min-height: 37px; }
-.xsai-dots i { width: 6px; height: 6px; border-radius: 50%; background: var(--graphite); animation: xsai-dot 1.15s ease-in-out infinite; }
-.xsai-dots i:nth-child(2) { animation-delay: 150ms; }
-.xsai-dots i:nth-child(3) { animation-delay: 300ms; }
-@keyframes xsai-dot { 0%, 80%, 100% { opacity: .25; transform: translateY(0); } 40% { opacity: 1; transform: translateY(-3px); } }
-@keyframes xsai-enter { from { opacity: 0; transform: translateY(5px); } }
-@keyframes xsai-ambient { to { transform: rotate(360deg); } }
-@keyframes xsai-pulse { 50% { opacity: .35; } }
-
-/* Dedicated voice control, separate from the text input. Touch-action:none
-   stops Safari callouts/selection and accidental double-tap zoom on long press.
-   Never disable pinch zoom on the rest of the app. */
-.xsai-controls { display: grid; gap: 8px; padding: 7px 2px 2px; flex: none; border-top: 1px solid var(--hair); }
-.xsai-voice-zone {
-  min-height: 76px; display: flex; align-items: center; justify-content: center; gap: 15px;
-  -webkit-user-select: none; user-select: none; -webkit-touch-callout: none;
-}
-.xsai-voice-caption {
-  font-size: .77rem; font-weight: 700; letter-spacing: -.01em;
-  color: var(--graphite); min-width: 98px; margin-left: 20px; pointer-events: none;
-  /* Reserve space for the recording waveform even while it is hidden. */
-}
-/* Voice-first composer. Typing is an optional keyboard icon, not an
-   always-present input. CSS only applies inside XS AI's sheet. */
-.xsai-keyboard-toggle {
-  flex: none; display: grid; place-items: center;
-  width: 46px; height: 46px; border-radius: 16px;
-  border: 1px solid var(--hair-strong); background: var(--paper);
-  color: var(--graphite); cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
-  touch-action: manipulation; transition: transform 130ms ease, background 130ms ease;
-}
-.xsai-keyboard-toggle:active { transform: scale(.94); }
-.xsai-keyboard-toggle.is-active { color: var(--ink); background: var(--paper-2); }
-.xsai-keyboard-toggle:focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
-.xsai-keyboard-toggle:disabled { opacity: .55; cursor: default; }
-.xsai-live-transcript {
-  max-width: min(100%, 400px); min-height: 30px; padding: 7px 12px;
-  align-self: center; border-radius: 15px;
-  background: var(--paper-2); color: var(--ink);
-  overflow-wrap: anywhere; font-size: 14px; text-align: center;
-  animation: xsai-live-appear 150ms ease-out both;
-}
-@keyframes xsai-live-appear {
-  from { opacity: .6; transform: translateY(3px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-@media (max-width: 380px) {
-  .xsai-voice-zone { gap: 9px; }
-  .xsai-voice-caption { margin-left: 12px; min-width: 90px; }
-  .xsai-keyboard-toggle { width: 44px; height: 44px; }
-}
-.xsai-composer {
-  display: flex; align-items: center; gap: 8px;
-  background: var(--paper); border: 1px solid var(--hair-strong);
-  box-shadow: 0 3px 13px rgb(0 0 0 / 4%);
-  border-radius: 22px; min-height: 54px; padding: 5px 8px;
-}
+.xsai-hello { margin: auto 0; display: flex; flex-direction: column; align-items: center; text-align: center; gap: 8px; padding: 18px 8px; }
 .xsai-orb {
-  position: relative; isolation: isolate; flex: none;
-  display: grid; place-items: center; width: 66px; height: 66px;
-  border-radius: 50%; border: 1px solid rgb(255 255 255 / 25%);
-  color: #fff; background: linear-gradient(140deg, #4b4667, #17171c 72%);
-  box-shadow: 0 4px 15px rgb(0 0 0 / 17%), inset 0 1px 1px rgb(255 255 255 / 22%);
-  cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
-  -webkit-user-select: none; user-select: none; -webkit-touch-callout: none;
-  touch-action: none;
-  transition: transform 140ms ease, box-shadow 160ms ease, background 140ms ease;
+  display: grid; place-items: center; width: 62px; height: 62px; border-radius: 22px; margin-bottom: 6px;
+  color: #fff; background: linear-gradient(145deg, #3a3850, #111116 80%);
+  box-shadow: 0 10px 28px rgb(80 70 200 / 25%), inset 0 1px 1px rgb(255 255 255 / 25%);
 }
-.xsai-orb > * { pointer-events: none; -webkit-user-select: none; user-select: none; }
-.xsai-orb:focus-visible { outline: 3px solid var(--focus); outline-offset: 4px; }
-.xsai-orb-glow {
-  display: block; position: absolute; inset: -5px; z-index: -1; opacity: .36;
-  border-radius: 50%; background: conic-gradient(#a7a1ff, #66d4e8, #e2a0e8, #a7a1ff);
-  filter: blur(6px); animation: xsai-ambient 8s linear infinite;
+.xsai-hello h3 { font-size: 1.45rem; letter-spacing: -.035em; }
+.xsai-hello p { color: var(--graphite); font-size: 15px; line-height: 1.45; max-width: 330px; }
+.xsai-chips { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin-top: 10px; }
+.xsai-chips button {
+  padding: 10px 14px; border: 1px solid var(--hair); border-radius: 999px; background: var(--paper);
+  color: var(--ink); font: 600 14px/1.2 var(--font); cursor: pointer; transition: transform 120ms ease, background 120ms ease;
 }
-.xsai-orb.listening {
-  transform: scale(1.09);
-  color: #fff; background: linear-gradient(140deg, #7a6edc, #3c3183 90%);
-  box-shadow: 0 0 0 6px rgb(138 122 250 / 12%), 0 7px 22px rgb(94 72 191 / 25%);
-}
-.xsai-orb.listening .xsai-orb-glow { opacity: .84; filter: blur(7px); }
-.xsai-hold-waves {
-  display: none; position: absolute; align-items: center; gap: 3px;
-  left: calc(100% + 10px); top: 50%; transform: translateY(-50%);
-}
-.xsai-orb.listening .xsai-hold-waves { display: flex; }
-.xsai-hold-waves i {
-  display: block; width: 3px; height: 10px; border-radius: 5px;
-  background: #8a79f4; animation: xsai-wave 720ms ease-in-out infinite alternate;
-}
-.xsai-hold-waves i:nth-child(2) { animation-delay: 140ms; }
-.xsai-hold-waves i:nth-child(3) { animation-delay: 280ms; }
-.xsai-hold-waves i:nth-child(4) { animation-delay: 420ms; }
-@keyframes xsai-wave { to { height: 25px; } }
-.xsai-type { flex: 1; display: flex; align-items: center; gap: 6px; min-width: 0; }
-.xsai-type .input {
-  flex: 1; min-width: 0; min-height: 44px; padding: 0 5px; background: transparent;
-  box-shadow: none; border: 0; border-radius: 0; font-size: 16px;
-}
-.xsai-type .input:focus, .xsai-type .input:hover { background: transparent; box-shadow: none; outline: 0; }
-.xsai-type .input::placeholder { color: var(--graphite); opacity: .78; }
-.xsai-send {
-  flex: none; display: grid; place-items: center;
-  width: 40px; height: 40px; border-radius: 14px; border: 0;
-  background: var(--primary); color: var(--on-primary); cursor: pointer;
-  transition: transform 120ms var(--ease-out), opacity 120ms ease;
-}
-.xsai-send:not(:disabled):active { transform: scale(.93); }
-.xsai-send:disabled { opacity: .24; cursor: not-allowed; }
-.xsai-inline-issue {
-  display: flex; flex-wrap: wrap; align-items: center; gap: 10px;
-  color: var(--graphite); font-size: .71rem; padding: 2px 7px;
-}
-.xsai-inline-issue button { color: var(--ink); background: none; border: 0; padding: 3px; font: inherit; text-decoration: underline; cursor: pointer; }
-.xsai-inline-issue button:last-child { display: inline-grid; place-items: center; text-decoration: none; }
+.xsai-chips button:active { transform: scale(.96); }
+@media (hover: hover) { .xsai-chips button:hover { background: var(--paper-2); } }
+.xsai-hello .xsai-try { font-size: 13px; margin-top: 6px; }
 
-@media (min-width: 720px) {
-  .overlay:has(.xsai) .sheet { max-width: 640px; height: min(88dvh, 825px); padding: 20px 26px 22px; }
-  .xsai-log { padding-inline: 9px; }
-  /* Keep the complete agent orb visible within the desktop dialog. */
-  .xsai-welcome-visual { width: 136px; height: 136px; }
-  .xsai-shortcuts { margin-top: 18px; }
-  .xsai-welcome h3 { margin-top: 7px; }
+.xsai-msg { display: flex; flex-direction: column; gap: 8px; max-width: 100%; animation: xsai-in 220ms var(--ease-out) both; }
+.xsai-msg.user { align-items: flex-end; }
+.xsai-msg.assistant { align-items: flex-start; }
+@keyframes xsai-in { from { opacity: 0; transform: translateY(6px); } }
+.xsai-bubble {
+  max-width: 86%; padding: 10px 14px; border-radius: 20px; font-size: 16px; line-height: 1.45;
+  white-space: pre-wrap; overflow-wrap: anywhere;
 }
-@media (max-width: 390px) {
-  .xsai-welcome-visual { width: 127px; height: 127px; margin-bottom: 2px; }
-  .xsai-welcome-mark { width: 65px; height: 65px; border-radius: 22px; }
-  .xsai-shortcuts { margin-top: 18px; }
-  .xsai-shortcut { min-height: 49px; }
+.xsai-msg.user .xsai-bubble { background: var(--primary); color: var(--on-primary); border-bottom-right-radius: 6px; }
+.xsai-msg.assistant .xsai-bubble { background: var(--paper-2); color: var(--ink); border-bottom-left-radius: 6px; }
+.xsai-msg.bad .xsai-bubble { background: var(--bad-bg); color: var(--bad); }
+.xsai-voice-tag { display: inline-block; vertical-align: -1px; margin-right: 6px; opacity: .7; }
+.xsai-dots { display: inline-flex; gap: 4px; padding: 4px 2px; }
+.xsai-dots i { width: 7px; height: 7px; border-radius: 50%; background: currentColor; opacity: .35; animation: xsai-dot 1s infinite ease-in-out; }
+.xsai-dots i:nth-child(2) { animation-delay: .15s; } .xsai-dots i:nth-child(3) { animation-delay: .3s; }
+@keyframes xsai-dot { 40% { opacity: 1; transform: translateY(-3px); } }
+
+/* ---- approval cards ---- */
+.xsai-approval { width: 100%; display: flex; flex-direction: column; gap: 8px; }
+.xsai-card {
+  display: flex; align-items: flex-start; gap: 12px; padding: 13px 14px; border-radius: 18px;
+  background: var(--paper); border: 1px solid var(--hair-strong); box-shadow: 0 2px 10px rgb(0 0 0 / 5%);
 }
-@media (max-height: 660px) {
-  .xsai-welcome-visual { width: 104px; height: 104px; }
-  .xsai-welcome-mark { width: 62px; height: 62px; }
-  .xsai-shortcuts { margin-top: 16px; }
+.xsai-card-icon { flex: none; display: grid; place-items: center; width: 36px; height: 36px; border-radius: 12px; background: var(--paper-2); color: var(--ink); }
+.xsai-card.danger .xsai-card-icon { background: var(--warn-bg); color: var(--warn); }
+.xsai-card.ok .xsai-card-icon { background: var(--ok-bg); color: var(--ok); }
+.xsai-card.failed .xsai-card-icon { background: var(--bad-bg); color: var(--bad); }
+.xsai-card.undone { opacity: .55; }
+.xsai-card-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.xsai-card-body strong { font-size: 13px; letter-spacing: .01em; color: var(--graphite); font-weight: 700; text-transform: none; }
+.xsai-card-body span { font-size: 15px; line-height: 1.35; color: var(--graphite); overflow-wrap: anywhere; }
+.xsai-card-body span.lead { font-size: 17px; font-weight: 700; color: var(--ink); letter-spacing: -.01em; }
+.xsai-card-body span.err { color: var(--bad); font-size: 14px; }
+.xsai-undo {
+  align-self: center; flex: none; display: inline-flex; align-items: center; gap: 5px; height: 32px; padding: 0 11px;
+  border: 1px solid var(--hair); border-radius: 999px; background: var(--paper); color: var(--ink); font: 600 13px/1 var(--font); cursor: pointer;
 }
+.xsai-undone { align-self: center; font-size: 13px; color: var(--graphite); }
+.xsai-decide { display: grid; grid-template-columns: 1fr 1.6fr; gap: 8px; margin-top: 2px; }
+.xsai-decide button {
+  height: 50px; border-radius: 15px; font: 700 16px/1 var(--font); cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center; gap: 7px; transition: transform 110ms ease, filter 110ms ease;
+}
+.xsai-decide button:active { transform: scale(.97); }
+.xsai-no { border: 1px solid var(--hair-strong); background: var(--paper); color: var(--ink); }
+.xsai-yes { border: 0; background: #1f9d4a; color: #fff; box-shadow: 0 6px 16px rgb(31 157 74 / 28%); }
+[data-theme="dark"] .xsai-yes { background: #30b85a; }
+@media (hover: hover) { .xsai-yes:hover { filter: brightness(1.06); } .xsai-no:hover { background: var(--paper-2); } }
+.xsai-status { display: flex; align-items: center; gap: 8px; padding: 4px 4px 0; font-size: 14px; font-weight: 600; color: var(--ink); }
+.xsai-status.muted { color: var(--graphite); }
+.xsai-spin { width: 16px; height: 16px; border-radius: 50%; border: 2px solid var(--hair-strong); border-top-color: var(--ink); animation: xsai-rot .7s linear infinite; }
+@keyframes xsai-rot { to { transform: rotate(1turn); } }
+
+/* ---- composer ---- */
+.xsai-composer, .xsai-recbar {
+  flex: none; display: flex; align-items: center; gap: 8px; padding: 6px; border-radius: 26px;
+  background: var(--paper-2); border: 1px solid var(--hair);
+}
+.xsai-composer input {
+  flex: 1; min-width: 0; height: 44px; padding: 0 12px; border: 0; outline: 0; background: transparent;
+  color: var(--ink); font: 500 16px/1 var(--font);
+}
+.xsai-composer input::placeholder { color: var(--graphite); }
+.xsai-mic, .xsai-send, .xsai-rec-send, .xsai-rec-cancel {
+  flex: none; display: grid; place-items: center; width: 46px; height: 46px; border-radius: 50%; border: 0; cursor: pointer;
+  -webkit-tap-highlight-color: transparent; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; touch-action: manipulation;
+  transition: transform 110ms ease, opacity 110ms ease;
+}
+.xsai-mic, .xsai-send, .xsai-rec-send { background: var(--primary); color: var(--on-primary); }
+.xsai-mic { background: linear-gradient(145deg, #4b45c9, #1d1b3a); color: #fff; box-shadow: 0 6px 16px rgb(75 69 201 / 30%); }
+.xsai-mic:active, .xsai-send:active, .xsai-rec-send:active { transform: scale(.92); }
+.xsai-mic:disabled, .xsai-send:disabled { opacity: .45; }
+.xsai-rec-cancel { background: var(--paper); color: var(--ink); border: 1px solid var(--hair); }
+
+.xsai-recbar { --lvl: 0; border-color: rgb(75 69 201 / 40%); box-shadow: 0 0 0 4px rgb(75 69 201 / 10%); }
+.xsai-rec-mid { flex: 1; min-width: 0; display: flex; align-items: center; gap: 10px; }
+.xsai-rec-mid span { font-size: 13px; font-weight: 600; color: var(--graphite); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.xsai-wave { flex: none; display: flex; align-items: center; gap: 3px; height: 30px; }
+.xsai-wave i {
+  width: 4px; border-radius: 2px; background: #4b45c9; height: 6px;
+  transform: scaleY(calc(1 + var(--lvl) * 4)); transition: transform 80ms linear; animation: xsai-wave 1.1s ease-in-out infinite;
+}
+[data-theme="dark"] .xsai-wave i { background: #8f89ff; }
+.xsai-wave i:nth-child(2) { animation-delay: .1s; height: 9px; } .xsai-wave i:nth-child(3) { animation-delay: .2s; height: 12px; }
+.xsai-wave i:nth-child(4) { animation-delay: .3s; height: 14px; } .xsai-wave i:nth-child(5) { animation-delay: .4s; height: 12px; }
+.xsai-wave i:nth-child(6) { animation-delay: .5s; height: 9px; } .xsai-wave i:nth-child(7) { animation-delay: .6s; }
+@keyframes xsai-wave { 50% { opacity: .55; } }
+
 @media (prefers-reduced-motion: reduce) {
-  .xsai-orbit, .xsai-dots i, .xsai-turn, .xsai-orb-glow, .xsai-hold-waves i, .xsai-live-transcript { animation: none !important; }
-  .xsai-shortcut, .xsai-orb, .xsai-composer, .xsai-send { transition: none; }
-}
-@media (prefers-contrast: more) {
-  .xsai-composer, .xsai-shortcut, .xsai-bubble { border-color: var(--ink); }
-  .xsai-state-tag { border-color: var(--graphite); }
-}
-
-/* Messenger-like immediate outgoing voice bubble, no processing banners. */
-.xsai-turn.user .xsai-bubble.xsai-voice-pending {
-  opacity: .72; min-width: 43px; min-height: 33px;
-  display: inline-flex; align-items: center; justify-content: center;
-}
-.xsai-voice-pending svg { animation: xsai-pulse 900ms ease-in-out infinite; }
-
-@media (max-height: 650px) {
-  .xsai-voice-zone { min-height: 65px; }
-  .xsai-orb { width: 58px; height: 58px; }
+  .xsai-msg, .xsai-dots i, .xsai-wave i, .xsai-spin { animation: none !important; }
 }

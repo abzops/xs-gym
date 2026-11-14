@@ -1,784 +1,343 @@
 import { useQueryClient } from '@tanstack/react-query';
-import { ArrowUp, Check, CheckCheck, Copy, Keyboard, Mic, Plus, RotateCcw, Sparkles, Users, Wallet, CalendarClock, X } from 'lucide-react';
-import { useCallback, useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type MouseEvent as ReactMouseEvent } from 'react';
-import { flushSync } from 'react-dom';
+import {
+  Archive, ArrowUp, Ban, CalendarPlus, CalendarX, Check, ClipboardList, Inbox, Mic, Plus, Receipt,
+  RotateCcw, Settings, Sparkles, Undo2, UserCog, UserPen, UserPlus, Wallet, X, type LucideIcon,
+} from 'lucide-react';
+import { useEffect, useRef, useState, type FormEvent, type PointerEvent as ReactPointerEvent } from 'react';
 import { useNavigate } from 'react-router';
 import { useGym } from '../../app/gym';
-import { Segmented, Sheet, useToast } from '../../components/ui';
+import { Sheet, useToast } from '../../components/ui';
 import { errorMessage } from '../../lib/errors';
 import { rpc, supabase } from '../../lib/supabase';
-import { canListen, listen, speak, SpeechListenError, stopSpeaking, type Lang } from './voice';
-import { spokenRepliesEnabled } from './preferences';
-import { chooseVoiceRoute, iosVoiceDevice, type VoiceRoute } from './voiceRoute';
-import { listenSarvam } from './sarvamRealtime';
-import { captureMalayalamBackup, transcribeFailedNative, type MalayalamClip } from './malayalamBackup';
-import { sarvamReadiness } from './sarvamStatus';
+import { canRecord, MAX_MS, MicError, startRecording, type Clip, type Recording } from './recorder';
 import './ai.css';
 
-type Action = { tool: string; ok: boolean; summary: string; undo?: { rpc: string; args: Record<string, unknown> }; undone?: boolean };
-type Turn = { role: 'user' | 'assistant'; content: string; actions?: Action[]; tone?: 'bad'; id?: string; voicePending?: boolean };
-type State = 'idle' | 'thinking';
-type MicDialog = 'denied' | 'unavailable' | 'service' | 'unsupported' | 'setup-ml' | null;
-
-type HoldSession = {
-  pointerId: number | null;
-  released: boolean;
-  cancelled: boolean;
-  settled: boolean;
-  cloud: boolean;
-  language: Lang;
-  route: VoiceRoute;
-  complete: boolean;
-  backup: ReturnType<typeof captureMalayalamBackup> | null;
-  backupClip: Promise<MalayalamClip | null> | null;
-  nativeFailed: boolean;
-  uploading: boolean;
-  pendingId: string | null;
-  latest: string;
-  final: string;
-  failed: unknown | null;
-  stop: () => void;
-  abort: () => void;
-  watchdog: ReturnType<typeof setTimeout> | null;
+type Lang = 'en' | 'ml';
+type Pending = { id: string; tool: string; args: Record<string, unknown>; title: string; titleMl: string; lines: string[]; danger?: boolean };
+type Action = { tool: string; ok: boolean; summary: string; summaryMl?: string; undo?: { rpc: string; args: Record<string, unknown> }; undone?: boolean };
+type Turn = {
+  id: string; role: 'user' | 'assistant'; text: string;
+  voice?: boolean; listening?: boolean; tone?: 'bad';
+  pending?: Pending[]; decision?: 'waiting' | 'running' | 'done' | 'cancelled';
+  actions?: Action[];
 };
-
-// XS AI sends text commands only. Native browser voice is default.
-// Opt-in Sarvam audio uses a separate authenticated relay, never xs-ai.
+type AgentReply = { reply?: string; heard?: string; pending?: Pending[]; actions?: Action[]; navigate?: string; changed?: string[] };
+type MicState = 'idle' | 'starting' | 'recording';
 
 const LANG_KEY = 'xs-ai-lang';
-// Read-only example requests: these never contain an instruction to change a
-// payment or membership. They disappear after the conversation begins.
-const QUICK_PROMPTS: Record<Lang, { title: string; prompt: string; icon: 'wallet' | 'members' | 'renewals' }[]> = {
-  en: [
-    { title: "Today's collections", prompt: 'How much did we collect today?', icon: 'wallet' },
-    { title: 'Pending dues', prompt: 'Who has pending membership dues?', icon: 'members' },
-    { title: 'Upcoming renewals', prompt: 'Which memberships are due for renewal soon?', icon: 'renewals' },
-  ],
-  ml: [
-    { title: 'ഇന്നത്തെ കളക്ഷൻ', prompt: 'ഇന്ന് എത്ര രൂപ കളക്ട് ചെയ്തു?', icon: 'wallet' },
-    { title: 'കുടിശ്ശിക', prompt: 'ആർക്കൊക്കെ മെമ്പർഷിപ്പ് കുടിശ്ശികയുണ്ട്?', icon: 'members' },
-    { title: 'പുതുക്കേണ്ടത്', prompt: 'അടുത്തതായി ആരുടെയൊക്കെ മെമ്പർഷിപ്പ് പുതുക്കണം?', icon: 'renewals' },
-  ],
+const ICONS: Record<string, LucideIcon> = {
+  record_payment: Wallet, sell_plan: CalendarPlus, add_member: UserPlus, update_member: UserPen,
+  set_member_status: Archive, cancel_membership: CalendarX, reverse_payment: Undo2, void_charge: Ban,
+  record_expense: Receipt, reverse_expense: Undo2, add_enquiry: Inbox, save_plan: ClipboardList,
+  update_gym_settings: Settings, save_staff: UserCog,
 };
-/** XS AI: talk to the gym. Opens as a sheet; every action shows a card with Undo. */
+const CHIPS: Record<Lang, string[]> = {
+  ml: ['ഇന്നത്തെ കളക്ഷൻ', 'കുടിശ്ശിക ആർക്കൊക്കെ', 'ഈ ആഴ്ച തീരുന്ന മെമ്പർഷിപ്പുകൾ', 'ഈ മാസത്തെ ലാഭം എത്ര?'],
+  en: ["Today's collections", 'Who has dues', 'Memberships ending this week', "This month's profit?"],
+};
+const T = {
+  ml: { hello: 'നമസ്കാരം 👋', sub: 'പറയൂ അല്ലെങ്കിൽ ടൈപ്പ് ചെയ്യൂ. എന്ത് മാറ്റം വരുത്തുന്നതിനും മുമ്പ് ഞാൻ ചോദിക്കും.', tryIt: 'ഉദാ: "രാഹുൽ 1500 UPI അടച്ചു"',
+    placeholder: 'XS AI-യോട് ചോദിക്കൂ…', listening: 'കേൾക്കുന്നു…', approve: 'Approve', approveAll: 'എല്ലാം Approve', cancel: 'Cancel',
+    cancelled: 'റദ്ദാക്കി', running: 'ചെയ്യുന്നു…', undo: 'Undo', undone: 'തിരിച്ചാക്കി', thinking: 'ആലോചിക്കുന്നു…', heard: 'കേൾക്കുന്നു…' },
+  en: { hello: 'Hi there 👋', sub: 'Talk or type. I always ask before changing anything.', tryIt: 'Try: "Rahul paid 1500 by UPI"',
+    placeholder: 'Ask XS AI…', listening: 'Listening…', approve: 'Approve', approveAll: 'Approve all', cancel: 'Cancel',
+    cancelled: 'Cancelled', running: 'Working…', undo: 'Undo', undone: 'Undone', thinking: 'Thinking…', heard: 'Listening…' },
+};
+const uid = () => crypto.randomUUID();
+
+async function callAgent(body: Record<string, unknown>): Promise<AgentReply> {
+  const { data, error } = await supabase.functions.invoke('xs-ai', { body });
+  if (error) {
+    let msg = errorMessage(error);
+    try { const b = await (error as { context?: Response }).context?.json(); if (b?.error) msg = b.error; } catch { /* not JSON */ }
+    throw new Error(msg);
+  }
+  return (data ?? {}) as AgentReply;
+}
+
+/** XS AI: talk to the gym. Reads instantly; every change waits for Approve. */
 export function XsAiPanel({ onClose }: { onClose: () => void }) {
   const { gym } = useGym();
   const qc = useQueryClient();
   const toast = useToast();
   const navigate = useNavigate();
-  const [lang, setLang] = useState<Lang>(() => { try { return localStorage.getItem(LANG_KEY) === 'ml' ? 'ml' : 'en'; } catch { return 'en'; } });
+  const [lang, setLang] = useState<Lang>(() => { try { return localStorage.getItem(LANG_KEY) === 'en' ? 'en' : 'ml'; } catch { return 'ml'; } });
   const [turns, setTurns] = useState<Turn[]>([]);
-  const [state, setState] = useState<State>('idle');
+  const [busy, setBusy] = useState(false);
   const [text, setText] = useState('');
-  const [copiedTurn, setCopiedTurn] = useState<number | null>(null);
-  const [holding, setHolding] = useState(false);
-  const [keyboardOpen, setKeyboardOpen] = useState(false);
-  const [transcribing, setTranscribing] = useState(false);
-  const [liveTranscript, setLiveTranscript] = useState('');
-  const [micDialog, setMicDialog] = useState<MicDialog>(null);
-  const [, setSpeechIssue] = useState<{ code: string; locale: string } | null>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const [mic, setMic] = useState<MicState>('idle');
+  const [seconds, setSeconds] = useState(0);
+  const t = T[lang];
 
-  const holdRef = useRef<HoldSession | null>(null);
-  const pendingVoice = useRef(new Set<HoldSession>());
-  const releasedVoice = useRef<HoldSession[]>([]);
-  const activePointer = useRef<number | null>(null);
-  const keyboardHeld = useRef(false);
-  const pendingUnavailable = useRef(false);
-  const suppressClickUntil = useRef(0);
-  const [alternateMalayalam, setAlternateMalayalam] = useState(false);
-  const closingRef = useRef(false);
-  const requestBusy = useRef(false);
-  const listeningBusy = useRef(false);
-  const undoBusy = useRef(new Set<string>());
-  const commandQueue = useRef<Array<{ content: string; language: Lang; id: string; cloudVoice: boolean }>>([]);
-  const processedHistory = useRef<Array<{ role: 'user' | 'assistant'; content: string }>>([]);
-  const scroller = useRef<HTMLDivElement>(null);
   const turnsRef = useRef(turns); turnsRef.current = turns;
-
+  const history = useRef<{ role: 'user' | 'assistant'; content: string }[]>([]);
+  const closing = useRef(false);
+  const rec = useRef<Recording | null>(null);
+  const pressAt = useRef(0);
+  const meter = useRef<HTMLDivElement>(null);
+  const log = useRef<HTMLDivElement>(null);
+  const input = useRef<HTMLInputElement>(null);
+  const undoBusy = useRef(new Set<string>());
 
   useEffect(() => { try { localStorage.setItem(LANG_KEY, lang); } catch { /* storage blocked */ } }, [lang]);
-  useEffect(() => { scroller.current?.scrollTo({ top: scroller.current.scrollHeight, behavior: 'smooth' }); }, [turns, state]);
+  useEffect(() => { log.current?.scrollTo({ top: log.current.scrollHeight, behavior: 'smooth' }); }, [turns, busy]);
+  useEffect(() => {
+    if (mic !== 'recording') { setSeconds(0); return; }
+    const started = Date.now();
+    const timer = setInterval(() => setSeconds(Math.floor((Date.now() - started) / 1000)), 250);
+    return () => clearInterval(timer);
+  }, [mic]);
+  useEffect(() => () => { closing.current = true; rec.current?.cancel(); rec.current = null; }, []);
 
-  const stopInteraction = useCallback(() => {
-    closingRef.current = true;
-    activePointer.current = null;
-    keyboardHeld.current = false;
-    pendingUnavailable.current = false;
-    const session = holdRef.current;
-    holdRef.current = null;
-    listeningBusy.current = false;
-    commandQueue.current = [];
-    // Closing a conversation also cancels previous recordings still waiting
-    // for Malayalam transcription; never leave a mic track or delayed send.
-    for (const active of pendingVoice.current) {
-      active.cancelled = true;
-      if (active.watchdog) clearTimeout(active.watchdog);
-      active.abort();
-      active.backup?.abort();
-    }
-    pendingVoice.current.clear();
-    releasedVoice.current = [];
-    if (session && !session.cancelled) {
-      session.cancelled = true;
-      session.abort();
-      session.backup?.abort();
-    }
-    stopSpeaking();
-    setHolding(false);
-    setTranscribing(false);
-    setLiveTranscript('');
-  }, []);
-  useEffect(() => () => { stopInteraction(); }, [stopInteraction]);
+  const update = (id: string, patch: Partial<Turn> | ((turn: Turn) => Partial<Turn>)) =>
+    setTurns((ts) => ts.map((x) => (x.id === id ? { ...x, ...(typeof patch === 'function' ? patch(x) : patch) } : x)));
+  const push = (...add: Turn[]) => setTurns((ts) => [...ts, ...add]);
+  const refresh = (keys: string[] = []) => { for (const key of keys) void qc.invalidateQueries({ queryKey: [key, gym.id] }); };
 
-  // Voice replies are opt-in per device. A request's typed response always
-  // appears in the chat, and the microphone never waits for speech playback.
-  // Serialize money-changing commands: holding again while the first request
-  // is pending queues the new text without overlapping server actions.
-  function ask(content: string, fromVoice = false, pendingId?: string, cloudVoice = false, language: Lang = lang) {
+  function show(data: AgentReply) {
+    refresh(data.changed);
+    const reply = String(data.reply ?? '');
+    if (data.pending?.length) {
+      push({ id: uid(), role: 'assistant', text: reply, pending: data.pending, decision: 'waiting' });
+    } else if (reply) {
+      push({ id: uid(), role: 'assistant', text: reply, actions: data.actions });
+    }
+    if (reply) history.current.push({ role: 'assistant', content: reply + (data.pending?.length ? ` [Waiting for approval: ${data.pending.map((p) => `${p.title}: ${p.lines.join(', ')}`).join('; ')}]` : '') });
+    if (typeof data.navigate === 'string') navigate(`/g/${gym.slug}${data.navigate ? `/${data.navigate}` : ''}`);
+  }
+  function fail(error: unknown) {
+    if (closing.current) return;
+    push({ id: uid(), role: 'assistant', text: error instanceof Error ? error.message : String(error), tone: 'bad' });
+  }
+
+  async function send(content: string) {
     const q = content.trim();
-    if (!q || closingRef.current) return;
-    const command = { content: q, language, id: crypto.randomUUID(), cloudVoice };
-    commandQueue.current.push(command);
-    // Messenger behavior: replace the provisional outgoing voice bubble in-place
-    // instead of popping it off and appending a second copy.
-    const containsPending = !!pendingId && turnsRef.current.some((turn) => turn.id === pendingId);
-    const updated: Turn[] = containsPending
-      ? turnsRef.current.map((turn) => turn.id === pendingId
-          ? { role: 'user', content: q, id: pendingId } : turn)
-      : [...turnsRef.current, { role: 'user', content: q }];
-    turnsRef.current = updated;
-    setTurns(updated);
-    // Do not erase a new typed draft when a delayed recognition finishes.
-    if (!fromVoice) setText('');
-    void drainQueue();
-  }
-  function removeVoicePending(pendingId: string | null) {
-    if (!pendingId) return;
-    const updated = turnsRef.current.filter((turn) => turn.id !== pendingId);
-    turnsRef.current = updated;
-    setTurns(updated);
-  }
-
-  async function drainQueue() {
-    if (requestBusy.current || closingRef.current) return;
-    requestBusy.current = true;
-    setState('thinking');
-    try {
-      while (!closingRef.current && commandQueue.current.length) {
-        const next = commandQueue.current.shift()!;
-        stopSpeaking();
-        const history = [...processedHistory.current, { role: 'user' as const, content: next.content }];
-        processedHistory.current = history;
-        try {
-          const { data, error } = await supabase.functions.invoke('xs-ai', {
-            body: {
-              gym_id: gym.id, lang: next.language, request_id: next.id,
-              cloudVoice: next.cloudVoice,
-              messages: history,
-            },
-          });
-          if (error) {
-            let msg = errorMessage(error);
-            try { const body = await (error as { context?: Response }).context?.json(); if (body?.error) msg = body.error; }
-            catch { /* not JSON */ }
-            throw new Error(msg);
-          }
-          const reply = String(data?.reply ?? '');
-          for (const key of data?.changed ?? []) void qc.invalidateQueries({ queryKey: [key, gym.id] });
-          if (closingRef.current) break;
-          const answer: Turn = { role: 'assistant', content: reply, actions: data?.actions };
-          turnsRef.current = [...turnsRef.current, answer];
-          setTurns(turnsRef.current);
-          processedHistory.current = [...history, { role: 'assistant', content: reply }];
-          if (typeof data?.navigate === 'string') {
-            navigate(`/g/${gym.slug}${data.navigate ? `/${data.navigate}` : ''}`);
-          }
-          if (reply && spokenRepliesEnabled()) {
-            // Never hold up the microphone waiting for TTS completion.
-            void speak(reply, next.language);
-          }
-        } catch (error) {
-          if (closingRef.current) break;
-          const answer: Turn = {
-            role: 'assistant', content: error instanceof Error ? error.message : String(error), tone: 'bad',
-          };
-          turnsRef.current = [...turnsRef.current, answer];
-          setTurns(turnsRef.current);
-        }
-      }
-    } finally {
-      requestBusy.current = false;
-      if (!closingRef.current) setState('idle');
-    }
-  }
-
-  // A new hold can start while the preceding phrase is being transcribed.
-  // Dispatch in release order so gym commands stay serialized and intuitive.
-  function drainVoiceQueue() {
-    while (releasedVoice.current.length && releasedVoice.current[0].complete) {
-      const session = releasedVoice.current.shift()!;
-      if (!pendingVoice.current.has(session)) continue;
-      pendingVoice.current.delete(session);
-      if (session.watchdog) clearTimeout(session.watchdog);
-      session.backup?.abort();
-      if (closingRef.current || session.cancelled) continue;
-      if (session.failed) {
-        removeVoicePending(session.pendingId);
-        const error = session.failed;
-        if (error instanceof SpeechListenError) {
-          setTimeout(() => {
-            if (closingRef.current || holdRef.current) return;
-            setSpeechIssue({ code: error.browserCode, locale: error.locale });
-            if (error.reason === 'denied' || error.reason === 'audio') {
-              setMicDialog('denied');
-              return;
-            }
-            if (session.language === 'ml') {
-              void sarvamReadiness().then(({ ready }) => {
-                if (!closingRef.current && !holdRef.current)
-                  setMicDialog(ready ? 'service' : 'setup-ml');
-              });
-              return;
-            }
-            setMicDialog(error.reason === 'unsupported' ? 'unsupported' : 'service');
-          }, 80);
-        } else setMicDialog('service');
-        continue;
-      }
-      const heard = (session.cloud ? session.final : session.final || session.latest).trim();
-      if (heard) ask(heard, true, session.pendingId ?? undefined, session.cloud, session.language);
-      else removeVoicePending(session.pendingId);
-    }
-    if (!closingRef.current)
-      setTranscribing([...pendingVoice.current].some((session) => session.released && !session.complete));
-  }
-
-  function finishTranscript(session: HoldSession) {
-    if (!pendingVoice.current.has(session) || session.cancelled || !session.released || session.complete) return;
-    session.complete = true;
-    if (session.watchdog) clearTimeout(session.watchdog);
-    if (holdRef.current === session) {
-      holdRef.current = null;
-      listeningBusy.current = false;
-      setHolding(false);
-    }
-    drainVoiceQueue();
-  }
-
-  // The captured clip is local until native recognition actually fails.
-  // Uploading only after finger-up preserves the beginning of the sentence.
-  function recoverMalayalam(session: HoldSession) {
-    if (!session.released || session.cancelled || session.uploading ||
-      !pendingVoice.current.has(session) || !session.backup) return;
-    session.uploading = true;
-    session.cloud = true; // server enforces READ-ONLY actions for cloud speech
-    session.settled = false;
-    session.failed = null;
-    if (session.watchdog) clearTimeout(session.watchdog);
-    session.watchdog = setTimeout(() => {
-      if (!pendingVoice.current.has(session) || session.cancelled) return;
-      session.failed = new SpeechListenError('service', 'Malayalam transcription timed out.', 'cloud-timeout', 'ml-IN');
-      session.settled = true;
-      finishTranscript(session);
-    }, 27_000);
-    void (session.backupClip ?? session.backup.stop())
-      .then((clip) => transcribeFailedNative(gym.id, clip))
-      .then((text) => {
-        if (session.cancelled || !pendingVoice.current.has(session)) return;
-        session.final = text.trim();
-        session.settled = true;
-        finishTranscript(session);
-      }, (error: unknown) => {
-        if (session.cancelled || !pendingVoice.current.has(session)) return;
-        session.failed = error;
-        session.settled = true;
-        finishTranscript(session);
-      });
-  }
-
-  function cancelHold() {
-    const session = holdRef.current;
-    if (!session) return;
-    session.cancelled = true;
-    session.released = true;
-    holdRef.current = null;
-    listeningBusy.current = false;
-    pendingVoice.current.delete(session);
-    setHolding(false);
-    if (session.watchdog) clearTimeout(session.watchdog);
-    session.abort();
-    session.backup?.abort();
-    removeVoicePending(session.pendingId);
-    if (!closingRef.current) { setText(''); setLiveTranscript(''); }
-  }
-
-  function releaseHold() {
-    const session = holdRef.current;
-    if (!session || session.released) return;
-    session.released = true;
-    // The mic is visually idle IMMEDIATELY on finger-up, even while the
-    // browser finalizes text and the previous AI reply is processing.
-    setHolding(false);
+    if (!q || busy || closing.current) return;
     setText('');
-    setLiveTranscript('');
-    // Stop local capture immediately. Its bytes are uploaded ONLY if browser
-    // Malayalam fails, after the user already released the button.
-    if (session.backup) session.backupClip = session.backup.stop();
-    // Another hold can begin as soon as this finger lifts. Transcription
-    // completes asynchronously, while releasedVoice preserves message order.
-    releasedVoice.current.push(session);
-    holdRef.current = null;
-    listeningBusy.current = false;
-    setTranscribing(true);
-    // Place the message in the conversation immediately. The actual text
-    // replaces this quiet placeholder once speech recognition finalizes.
-    const pendingId = crypto.randomUUID();
-    session.pendingId = pendingId;
-    const placeholder: Turn = { role: 'user', id: pendingId, content: session.latest, voicePending: true };
-    turnsRef.current = [...turnsRef.current, placeholder];
-    setTurns(turnsRef.current);
-    // Do not call stop() again when the browser has already ended/failed;
-    // WebKit iOS 27 has a reported repeated-recognition regression.
-    if (!session.settled) session.stop();
-    if ((session.route === 'recording' || session.nativeFailed) && session.backup)
-      recoverMalayalam(session);
-    else if (session.settled) finishTranscript(session);
-    else {
-      session.watchdog = setTimeout(() => {
-        if (!pendingVoice.current.has(session) || session.cancelled) return;
-        if (session.backup && !session.cloud && !(session.final || session.latest).trim()) {
-          session.nativeFailed = true;
-          recoverMalayalam(session);
-          return;
-        }
-        if (session.cloud && !session.settled)
-          session.failed = new SpeechListenError('service', 'Cloud speech did not finish.', 'cloud-timeout', lang);
-        finishTranscript(session);
-      }, session.backup ? 2100 : session.cloud ? 6000 : 1800);
-    }
+    push({ id: uid(), role: 'user', text: q });
+    history.current.push({ role: 'user', content: q });
+    setBusy(true);
+    try { const data = await callAgent({ gym_id: gym.id, lang, messages: history.current.slice(-12) }); if (!closing.current) show(data); }
+    catch (e) { fail(e); }
+    finally { if (!closing.current) setBusy(false); }
   }
 
-  function beginHold(): boolean {
-    if (closingRef.current || holdRef.current || listeningBusy.current) return false;
-    setMicDialog(null);
-    // iOS Safari/WebKit can mute a second getUserMedia stream during Web Speech.
-    // Route iOS Malayalam through ONE recorder from press to release; elsewhere
-    // browser recognition runs first with automatic Sarvam fallback.
-    const native = canListen();
-    const recorder = typeof MediaRecorder !== 'undefined' &&
-      typeof navigator.mediaDevices?.getUserMedia === 'function';
-    const route = chooseVoiceRoute(lang, { native, recorder, ios: iosVoiceDevice() });
-    if (route === 'unavailable') {
-      pendingUnavailable.current = true;
-      setSpeechIssue({ code: 'api-unavailable', locale: lang === 'ml' ? 'ml-IN' : 'en-IN' });
-      return true;
-    }
-    stopSpeaking();
-    listeningBusy.current = true;
-    setSpeechIssue(null);
-    setText('');
-    setLiveTranscript('');
-    setHolding(true);
-    setKeyboardOpen(false);
-    const session: HoldSession = {
-      pointerId: null, released: false, cancelled: false, settled: false,
-      cloud: route === 'recording' || route === 'realtime',
-      language: lang, route, complete: false,
-      backup: lang === 'ml' && route !== 'realtime' ? captureMalayalamBackup() : null,
-      backupClip: null, nativeFailed: false, uploading: false,
-      pendingId: null, latest: '', final: '', failed: null,
-      stop: () => {}, abort: () => {}, watchdog: null,
-    };
-    pendingVoice.current.add(session);
-    holdRef.current = session;
+  async function sendVoice(clip: Clip) {
+    const id = uid();
+    push({ id, role: 'user', text: '', voice: true, listening: true });
+    setBusy(true);
     try {
-      const onPartial = (partial: string) => {
-        if (!pendingVoice.current.has(session) || session.cancelled) return;
-        session.latest = partial;
-        if (holdRef.current === session && !closingRef.current && !session.released) setLiveTranscript(partial);
-      };
-      const browserShortLocale = alternateMalayalam && lang === 'ml';
-      const startProvider = (cloud: boolean) => {
-        session.cloud = cloud;
-        const recognition = cloud
-          ? listenSarvam(gym.id, lang, onPartial)
-          : listen(lang, onPartial, browserShortLocale);
-        session.stop = recognition.stop;
-        session.abort = recognition.abort;
-        void recognition.done.then((result) => {
-          if (!pendingVoice.current.has(session) || session.cancelled) return;
-          session.final = result.trim();
-          if (!cloud && session.backup && (
-            !session.final ||
-            (!/[\u0D00-\u0D7F]/u.test(session.final) &&
-              /[A-Za-z]/u.test(session.final) && session.final.split(/\s+/u).length >= 2)
-          )) {
-            // Native returned silence or the wrong language. The locally
-            // buffered audio is submitted just once, after finger-up.
-            session.nativeFailed = true;
-            if (session.released) recoverMalayalam(session);
-            return;
-          }
-          if (!cloud && !session.final && lang === 'ml') setAlternateMalayalam(true);
-          session.backup?.abort(); // native succeeded; never upload its audio
-          session.settled = true;
-          if (session.released) finishTranscript(session);
-        }, (error: unknown) => {
-          if (!pendingVoice.current.has(session) || session.cancelled) return;
-          if (!cloud && session.backup) {
-            // Any native interruption is automatically recoverable. A denied
-            // microphone will still fail cleanly if no audio was captured.
-            session.nativeFailed = true;
-            if (session.released) recoverMalayalam(session);
-            return;
-          }
-          if (!cloud && lang === 'ml' && !session.released) {
-            // MediaRecorder unavailable: hand off to live Sarvam while the
-            // finger is still down instead of waiting for another attempt.
-            session.route = 'realtime';
-            session.final = '';
-            session.latest = '';
-            session.failed = null;
-            session.settled = false;
-            startProvider(true);
-            return;
-          }
-          const browserError = error instanceof SpeechListenError ? error : null;
-          if (!cloud && browserError?.browserCode === 'no-speech') {
-            session.final = '';
-            session.latest = '';
-            session.failed = null;
-          } else session.failed = error;
-          session.settled = true;
-          if (session.released) finishTranscript(session);
-        });
-      };
-      if (session.route === 'recording' && !session.backup) {
-        session.route = 'realtime'; // recorder unsupported despite feature check
-        startProvider(true);
-      } else if (session.route !== 'recording') {
-        startProvider(session.route === 'realtime');
-      }
-    } catch (error) {
-      session.backup?.abort();
-      holdRef.current = null;
-      listeningBusy.current = false;
-      setHolding(false);
-      setMicDialog('service');
-      return false;
-    }
-    return true;
+      const data = await callAgent({ gym_id: gym.id, lang, messages: history.current.slice(-11), audio: { data: clip.data, mime: clip.mime } });
+      if (closing.current) return;
+      const heard = String(data.heard ?? '').trim();
+      if (heard) { update(id, { text: heard, listening: false }); history.current.push({ role: 'user', content: heard }); }
+      else setTurns((ts) => ts.filter((x) => x.id !== id));
+      show(data);
+    } catch (e) {
+      setTurns((ts) => ts.filter((x) => x.id !== id));
+      fail(e);
+    } finally { if (!closing.current) setBusy(false); }
   }
 
-  function finishGesture() {
-    if (pendingUnavailable.current) {
-      pendingUnavailable.current = false;
-      setTimeout(() => {
-        if (!closingRef.current) setMicDialog(lang === 'ml' ? 'service' : 'unavailable');
-      }, 80);
+  // ---------- approval ----------
+  async function decide(turn: Turn, ok: boolean) {
+    if (turn.decision !== 'waiting' || !turn.pending?.length) return;
+    if (!ok) {
+      update(turn.id, { decision: 'cancelled' });
+      history.current.push({ role: 'assistant', content: '[The user tapped Cancel. Nothing was changed.]' });
       return;
     }
-    releaseHold();
-  }
-
-  function onPressDown(event: ReactPointerEvent<HTMLButtonElement>) {
-    if (event.pointerType === 'mouse' && event.button !== 0) return;
-    if (activePointer.current !== null || !beginHold()) return;
-    activePointer.current = event.pointerId;
-    if (holdRef.current) holdRef.current.pointerId = event.pointerId;
-    event.preventDefault();
-    try { event.currentTarget.setPointerCapture(event.pointerId); } catch { /* Safari may capture implicitly */ }
-  }
-
-  function onPressUp(event: ReactPointerEvent<HTMLButtonElement>) {
-    if (activePointer.current !== event.pointerId) return;
-    activePointer.current = null;
-    suppressClickUntil.current = Date.now() + 800;
-    event.preventDefault();
-    finishGesture();
-  }
-
-  function onPressCancel(event: ReactPointerEvent<HTMLButtonElement>) {
-    if (activePointer.current !== event.pointerId) return;
-    activePointer.current = null;
-    suppressClickUntil.current = Date.now() + 800;
-    pendingUnavailable.current = false;
-    cancelHold(); // A cancelled gesture must never create a payment command.
-  }
-
-  function onHoldKeyDown(event: ReactKeyboardEvent<HTMLButtonElement>) {
-    if (event.key !== ' ' && event.key !== 'Enter') return;
-    event.preventDefault();
-    if (event.repeat || keyboardHeld.current) return;
-    keyboardHeld.current = beginHold();
-  }
-
-  function onHoldKeyUp(event: ReactKeyboardEvent<HTMLButtonElement>) {
-    if (event.key !== ' ' && event.key !== 'Enter') return;
-    event.preventDefault();
-    if (!keyboardHeld.current) return;
-    keyboardHeld.current = false;
-    suppressClickUntil.current = Date.now() + 800;
-    finishGesture();
-  }
-
-  function toggleKeyboard() {
-    if (keyboardOpen) {
-      setKeyboardOpen(false);
-      inputRef.current?.blur();
-    } else {
-      // Safari requires focus during the SAME trusted tap to open iOS keyboard.
-      flushSync(() => setKeyboardOpen(true));
-      inputRef.current?.focus();
-    }
-    setMicDialog(null);
-  }
-
-  function onAccessibleClick(event: ReactMouseEvent<HTMLButtonElement>) {
-    // Ignore synthetic clicks after a pointer/keyboard release. VoiceOver's
-    // click without a pointer has detail=0, so it can toggle accessibly.
-    if (event.detail > 0 || Date.now() < suppressClickUntil.current) return;
-    if (holdRef.current) releaseHold();
-    else beginHold();
-  }
-
-  // Visibility loss cancels (rather than sends) a partial voice command.
-  // Only a deliberate release of the held microphone can auto-send.
-  useEffect(() => {
-    function onHidden() {
-      if (!document.hidden) return;
-      if (!pendingVoice.current.size) return;
-      // Suspend every outstanding audio request, including older released
-      // sessions still awaiting a provider. Never send speech on backgrounding.
-      for (const session of pendingVoice.current) {
-        session.cancelled = true;
-        if (session.watchdog) clearTimeout(session.watchdog);
-        session.abort();
-        session.backup?.abort();
-        removeVoicePending(session.pendingId);
-      }
-      pendingVoice.current.clear();
-      releasedVoice.current = [];
-      holdRef.current = null;
-      activePointer.current = null;
-      keyboardHeld.current = false;
-      pendingUnavailable.current = false;
-      listeningBusy.current = false;
-      setHolding(false);
-      setText('');
-      setLiveTranscript('');
-      setTranscribing(false);
-    }
-    document.addEventListener('visibilitychange', onHidden);
-    return () => document.removeEventListener('visibilitychange', onHidden);
-  }, []);
-
-  // Keep real backend actions and their audit trail untouched. This is a
-  // UI-only reset and cannot run while requests or microphone use are active.
-  function newConversation() {
-    if (requestBusy.current || commandQueue.current.length || pendingVoice.current.size || holdRef.current || listeningBusy.current) return;
-    stopSpeaking();
-    processedHistory.current = [];
-    commandQueue.current = [];
-    turnsRef.current = [];
-    setTurns([]);
-    setText('');
-    setKeyboardOpen(false);
-    setLiveTranscript('');
-    setCopiedTurn(null);
-    setMicDialog(null);
-    setSpeechIssue(null);
-  }
-
-  async function copyReply(turn: number, content: string) {
+    update(turn.id, { decision: 'running' });
     try {
-      await navigator.clipboard.writeText(content);
-      setCopiedTurn(turn);
-    } catch {
-      toast('Could not copy', 'bad');
+      const data = await callAgent({ gym_id: gym.id, lang, approve: turn.pending.map((p) => ({ id: p.id, tool: p.tool, args: p.args })) });
+      if (closing.current) return;
+      update(turn.id, { decision: 'done', actions: data.actions });
+      refresh(data.changed);
+      const reply = String(data.reply ?? '');
+      if (reply) history.current.push({ role: 'assistant', content: `[Approved] ${reply}` });
+      if (data.actions?.some((a) => !a.ok)) push({ id: uid(), role: 'assistant', text: reply, tone: 'bad' });
+      if (typeof data.navigate === 'string') navigate(`/g/${gym.slug}${data.navigate ? `/${data.navigate}` : ''}`);
+    } catch (e) {
+      // The request may not have reached the server; the same card can be retried
+      // safely because each card carries its own idempotency key.
+      update(turn.id, { decision: 'waiting' });
+      fail(e);
     }
   }
 
-  async function undo(turn: number, i: number) {
-    const a = turns[turn]?.actions?.[i];
-    const id = `${turn}:${i}`;
-    if (closingRef.current || !a?.undo || a.undone || undoBusy.current.has(id)) return;
-    undoBusy.current.add(id);
+  async function undo(turn: Turn, i: number) {
+    const a = turn.actions?.[i]; const key = `${turn.id}:${i}`;
+    if (!a?.undo || a.undone || undoBusy.current.has(key)) return;
+    undoBusy.current.add(key);
     try {
       await rpc(a.undo.rpc, a.undo.args);
-      if (!closingRef.current) setTurns((ts) => ts.map((t, ti) => ti !== turn ? t : { ...t, actions: t.actions?.map((x, xi) => xi === i ? { ...x, undone: true } : x) }));
-      await Promise.all(['dashboard', 'payments', 'members', 'member', 'expenses', 'analytics', 'enquiries', 'daily-report'].map((k) => qc.invalidateQueries({ queryKey: [k, gym.id] })));
-      if (!closingRef.current) toast('Undone');
-    } catch (e) {
-      if (!closingRef.current) toast(errorMessage(e), 'bad');
-    } finally {
-      undoBusy.current.delete(id);
-    }
+      update(turn.id, (x) => ({ actions: x.actions?.map((y, yi) => (yi === i ? { ...y, undone: true } : y)) }));
+      refresh(['dashboard', 'payments', 'members', 'member', 'expenses', 'analytics', 'enquiries', 'daily-report']);
+      history.current.push({ role: 'assistant', content: `[The user undid: ${a.summary}]` });
+      toast(t.undone);
+    } catch (e) { toast(errorMessage(e), 'bad'); }
+    finally { undoBusy.current.delete(key); }
   }
 
+  // ---------- microphone: tap to talk (auto-sends on silence) or hold to talk ----------
+  async function startMic() {
+    if (mic !== 'idle' || busy || closing.current) return;
+    setMic('starting');
+    try {
+      const r = await startRecording({
+        onAutoStop: () => { void finishMic(); },
+        onLevel: (v) => { meter.current?.style.setProperty('--lvl', v.toFixed(3)); },
+      });
+      if (closing.current) { r.cancel(); return; }
+      rec.current = r;
+      setMic('recording');
+    } catch (e) {
+      setMic('idle');
+      const reason = e instanceof MicError ? e.reason : 'unsupported';
+      toast(reason === 'denied'
+        ? (lang === 'ml' ? 'മൈക്ക് അനുമതി വേണം. Settings-ൽ Microphone ഓണാക്കൂ.' : 'Allow the microphone in your browser settings.')
+        : reason === 'busy' ? (lang === 'ml' ? 'മൈക്ക് മറ്റൊരു ആപ്പ് ഉപയോഗിക്കുന്നു.' : 'The microphone is busy in another app.')
+          : (lang === 'ml' ? 'ഈ ബ്രൗസറിൽ വോയ്സ് ഇല്ല. ടൈപ്പ് ചെയ്യൂ.' : 'Voice is not supported here. Please type.'), 'bad');
+    }
+  }
+  async function finishMic() {
+    const r = rec.current; if (!r) return;
+    rec.current = null;
+    setMic('idle');
+    const clip = await r.stop();
+    if (clip && !closing.current) void sendVoice(clip);
+    else if (!closing.current) toast(lang === 'ml' ? 'ഒന്നും കേട്ടില്ല' : "Didn't hear anything");
+  }
+  function cancelMic() { rec.current?.cancel(); rec.current = null; setMic('idle'); }
+
+  function micDown(e: ReactPointerEvent<HTMLButtonElement>) {
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    e.preventDefault();
+    pressAt.current = Date.now();
+    // The button is replaced while recording, so watch the release on the window.
+    window.addEventListener('pointerup', micUp, { once: true });
+    window.addEventListener('pointercancel', micUp, { once: true });
+    if (mic === 'idle') void startMic();
+    else if (mic === 'recording') void finishMic();
+  }
+  function micUp() {
+    // Held for more than half a second: release sends (walkie-talkie style).
+    if (rec.current && Date.now() - pressAt.current > 600) void finishMic();
+  }
+
+  function submit(e: FormEvent) { e.preventDefault(); void send(text); }
+  function reset() {
+    if (busy || mic !== 'idle') return;
+    history.current = []; setTurns([]); setText('');
+  }
+
+  const voiceOk = canRecord();
+  const recording = mic === 'recording';
+
   return (
-    <Sheet instant title="XS AI" onClosing={stopInteraction} onClose={() => { stopInteraction(); onClose(); }}>
+    <Sheet instant title="XS AI" onClosing={() => { closing.current = true; cancelMic(); }} onClose={onClose}>
       <div className="xsai">
-        <div className="xsai-locale-row">
+        <div className="xsai-top">
           {turns.length > 0 && (
-            <button type="button" className="xsai-new" title="New conversation" aria-label="New conversation"
-              onClick={newConversation} disabled={state === 'thinking' || holding}>
-              <Plus size={18} strokeWidth={1.8} />
+            <button type="button" className="xsai-chip-btn" onClick={reset} disabled={busy || mic !== 'idle'} aria-label="New chat">
+              <Plus size={16} /> {lang === 'ml' ? 'പുതിയ ചാറ്റ്' : 'New chat'}
             </button>
           )}
-          <Segmented label="Language" value={lang} onChange={(value) => {
-            cancelHold(); setLang(value); setMicDialog(null);
-            setSpeechIssue(null); setAlternateMalayalam(false);
-          }} options={[{ value: 'en', label: 'English' }, { value: 'ml', label: 'മലയാളം' }]} />
+          <div className="xsai-lang" role="group" aria-label="Language">
+            <button type="button" aria-pressed={lang === 'ml'} onClick={() => setLang('ml')}>മലയാളം</button>
+            <button type="button" aria-pressed={lang === 'en'} onClick={() => setLang('en')}>English</button>
+          </div>
         </div>
 
-        <div className="xsai-log" ref={scroller} aria-live="polite">
+        <div className="xsai-log" ref={log} aria-live="polite">
           {turns.length === 0 && (
-            <div className="xsai-welcome">
-              <div className="xsai-welcome-visual" aria-hidden="true">
-                <span className="xsai-orbit xsai-orbit-outer" />
-                <span className="xsai-orbit xsai-orbit-inner" />
-                <span className="xsai-welcome-mark"><Sparkles size={34} strokeWidth={1.4} /></span>
+            <div className="xsai-hello">
+              <span className="xsai-orb" aria-hidden><Sparkles size={26} strokeWidth={1.6} /></span>
+              <h3>{t.hello}</h3>
+              <p>{t.sub}</p>
+              <div className="xsai-chips">
+                {CHIPS[lang].map((c) => <button type="button" key={c} onClick={() => void send(c)}>{c}</button>)}
               </div>
-              <span className="xsai-kicker">XS AI AGENT</span>
-              <h3>{lang === 'ml' ? 'ഇന്ന് എന്ത് സഹായമാണ് വേണ്ടത്?' : 'What can I take care of?'}</h3>
-              <p className="xsai-welcome-sub">
-                {lang === 'ml' ? 'ജിം കാര്യങ്ങൾ ചോദിക്കൂ, ഞാൻ സഹായിക്കാം.' : 'Your gym, one conversation away.'}
-              </p>
-              <div className="xsai-shortcuts" aria-label="Quick questions">
-                {QUICK_PROMPTS[lang].map((prompt) => (
-                  <button type="button" key={prompt.icon} className="xsai-shortcut"
-                    onClick={() => ask(prompt.prompt)}>
-                    <span className="xsai-shortcut-icon" aria-hidden="true">
-                      {prompt.icon === 'wallet' ? <Wallet size={18} /> :
-                        prompt.icon === 'members' ? <Users size={18} /> : <CalendarClock size={18} />}
-                    </span>
-                    <span>{prompt.title}</span>
-                    <ArrowUp size={15} className="xsai-shortcut-arrow" aria-hidden="true" />
-                  </button>
-                ))}
-              </div>
+              <p className="xsai-try">{t.tryIt}</p>
             </div>
           )}
-          {turns.map((t, ti) => (
-            <div key={t.id ?? ti} className={`xsai-turn ${t.role} ${t.tone ?? ''}`}>
-              {t.role === 'assistant' && (
-                <span className="xsai-turn-avatar" aria-hidden="true"><Sparkles size={15} strokeWidth={1.8} /></span>
+
+          {turns.map((turn) => (
+            <div key={turn.id} className={`xsai-msg ${turn.role}${turn.tone ? ' bad' : ''}`}>
+              {(turn.text || turn.listening) && (
+                <div className={'xsai-bubble' + (turn.listening ? ' is-listening' : '')}>
+                  {turn.voice && <Mic size={13} className="xsai-voice-tag" aria-label="Voice" />}
+                  {turn.listening ? <span className="xsai-dots" aria-label={t.heard}><i /><i /><i /></span> : turn.text}
+                </div>
               )}
-              <div className="xsai-turn-body">
-                {(t.content || t.voicePending) && (
-                  <p className={'xsai-bubble' + (t.voicePending ? ' xsai-voice-pending' : '')}
-                    aria-label={t.voicePending ? 'Finishing voice message' : undefined}>
-                    {t.content || (t.voicePending ? <Mic size={15} strokeWidth={1.8} aria-hidden="true" /> : null)}
-                  </p>
-                )}
-                {t.actions?.map((a, i) => (
-                  <div key={i} className={`xsai-action ${a.ok ? (a.undone ? 'undone' : 'ok') : 'bad'}`}>
-                    <span className="xsai-action-ico" aria-hidden="true">
-                      {a.ok ? <Check size={14} strokeWidth={2.5} /> : <X size={14} strokeWidth={2.5} />}
-                    </span>
-                    <div className="xsai-action-content">
-                      <span className="xsai-action-status">{a.undone ? 'Reversed' : a.ok ? 'Completed' : 'Needs attention'}</span>
-                      <span className="xsai-action-text">{a.undone ? <s>{a.summary}</s> : a.summary}</span>
-                    </div>
-                    {a.ok && a.undo && !a.undone && (
-                      <button type="button" className="xsai-undo" onClick={() => undo(ti, i)}>
-                        <RotateCcw size={13} /> Undo
+
+              {turn.pending && (
+                <div className={`xsai-approval is-${turn.decision}`}>
+                  {turn.pending.map((p, i) => {
+                    const Icon = ICONS[p.tool] ?? Sparkles;
+                    const done = turn.actions?.[i];
+                    return (
+                      <div key={p.id} className={'xsai-card' + (p.danger ? ' danger' : '') + (done ? (done.ok ? (done.undone ? ' undone' : ' ok') : ' failed') : '')}>
+                        <span className="xsai-card-icon" aria-hidden>{done?.ok && !done.undone ? <Check size={18} strokeWidth={2.6} /> : done && !done.ok ? <X size={18} strokeWidth={2.6} /> : <Icon size={18} />}</span>
+                        <div className="xsai-card-body">
+                          <strong>{lang === 'ml' ? p.titleMl : p.title}</strong>
+                          {p.lines.map((line, li) => <span key={li} className={li === 0 ? 'lead' : ''}>{line}</span>)}
+                          {done && !done.ok && <span className="err">{done.summary}</span>}
+                        </div>
+                        {done?.ok && done.undo && (
+                          done.undone ? <span className="xsai-undone">{t.undone}</span>
+                            : <button type="button" className="xsai-undo" onClick={() => void undo(turn, i)}><RotateCcw size={13} /> {t.undo}</button>
+                        )}
+                      </div>
+                    );
+                  })}
+                  {turn.decision === 'waiting' && (
+                    <div className="xsai-decide">
+                      <button type="button" className="xsai-no" onClick={() => void decide(turn, false)}>{t.cancel}</button>
+                      <button type="button" className="xsai-yes" onClick={() => void decide(turn, true)}>
+                        <Check size={18} strokeWidth={2.6} /> {turn.pending.length > 1 ? `${t.approveAll} (${turn.pending.length})` : t.approve}
                       </button>
-                    )}
-                  </div>
-                ))}
-                {t.role === 'assistant' && t.content && !t.tone && (
-                  <button type="button" className="xsai-copy"
-                    aria-label={copiedTurn === ti ? 'Reply copied' : 'Copy reply'}
-                    onClick={() => void copyReply(ti, t.content)}>
-                    {copiedTurn === ti ? <CheckCheck size={14} /> : <Copy size={14} />}
-                    <span>{copiedTurn === ti ? 'Copied' : 'Copy'}</span>
-                  </button>
-                )}
-              </div>
+                    </div>
+                  )}
+                  {turn.decision === 'running' && <div className="xsai-status"><span className="xsai-spin" /> {t.running}</div>}
+                  {turn.decision === 'cancelled' && <div className="xsai-status muted"><X size={14} /> {t.cancelled}</div>}
+                </div>
+              )}
             </div>
           ))}
-          {state === 'thinking' && (
-            <div className="xsai-turn assistant xsai-pending">
-              <span className="xsai-turn-avatar" aria-hidden="true"><Sparkles size={15} strokeWidth={1.8} /></span>
-              <div className="xsai-turn-body">
-                <p className="xsai-bubble xsai-dots" aria-label="Waiting for reply"><i /><i /><i /></p>
-              </div>
-            </div>
+
+          {busy && !turns.some((x) => x.listening) && turns.every((x) => x.decision !== 'running') && (
+            <div className="xsai-msg assistant"><div className="xsai-bubble thinking"><span className="xsai-dots" aria-label={t.thinking}><i /><i /><i /></span></div></div>
           )}
         </div>
 
-        <div className={'xsai-controls' + (holding ? ' is-listening' : '')}>
-          {holding && liveTranscript && (
-            <div className="xsai-live-transcript" aria-live="off" lang={lang === 'ml' ? 'ml-IN' : 'en-IN'}>
-              {liveTranscript}
+        {recording || mic === 'starting' ? (
+          <div className="xsai-recbar" ref={meter} role="status">
+            <button type="button" className="xsai-rec-cancel" onClick={cancelMic} aria-label="Cancel recording"><X size={20} /></button>
+            <div className="xsai-rec-mid">
+              <div className="xsai-wave" aria-hidden><i /><i /><i /><i /><i /><i /><i /></div>
+              <span>{mic === 'starting' ? '…' : `${t.listening} · 0:${String(Math.min(seconds, Math.round(MAX_MS / 1000))).padStart(2, '0')}`}</span>
             </div>
-          )}
-          <div className="xsai-voice-zone">
-            <button type="button" className={'xsai-orb' + (holding ? ' listening' : '')}
-              onPointerDown={onPressDown} onPointerUp={onPressUp} onPointerCancel={onPressCancel}
-              onLostPointerCapture={onPressCancel}
-              onKeyDown={onHoldKeyDown} onKeyUp={onHoldKeyUp}
-              onContextMenu={(event) => event.preventDefault()}
-              onDragStart={(event) => event.preventDefault()}
-              onClick={onAccessibleClick}
-              aria-pressed={holding}
-              aria-label={holding ? 'Release to send' : 'Hold to talk to XS AI'}>
-              <span className="xsai-orb-glow" aria-hidden="true" />
-              <Mic size={27} strokeWidth={1.85} aria-hidden="true" />
-              <span className="xsai-hold-waves" aria-hidden="true"><i /><i /><i /><i /></span>
-            </button>
-            <span className="xsai-voice-caption" aria-live="polite">
-              {holding ? 'Release to send' : transcribing ? 'Transcribing…' : 'Hold to talk'}
-            </span>
-            <button type="button" className={'xsai-keyboard-toggle' + (keyboardOpen ? ' is-active' : '')}
-              onClick={toggleKeyboard} disabled={holding}
-              aria-pressed={keyboardOpen} title={keyboardOpen ? 'Hide keyboard' : 'Open keyboard'}
-              aria-label={keyboardOpen ? 'Hide keyboard' : 'Open keyboard'}>
-              <Keyboard size={22} strokeWidth={1.9} aria-hidden="true" />
+            <button type="button" className="xsai-rec-send" aria-label="Send voice"
+              onPointerDown={micDown} onClick={(e) => { if (e.detail === 0) void finishMic(); }}>
+              <ArrowUp size={22} strokeWidth={2.6} />
             </button>
           </div>
-          {keyboardOpen && (
-            <div className="xsai-composer">
-              <form className="xsai-type" onSubmit={(event) => {
-                event.preventDefault();
-                if (!text.trim()) return;
-                ask(text);
-                setText('');
-              }}>
-                <input ref={inputRef} className="input" lang={lang === 'ml' ? 'ml-IN' : 'en-IN'}
-                  value={text} onChange={(event) => setText(event.target.value)}
-                  placeholder={lang === 'ml' ? 'എന്തെങ്കിലും ചോദിക്കൂ…' : 'Ask XS AI anything…'}
-                  aria-label="Message XS AI" enterKeyHint="send" />
-                <button className="xsai-send" disabled={!text.trim() || holding} aria-label="Send">
-                  <ArrowUp size={19} strokeWidth={2.4} />
-                </button>
-              </form>
-            </div>
-          )}
-          <span className="sr-only" role="status">{holding ? 'Listening' : transcribing ? 'Transcribing audio' : ''}</span>
-          {micDialog && (
-            <div className="xsai-inline-issue" role="status">
-              <span>
-                {micDialog === 'denied' ? 'Microphone access needed' :
-                  micDialog === 'setup-ml' ? 'Malayalam voice temporarily unavailable' :
-                  micDialog === 'unsupported' ? 'Voice not supported here' : 'Voice unavailable — try again'}
-              </span>
-              <button type="button" aria-label="Type message" title="Type message"
-                onClick={() => {
-                  setMicDialog(null);
-                  flushSync(() => setKeyboardOpen(true));
-                  inputRef.current?.focus();
-                }}>
-                <Keyboard size={18} aria-hidden="true" />
+        ) : (
+          <form className="xsai-composer" onSubmit={submit}>
+            <input ref={input} value={text} onChange={(e) => setText(e.target.value)} placeholder={t.placeholder}
+              lang={lang === 'ml' ? 'ml' : 'en'} enterKeyHint="send" aria-label="Message XS AI" />
+            {text.trim() ? (
+              <button type="submit" className="xsai-send" disabled={busy} aria-label="Send"><ArrowUp size={22} strokeWidth={2.6} /></button>
+            ) : voiceOk ? (
+              <button type="button" className="xsai-mic" disabled={busy} aria-label="Talk to XS AI"
+                onPointerDown={micDown} onContextMenu={(e) => e.preventDefault()}
+                onClick={(e) => { if (e.detail === 0) void startMic(); }}>
+                <Mic size={22} strokeWidth={2.2} />
               </button>
-              <button type="button" aria-label="Dismiss voice message"
-                onClick={() => setMicDialog(null)}><X size={14} /></button>
-            </div>
-          )}
-        </div>
+            ) : null}
+          </form>
+        )}
       </div>
     </Sheet>
   );
