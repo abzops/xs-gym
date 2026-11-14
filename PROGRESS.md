@@ -11,10 +11,10 @@
 | Phase | **P0 core operations built and deployed** (Phases 3–4 compressed at owner's request) |
 | Live app | <https://abzops.github.io/xs-gym/> — served from `gh-pages`, updated by CI on every push to `main` |
 | Backend | Supabase project `xs-gym`, ref `knuanihnxtxtyrgvsumq`, region `ap-south-1`, Free plan |
-| Database | 4 live migrations applied, 17 public tables; RLS on all exposed tables |
-| CI | `.github/workflows/pages.yml`: typecheck, lint, unit tests, DB tests on PG16, secret scan → `gh-pages` |
+| Database | 8 live migrations applied, 17 public tables; RLS on all exposed tables |
+| CI | `.github/workflows/pages.yml`: typecheck, lint, unit tests, DB tests on PG16, XS AI browser suite, secret scan → `gh-pages` |
 | Remote | `https://github.com/abzops/xs-gym`, branch `main`; commits authored as `abzops` |
-| Last updated | 06 Nov 2026 |
+| Last updated | 14 Nov 2026 |
 
 ## 2. Rules for whoever continues
 
@@ -61,6 +61,29 @@
 6. Phases 6–7 (AI text and voice) only after the pilot uses the core daily.
 
 ## 6. Session log
+
+### 2026-11-14 — XS AI rebuilt: approval-first, Sarvam voice, simple chat
+
+- Owner: Malayalam voice did not work even with a Sarvam key, replies were slow,
+  and the UI was confusing. Wanted admin power, but every change asked first.
+- Root cause from production logs (13 Nov): the only chat providers configured
+  were xAI (403, no model access) and NVIDIA (timeouts / invalid responses), so
+  requests failed or took 25+ s. Voice used a complex browser-speech-first path
+  with a separate relay.
+- New agent (`docs/XS_AI.md`): read tools answer instantly; change tools return
+  **approval cards**; `approve` executes them with the user's token, card id as
+  idempotency key. 14 change tools incl. edit member, cancel membership, void
+  charge, reverse expense, plans, gym settings, staff. No database migration.
+- Voice: MediaRecorder clip → `xs-ai` → Sarvam `saaras:v3` (after sign-in check)
+  → same request continues to the agent. Tap the mic (auto-sends on silence) or
+  hold and release. Old `xs-ai-sarvam` relay removed (stub deployed).
+- Chat models: Groq → Gemini → Sarvam (`sarvam-105b`) → NVIDIA → xAI, hedged.
+- UI: one composer (text + mic), clean bubbles, Approve / Cancel / Undo cards,
+  Malayalam / English switch. Spoken replies setting removed.
+- Tests: 7 unit (approval), 39 real-schema agent checks on PG16, HTTP contract,
+  browser suite (phone/laptop × light/dark). Old voice suites/workflows deleted.
+- OWNER: add `GROQ_API_KEY` (free) for the fastest replies; keep `SARVAM_API_KEY`.
+  Real-iPhone microphone check still needed.
 
 ### 2026-11-06 — Text-only voice input: remove WAV/cloud transcription
 
