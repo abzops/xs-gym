@@ -1,5 +1,4 @@
-# This function is an isolated, disabled-by-default development prototype.
-# Browser WebSocket clients cannot supply an Authorization header. The endpoint
-# authenticates the user JWT and active gym membership before opening the socket.
-[functions.xs-ai-sarvam]
-verify_jwt = false
+# Edge Functions. xs-ai verifies the caller's JWT at the gateway and again
+# inside the function (RLS and command-function permission checks).
+[functions.xs-ai]
+verify_jwt = true

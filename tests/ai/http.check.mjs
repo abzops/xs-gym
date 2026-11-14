@@ -1,6 +1,5 @@
 // XS AI HTTP contract and privacy smoke test. No live Supabase credentials,
 // gym data or speech provider calls. Runs with Node's TypeScript stripping.
-import assert from 'node:assert/strict';
 
 let handler;
 globalThis.Deno = {
@@ -32,32 +31,32 @@ check('OPTIONS returns 204 and only the approved CORS origin', options.status ==
   options.headers.get('access-control-allow-origin') === 'https://abzops.github.io');
 
 const health = await responseJson(await handler(new Request(endpoint, { method: 'GET', headers })));
-check('health exposes text-only capability, never an API key',
-  health.status === 200 && health.body.input === 'text_only' &&
-  health.body.audio_uploads === false && !JSON.stringify(health.body).includes('local-publishable'));
+check('health says approval is required and exposes no key',
+  health.status === 200 && health.body.approval_required === true &&
+  !JSON.stringify(health.body).includes('local-publishable'));
 
-const legacy = await responseJson(await post({
-  gym_id: 'ffffeeee-ffff-4fff-8fff-ffffffffffff',
-  transcribe: { audio: 'UklGRg==', lang: 'ml' },
-}));
-check('old Malayalam WAV transcription request is rejected with HTTP 410',
-  legacy.status === 410 && legacy.body.code === 'audio_disabled');
+const audio = await responseJson(await post({ gym_id: 'ffffeeee-ffff-4fff-8fff-ffffffffffff', messages: [], audio: { data: 'UklGRg==', mime: 'audio/webm' } }));
+check('voice without a configured speech key is refused with 503', audio.status === 503);
+check('the voice request contacted no remote service', upstreamCalls === 0);
 
-const audio = await responseJson(await post({ audio: 'UklGRg==' }));
-check('raw audio is also rejected with HTTP 410', audio.status === 410 && audio.body.code === 'audio_disabled');
-check('neither raw-audio request contacted any remote service', upstreamCalls === 0);
+const approveNothing = await responseJson(await post({ gym_id: 'ffffeeee-ffff-4fff-8fff-ffffffffffff', approve: [] }));
+check('an empty approval is rejected before sign-in', approveNothing.status === 400 && upstreamCalls === 0);
+
+const approveSignedOut = await responseJson(await post({ gym_id: 'ffffeeee-ffff-4fff-8fff-ffffffffffff',
+  approve: [{ id: 'ffffeeee-ffff-4fff-8fff-fffffffffff1', tool: 'record_payment', args: { member_id: 'x', amount_paise: 100, method: 'cash' } }] }));
+check('an approval without a signed-in session returns 401 and changes nothing', approveSignedOut.status === 401 && upstreamCalls === 1);
 
 const badShape = await responseJson(await post({ gym_id: 'ffffeeee-ffff-4fff-8fff-ffffffffffff', messages: null }));
 check('malformed conversation yields 400 instead of crashing', badShape.status === 400);
 
 const noGym = await responseJson(await post({ gym_id: 'bad', messages: [{ role: 'user', content: 'hello' }] }));
-check('invalid gym ID is rejected without a provider call', noGym.status === 400 && upstreamCalls === 0);
+check('invalid gym ID is rejected without a provider call', noGym.status === 400 && upstreamCalls === 1);
 
 const valid = await responseJson(await post({
   gym_id: 'ffffeeee-ffff-4fff-8fff-ffffffffffff',
   messages: [{ role: 'user', content: 'hello' }],
 }));
-check('missing signed-in session returns 401 before handling data', valid.status === 401 && upstreamCalls === 1);
+check('missing signed-in session returns 401 before handling data', valid.status === 401 && upstreamCalls === 2);
 
 const wrongVerb = await handler(new Request(endpoint, { method: 'PUT', headers }));
 check('unsupported HTTP verbs return 405', wrongVerb.status === 405);
