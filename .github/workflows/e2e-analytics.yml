@@ -2,12 +2,11 @@ name: Full XS Gym end-to-end (isolated)
 
 on:
   push:
-    branches: [analytics-onboarding, main, 'fix/text-only-xs-ai-voice', 'fix/member-payment-edit-delete-archive', 'feat/member-swipe-archive-delete', 'fix/one-tap-delete-warning-20261111', 'feat/edit-member-joining-date-20261111', 'fix/xs-ai-malayalam-mobile-cleanup-20261112', 'feature/draggable-xs-ai-hold-to-talk-20261112', 'fix/xsai-malayalam-error-recovery-20261113', 'fix/xsai-auto-malayalam-repeat-voice-20261113', 'fix/malayalam-real-audio-provider-20261113', 'feature/sarvam-realtime-malayalam-poc-20261112']
+    branches: [main, 'feature/xs-ai-rebuild-20261114']
     paths:
       - 'src/**'
       - 'supabase/migrations/**'
       - 'supabase/functions/xs-ai/**'
-      - 'supabase/functions/xs-ai-sarvam/**'
       - 'tests/e2e/**'
       - 'tests/ai/**'
       - '.github/workflows/e2e-analytics.yml'
