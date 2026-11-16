@@ -11,10 +11,10 @@
 | Phase | **P0 core operations built and deployed** (Phases 3–4 compressed at owner's request) |
 | Live app | <https://abzops.github.io/xs-gym/> — served from `gh-pages`, updated by CI on every push to `main` |
 | Backend | Supabase project `xs-gym`, ref `knuanihnxtxtyrgvsumq`, region `ap-south-1`, Free plan |
-| Database | 8 live migrations applied, 17 public tables; RLS on all exposed tables |
+| Database | 9 live migrations applied, 18 public tables; RLS on all exposed tables |
 | CI | `.github/workflows/pages.yml`: typecheck, lint, unit tests, DB tests on PG16, XS AI browser suite, secret scan → `gh-pages` |
 | Remote | `https://github.com/abzops/xs-gym`, branch `main`; commits authored as `abzops` |
-| Last updated | 14 Nov 2026 |
+| Last updated | 16 Nov 2026 |
 
 ## 2. Rules for whoever continues
 
@@ -61,6 +61,26 @@
 6. Phases 6–7 (AI text and voice) only after the pilot uses the core daily.
 
 ## 6. Session log
+
+### 2026-11-16 — Membership pause (freeze)
+
+- Owner asked for a pause feature. Migration `membership_pause`: table
+  `membership_pauses`, commands `pause_membership` (1–180 days, today or up to
+  60 days ahead, reason required) and `resume_membership` (early resume gives
+  unused days back; cancels a planned pause). The running plan's end date and
+  any queued renewal move by the paused days; membership dates stay immutable
+  otherwise (guard allows shifts only inside these commands). New permission
+  `memberships.pause` for owner and manager. `member_overview` shows status
+  `paused` plus `paused_until` / `pause_starts`; check-in needs an override.
+- App: Pause / Resume now / Cancel pause on the member page, Paused filter in
+  Members, Paused badge. XS AI: `pause_membership` and `resume_membership` cards.
+- Restored the missing migration file `20261112144714_remove_membership_start_date_window.sql`
+  (applied live on 12 Nov but absent from the repo).
+- XS AI fixes from live testing: full spoken name picks the right member when
+  first names clash; replies cleaned of markdown and stray Hindi; a Groq rate
+  limit on one model no longer skips Groq's other model.
+- Tests: DB suite + 25 pause checks, 74 unit, 44 real-schema agent checks, browser
+  suite incl. the pause sheet.
 
 ### 2026-11-14 — XS AI rebuilt: approval-first, Sarvam voice, simple chat
 

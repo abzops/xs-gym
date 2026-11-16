@@ -4,7 +4,7 @@ export const REF = process.env.XS_TEST_SUPABASE_REF || 'knuanihnxtxtyrgvsumq';
 const userId = '11111111-1111-4111-8111-111111111111';
 export const gym = { id: '22222222-2222-4222-8222-222222222222', name: 'Iron Temple Kozhikode', slug: 'iron-temple', timezone: 'Asia/Kolkata',
   currency: 'INR', phone: null, email: null, address: null, grace_days: 3, status: 'active', created_at: '2026-11-01T00:00:00Z', onboarded_at: '2026-11-01T00:10:00Z' };
-const perms = ['members.read','members.write','members.archive','members.export','plans.read','plans.manage','memberships.sell','memberships.cancel',
+const perms = ['members.read','members.write','members.archive','members.export','plans.read','plans.manage','memberships.sell','memberships.cancel','memberships.pause',
   'attendance.checkin','attendance.override','attendance.correct','payments.record','payments.read','payments.reverse','discounts.apply','charges.void',
   'expenses.record','expenses.read','expenses.reverse','reports.operational','reports.financial','staff.read','staff.manage','gym.settings','billing.manage','audit.read'];
 const member = (i, over = {}) => ({

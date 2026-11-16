@@ -111,6 +111,25 @@ for (const device of [
       await page.screenshot({ path: `${shots}/${tag}-05-voice-card.png` });
     });
 
+    if (tag === 'phone-light' || tag === 'laptop-dark') await step(`${tag}: member page pauses a membership`, async () => {
+      let paused = null;
+      await page.route(`https://${REF}.supabase.co/rest/v1/rpc/pause_membership`, (route) => {
+        paused = JSON.parse(route.request().postData() ?? '{}');
+        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ id: 'p1', days: paused.p_days }) });
+      });
+      await page.keyboard.press('Escape');
+      await page.goto(baseUrl + 'g/' + gym.slug + '/members/33333333-3333-4333-8333-333333333332', { waitUntil: 'networkidle' });
+      await page.getByRole('button', { name: 'Pause', exact: true }).click();
+      await page.getByRole('button', { name: '30 days', exact: true }).click();
+      await page.getByLabel('Reason (required)').fill('Travelling to Dubai');
+      await page.getByText('Plan now ends').waitFor();
+      await page.screenshot({ path: `${shots}/${tag}-06-pause-sheet.png` });
+      await page.getByRole('button', { name: 'Pause for 30 days' }).click();
+      await page.getByText('Paused for 30 days').waitFor();
+      assert.equal(paused.p_days, 30);
+      assert.equal(paused.p_reason, 'Travelling to Dubai');
+    });
+
     await step(`${tag}: no page errors`, async () => { assert.deepEqual(errors, []); });
     await ctx.close();
   }
