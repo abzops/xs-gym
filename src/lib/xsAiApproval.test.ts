@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { runAgent, type AgentEnv } from '../../supabase/functions/xs-ai/agent';
+import { runAgent, tidy, type AgentEnv } from '../../supabase/functions/xs-ai/agent';
 
 // A fake Supabase + fake model. Every database write goes through /rpc/<name>,
 // so `rpcCalls` shows exactly what would have changed.
@@ -109,5 +109,28 @@ describe('XS AI approval flow', () => {
     const transcribe = vi.fn(async () => 'hello');
     await expect(runAgent({ gym_id: GYM, messages: [], audio: { data: 'AAAA', mime: 'audio/webm' } }, { ...h.env, transcribe })).rejects.toThrow('not signed in');
     expect(transcribe).not.toHaveBeenCalled();
+  });
+
+  it('picks the right member when the full spoken name matches only one of two', async () => {
+    const h = harness({ members: [RAHUL, RAHUL2], model: () => toolCall('record_payment', { member: 'Rahul Menon', amount: 700, method: 'cash' }) });
+    const out = await runAgent({ gym_id: GYM, messages: [{ role: 'user', content: 'Rahul Menon paid 700 cash' }] }, h.env);
+    expect(out.pending?.[0].lines[0]).toBe('Rahul Menon · XS-0002');
+  });
+
+  it('prepares a pause with the new plan end date and resumes on approval undo', async () => {
+    const running = { ...RAHUL, membership_status: 'active', end_date: '2026-12-10', paused_until: null };
+    const h = harness({ perms: [...OWNER, 'memberships.pause'], members: [running], model: () => toolCall('pause_membership', { member: 'Rahul', days: 15, reason: 'Travelling' }) });
+    const out = await runAgent({ gym_id: GYM, messages: [{ role: 'user', content: 'pause Rahul for 15 days, he is travelling' }] }, h.env);
+    expect(out.pending?.[0].lines).toContain('Plan end 2026-12-10 → 2026-12-25');
+    expect(h.rpcCalls).toHaveLength(0);
+    const card = out.pending![0];
+    const done = await runAgent({ gym_id: GYM, approve: [{ id: card.id, tool: card.tool, args: card.args }] }, h.env);
+    const call = h.rpcCalls.find((c) => c.fn === 'pause_membership')!;
+    expect(call.args).toMatchObject({ p_member: RAHUL.id, p_days: 15, p_reason: 'Travelling', p_start_date: '2026-11-14' });
+    expect(done.actions[0].undo?.rpc).toBe('resume_membership');
+  });
+
+  it('keeps replies plain', () => {
+    expect(tidy('**Done**\n* Rahul - ₹500\n- Anju ₹200 रिवीजनReminder')).toBe('Done\n• Rahul - ₹500\n• Anju ₹200');
   });
 });

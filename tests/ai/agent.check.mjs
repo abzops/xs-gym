@@ -248,6 +248,29 @@ const payments = () => Number(sql(`select count(*) from payments where member_id
   check('membership cancelled after approval', cxDone.actions[0]?.ok, cxDone.actions[0]?.summary);
 }
 
+// 14. Pause by voice/text: card first, approve pauses, Undo resumes.
+{
+  const pm = sql(`select m.id || '|' || m.full_name || '|' || m.member_no from member_overview m where m.gym_id = '${gym}' and m.status = 'active' and m.membership_status = 'active' and m.paused_until is null order by m.member_no desc limit 1`).split('|');
+  const endBefore = sql(`select max(end_date) from member_memberships where member_id = '${pm[0]}' and status = 'active'`);
+  script = () => ({ role: 'assistant', content: '', tool_calls: [call('pause_membership', { member: pm[2], days: 10, reason: 'Travelling' })] });
+  const out = await runAgent({ gym_id: gym, messages: [{ role: 'user', content: `pause ${pm[1]} for 10 days` }] }, env(owner));
+  check('pause comes back as a card and nothing changes yet', out.pending?.[0]?.tool === 'pause_membership' && sql(`select max(end_date) from member_memberships where member_id = '${pm[0]}' and status = 'active'`) === endBefore, JSON.stringify(out.pending?.[0]?.lines ?? out.reply));
+  const done = await approve(out, owner);
+  check('approved pause: member shows paused and plan end moved by 10 days', done.actions[0]?.ok
+    && sql(`select membership_status from member_overview where id = '${pm[0]}'`) === 'paused'
+    && sql(`select max(end_date) - '${endBefore}'::date from member_memberships where member_id = '${pm[0]}' and status = 'active'`) === '10', done.actions[0]?.summary);
+  script = () => ({ role: 'assistant', content: '', tool_calls: [call('pause_membership', { member: pm[2], days: 5, reason: 'Again' })] });
+  const twice = await runAgent({ gym_id: gym, messages: [{ role: 'user', content: 'pause again' }] }, env(owner));
+  check('a second pause is refused before any card', !twice.pending);
+  const u = done.actions[0].undo;
+  await fetch(`${API}/rest/v1/rpc/${u.rpc}`, { method: 'POST', headers: { authorization: `Bearer ${owner}` }, body: JSON.stringify(u.args) });
+  check('undo resumes and gives the days back', sql(`select membership_status from member_overview where id = '${pm[0]}'`) !== 'paused'
+    && sql(`select max(end_date) from member_memberships where member_id = '${pm[0]}' and status = 'active'`) === endBefore);
+  script = () => ({ role: 'assistant', content: '', tool_calls: [call('pause_membership', { member: pm[2], days: 10, reason: 'Desk try' })] });
+  const desk = await runAgent({ gym_id: gym, messages: [{ role: 'user', content: 'pause' }] }, env(reception));
+  check('reception is not offered the pause tool', !desk.pending && !lastBody.tools.some((t) => t.function.name === 'pause_membership'));
+}
+
 llm.close();
 console.log(failures ? `${failures} AI FAILURES` : 'AI AGENT OK');
 process.exit(failures ? 1 : 0);
