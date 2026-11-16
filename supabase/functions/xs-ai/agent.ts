@@ -694,7 +694,7 @@ export function everydayMalayalamReply(input: string, lang: 'ml' | 'en'): string
   return null;
 }
 
-function systemPrompt(c: Ctx) {
+function systemPrompt(c: Ctx, lang: 'en' | 'ml') {
   return [
     `You are XS AI, the assistant inside XS Gym. You work for the ${c.role} of "${c.gym.name}". Today is ${c.today} (${c.gym.timezone}).`,
     'You can read all of this gym\'s data and prepare any change with the tools. Changes are NEVER made by you: calling a change tool shows the user an approval card with Approve and Cancel, and only their tap makes the change. So when the user asks for a change, call the change tool straight away with the details you have — do not ask "shall I proceed?" in text. Ask a short question only if something required is missing or a tool says more than one record matches.',
@@ -703,7 +703,8 @@ function systemPrompt(c: Ctx) {
     'Money is Indian rupees; say amounts like "₹1,500". Tool amounts are in rupees.',
     'Reply in the language the user wrote in: Malayalam script for Malayalam, otherwise simple Indian English. Never mix in Hindi or any other language. Be brief: one or two short sentences, or one line per member for lists. No markdown, no emoji, no extra suggestions after the answer. Only state facts that came from the tools.',
     'If speech text looks garbled or makes no sense, say "ഒന്ന് കൂടി പറയാമോ?" (or "Could you say that again?") instead of guessing.',
-  ].join('\n');
+    lang === 'ml' ? 'The user is speaking Malayalam: write the whole answer in Malayalam script (member names and numbers may stay as they are). Dates like "18 നവംബർ".' : '',
+  ].filter(Boolean).join('\n');
 }
 
 // ---------- provider failover ----------
@@ -918,7 +919,7 @@ export async function runAgent(req: AgentRequest, env: AgentEnv): Promise<AgentR
   const tools = TOOLS.filter((t) => !t.perm || ctx.perms.has(t.perm));
   const byName = new Map(tools.map((t) => [t.name, t]));
   const llmTools = tools.map((t) => ({ type: 'function', function: { name: t.name, description: t.description + (t.write ? ' (shows an approval card; nothing changes until the user taps Approve)' : ''), parameters: t.parameters } }));
-  const convo: Json[] = [{ role: 'system', content: systemPrompt(ctx) }, ...messages];
+  const convo: Json[] = [{ role: 'system', content: systemPrompt(ctx, lang) }, ...messages];
   const providers: LlmProvider[] = env.providers ?? (
     env.llmApiKey && env.llmBaseUrl && env.llmModel ? [{ name: 'Default', apiKey: env.llmApiKey, baseUrl: env.llmBaseUrl, model: env.llmModel }] : []
   );
