@@ -1,6 +1,6 @@
 export type Role = 'owner' | 'manager' | 'reception' | 'trainer';
 export type Method = 'cash' | 'upi' | 'card' | 'bank' | 'other';
-export type MembershipStatus = 'active' | 'grace' | 'expired' | 'upcoming' | 'cancelled' | 'none';
+export type MembershipStatus = 'active' | 'grace' | 'paused' | 'expired' | 'upcoming' | 'cancelled' | 'none';
 
 export type Gym = {
   id: string; name: string; slug: string; timezone: string; currency: 'INR';
@@ -25,6 +25,8 @@ export type MemberOverview = {
   membership_id: string | null; plan_name: string | null; start_date: string | null; end_date: string | null;
   valid_until: string | null; membership_status: MembershipStatus;
   due_paise: number; credit_paise: number; last_check_in_at: string | null;
+  /** Last paused day and first paused day of a current or planned pause. */
+  paused_until?: string | null; pause_starts?: string | null;
 };
 
 export type Plan = {

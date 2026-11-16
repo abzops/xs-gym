@@ -17,6 +17,7 @@ const FILTERS: { value: MemberFilter; label: string }[] = [
   { value: 'all', label: 'All' },
   { value: 'active', label: 'Active' },
   { value: 'expiring', label: 'Expiring' },
+  { value: 'paused', label: 'Paused' },
   { value: 'expired', label: 'Expired' },
   { value: 'dues', label: 'Dues' },
   { value: 'archived', label: 'Archived' },

@@ -222,3 +222,48 @@ export function ReasonSheet({ title, warning, confirmLabel, onClose, onConfirm }
     </Sheet>
   );
 }
+
+/* ---------- Pause (freeze) a membership ---------- */
+const PAUSE_PRESETS = [7, 15, 30, 60];
+export function PauseSheet({ member, onClose }: { member: MemberOverview; onClose: () => void }) {
+  const { gym } = useGym();
+  const refresh = useRefreshMember(member.id);
+  const toast = useToast();
+  const today = todayInGym(gym.timezone);
+  const [days, setDays] = useState('15');
+  const [start, setStart] = useState(today);
+  const [reason, setReason] = useState('');
+  const once = useOnce();
+  const n = Number(days);
+  const valid = Number.isInteger(n) && n >= 1 && n <= 180 && reason.trim().length >= 3 && start >= today;
+  const run = useMutation({
+    mutationFn: () => rpc('pause_membership', { p_gym: gym.id, p_member: member.id, p_days: n, p_reason: reason.trim(), p_start_date: start }),
+    onSuccess: async () => { await refresh(); toast(`Paused for ${n} days`); onClose(); },
+  });
+  const newEnd = member.end_date && valid ? addDays(member.end_date, n) : null;
+  return (
+    <Sheet title="Pause membership" onClose={onClose}>
+      <form className="stack lg" onSubmit={(e) => { e.preventDefault(); if (valid) once((o) => run.mutate(undefined, o)); }}>
+        <p className="muted">{member.full_name} keeps the paused days: the plan end date moves forward, and any renewal already sold moves with it.</p>
+        <Field label="How many days?">
+          <div className="row" style={{ gap: 8 }}>
+            {PAUSE_PRESETS.map((d) => (
+              <button type="button" key={d} className={'btn small' + (n === d ? ' primary' : ' ghost')} aria-pressed={n === d} onClick={() => setDays(String(d))}>{d} days</button>
+            ))}
+            <input className="input" style={{ width: 96 }} inputMode="numeric" value={days} aria-label="Days"
+              onChange={(e) => setDays(e.target.value.replace(/\D/g, '').slice(0, 3))} />
+          </div>
+        </Field>
+        <Field label="Pause starts">
+          <input className="input" type="date" min={today} value={start} onChange={(e) => setStart(e.target.value)} />
+        </Field>
+        <Field label="Reason (required)">
+          <input className="input" value={reason} placeholder="e.g. Travelling, injury, exams" onChange={(e) => setReason(e.target.value)} />
+        </Field>
+        {newEnd && <Notice tone="info">Back on {formatDate(addDays(start, n))}. Plan now ends {formatDate(newEnd)} (was {formatDate(member.end_date)}).</Notice>}
+        {run.error && <Notice tone="bad">{errorMessage(run.error)}</Notice>}
+        <button className="btn primary block" disabled={!valid || run.isPending}>Pause for {Number.isInteger(n) && n > 0 ? n : '…'} days</button>
+      </form>
+    </Sheet>
+  );
+}

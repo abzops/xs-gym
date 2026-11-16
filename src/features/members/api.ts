@@ -3,7 +3,7 @@ import { addDays, todayInGym } from '../../lib/dates';
 import { supabase } from '../../lib/supabase';
 import type { Charge, MemberOverview, Membership, Payment, Plan } from '../../lib/types';
 
-export type MemberFilter = 'all' | 'active' | 'expiring' | 'expired' | 'dues' | 'archived';
+export type MemberFilter = 'all' | 'active' | 'expiring' | 'paused' | 'expired' | 'dues' | 'archived';
 
 /** Strips characters that would break a PostgREST `or` filter. */
 function safeTerm(q: string) {
@@ -32,6 +32,7 @@ export const membersQuery = (gymId: string, search: string, filter: MemberFilter
       if (filter === 'expiring') q = q.gte('valid_until', today).lte('valid_until', addDays(today, 6));
       if (filter === 'expired') q = q.in('membership_status', ['expired', 'none']);
       if (filter === 'dues') q = q.gt('due_paise', 0);
+      if (filter === 'paused') q = q.eq('membership_status', 'paused');
       const order = filter === 'expiring' ? 'valid_until' : filter === 'dues' ? 'due_paise' : 'full_name';
       const { data, error } = await q.order(order, { ascending: filter !== 'dues' }).limit(100);
       if (error) throw error;

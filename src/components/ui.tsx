@@ -181,6 +181,7 @@ export function Logo({ width = 180, className = 'logo', onDark = false }: { widt
 const STATUS: Record<MembershipStatus, { label: string; tone: string }> = {
   active: { label: 'Active', tone: 'ok' },
   grace: { label: 'Grace period', tone: 'warn' },
+  paused: { label: 'Paused', tone: 'info' },
   expired: { label: 'Expired', tone: 'bad' },
   upcoming: { label: 'Starts soon', tone: 'info' },
   cancelled: { label: 'Cancelled', tone: 'neutral' },

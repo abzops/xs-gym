@@ -1,5 +1,5 @@
 import { useQueryClient } from '@tanstack/react-query';
-import { Archive, ArrowLeft, Pencil, Phone, RefreshCw, Trash2, Wallet } from 'lucide-react';
+import { Archive, ArrowLeft, Pause, Pencil, Phone, Play, RefreshCw, Trash2, Wallet } from 'lucide-react';
 import { useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router';
 import { useGym } from '../../app/gym';
@@ -10,13 +10,13 @@ import { formatINR } from '../../lib/money';
 import { rpc } from '../../lib/supabase';
 import { METHOD_LABEL, type Payment } from '../../lib/types';
 import { EditPaymentSheet } from '../payments/EditPaymentSheet';
-import { PaymentSheet, ReasonSheet, SellPlanSheet } from './actions';
+import { PauseSheet, PaymentSheet, ReasonSheet, SellPlanSheet } from './actions';
 import { useMember, useMemberHistory } from './api';
 import { MemberForm } from './MemberForm';
 import { PermanentDeleteMemberSheet } from './PermanentDeleteMemberSheet';
 import { WhatsAppButton, reminderFor } from '../../components/WhatsApp';
 
-type Dialog = null | 'sell' | 'pay' | 'edit' | { reverse: string } | { editPayment: Payment } | { voidCharge: string } | 'archive' | 'delete';
+type Dialog = null | 'sell' | 'pay' | 'edit' | { reverse: string } | { editPayment: Payment } | { voidCharge: string } | 'archive' | 'delete' | 'pause';
 
 export function MemberDetail() {
   const { memberId = '' } = useParams();
@@ -51,6 +51,11 @@ export function MemberDetail() {
   const m = member.data;
   if (!m) return <Empty title="Member not found"><Link className="btn" to={`${base}/members`}>Back to members</Link></Empty>;
   const archived = m.status === 'archived';
+  const pausing = !!m.paused_until;
+  const canPause = can('memberships.pause') && !pausing && ['active', 'grace'].includes(m.membership_status);
+  const resume = () => rpc('resume_membership', { p_gym: gym.id, p_member: m.id, p_reason: 'Resumed from member page' })
+    .then(refresh).then(() => toast(m.membership_status === 'paused' ? 'Membership resumed' : 'Planned pause cancelled'))
+    .catch((e) => toast(errorMessage(e), 'bad'));
 
   return (
     <div className="stack lg">
@@ -75,6 +80,8 @@ export function MemberDetail() {
           {m.valid_until && m.valid_until !== m.end_date && <><dt>Paid till</dt><dd>{formatDate(m.valid_until)}</dd></>}
           {canMoney && <><dt>Due</dt><dd className="num" style={{ color: m.due_paise > 0 ? 'var(--bad)' : undefined, fontWeight: 600 }}>
             {formatINR(m.due_paise)}{m.credit_paise > 0 ? ` · ${formatINR(m.credit_paise)} credit` : ''}</dd></>}
+          {pausing && <><dt>{m.membership_status === 'paused' ? 'Paused till' : 'Pause planned'}</dt>
+            <dd>{m.membership_status === 'paused' ? formatDate(m.paused_until) : `${formatDate(m.pause_starts)} – ${formatDate(m.paused_until)}`}</dd></>}
           <dt>Joined</dt><dd>{formatDate(m.join_date)}</dd>
         </dl>
 
@@ -82,6 +89,8 @@ export function MemberDetail() {
           <div className="row">
             {can('memberships.sell') && <button className="btn" onClick={() => setDialog('sell')}><RefreshCw size={18} /> {m.valid_until ? 'Renew' : 'Sell plan'}</button>}
             {can('payments.record') && <button className="btn" onClick={() => setDialog('pay')}><Wallet size={18} /> Payment</button>}
+            {canPause && <button className="btn ghost" onClick={() => setDialog('pause')}><Pause size={18} /> Pause</button>}
+            {pausing && can('memberships.pause') && <button className="btn" onClick={resume}><Play size={18} /> {m.membership_status === 'paused' ? 'Resume now' : 'Cancel pause'}</button>}
             {can('members.write') && <button className="btn ghost" onClick={() => setDialog('edit')}><Pencil size={18} /> Edit member</button>}
             {can('members.archive') && <button className="btn ghost" onClick={() => setDialog('archive')}><Archive size={18} /> Archive member</button>}
             {role === 'owner' && <button className="btn ghost danger" onClick={() => setDialog('delete')}><Trash2 size={18} /> Delete member permanently</button>}
@@ -186,6 +195,7 @@ export function MemberDetail() {
 
       {dialog === 'sell' && <SellPlanSheet member={m} onClose={close} onSold={(due) => setDialog(due && can('payments.record') ? 'pay' : null)} />}
       {dialog === 'pay' && <PaymentSheet member={m} onClose={close} />}
+      {dialog === 'pause' && <PauseSheet member={m} onClose={close} />}
       {dialog === 'edit' && (
         <Sheet title="Edit member" onClose={close}><MemberForm member={m} onDone={close} /></Sheet>
       )}
