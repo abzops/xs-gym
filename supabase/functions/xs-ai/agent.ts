@@ -128,6 +128,52 @@ const MALAYALAM = /[\u0d00-\u0d7f]/u;
 export const tidy = (t: string) => t.replace(/\*\*|__|`|^#+\s*/gmu, '').replace(/^\s*[*-]\s+/gmu, '• ')
   .replace(/[\u0900-\u097f]+\S*/gu, '').replace(/[ \t]{2,}/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
 
+// ---------- Malayalam names → English spelling ----------
+// Speech-to-text writes names in Malayalam script; members are stored in
+// English letters. Both are reduced to a consonant "skeleton" and compared.
+const ML_CONS: Record<string, string> = {
+  'ക': 'k', 'ഖ': 'kh', 'ഗ': 'g', 'ഘ': 'gh', 'ങ': 'ng', 'ച': 'ch', 'ഛ': 'chh', 'ജ': 'j', 'ഝ': 'jh', 'ഞ': 'nj',
+  'ട': 't', 'ഠ': 'th', 'ഡ': 'd', 'ഢ': 'dh', 'ണ': 'n', 'ത': 'th', 'ഥ': 'th', 'ദ': 'd', 'ധ': 'dh', 'ന': 'n',
+  'പ': 'p', 'ഫ': 'f', 'ബ': 'b', 'ഭ': 'bh', 'മ': 'm', 'യ': 'y', 'ര': 'r', 'റ': 'r', 'ല': 'l', 'ള': 'l',
+  'ഴ': 'zh', 'വ': 'v', 'ശ': 'sh', 'ഷ': 'sh', 'സ': 's', 'ഹ': 'h',
+};
+const ML_VOWEL: Record<string, string> = {
+  'അ': 'a', 'ആ': 'aa', 'ഇ': 'i', 'ഈ': 'ee', 'ഉ': 'u', 'ഊ': 'oo', 'ഋ': 'ru', 'എ': 'e', 'ഏ': 'e', 'ഐ': 'ai', 'ഒ': 'o', 'ഓ': 'o', 'ഔ': 'au',
+  'ാ': 'aa', 'ി': 'i', 'ീ': 'ee', 'ു': 'u', 'ൂ': 'oo', 'ൃ': 'ru', 'െ': 'e', 'േ': 'e', 'ൈ': 'ai', 'ൊ': 'o', 'ോ': 'o', 'ൌ': 'au', 'ൗ': 'au',
+  'ൻ': 'n', 'ർ': 'r', 'ൽ': 'l', 'ൾ': 'l', 'ൺ': 'n', 'ം': 'm', 'ഃ': 'h',
+};
+export function mlToLatin(text: string): string {
+  let out = '';
+  const chars = [...text.normalize('NFC').replace(/\u200c|\u200d/g, '')];
+  for (let i = 0; i < chars.length; i++) {
+    const ch = chars[i];
+    if (ML_CONS[ch]) {
+      out += ML_CONS[ch];
+      const next = chars[i + 1];
+      if (next === '\u0d4d') { i++; continue; } // virama: no vowel
+      if (!(next && ML_VOWEL[next] && /[\u0d3e-\u0d4c\u0d57\u0d43]/u.test(next))) out += 'a';
+    } else if (ML_VOWEL[ch]) out += ML_VOWEL[ch];
+    else if (ch !== '\u0d4d') out += ch;
+  }
+  return out;
+}
+/** Consonant skeleton: "Nandana" and "നന്ദന" both give "ndn". */
+export const nameSkeleton = (t: string) => (MALAYALAM.test(t) ? mlToLatin(t) : t).toLowerCase()
+  .replace(/ph/g, 'f').replace(/w/g, 'v').replace(/z/g, 's').replace(/[^a-z]/g, '').replace(/[aeiouyh]/g, '').replace(/(.)\1+/g, '$1');
+async function membersByMalayalamName(term: string, c: Ctx): Promise<Json[]> {
+  const want = term.split(' ').map(nameSkeleton).filter((x) => x.length >= 1);
+  if (!want.length) return [];
+  const all = (await c.rest(`members?select=id,full_name&gym_id=eq.${c.gym.id}&status=eq.active&limit=2000`)) as Json[];
+  const score = (name: string) => {
+    const parts = name.split(/\s+/).map(nameSkeleton).filter(Boolean);
+    return want.filter((w) => parts.some((p) => p === w || (w.length >= 3 && p.startsWith(w)))).length;
+  };
+  const scored = all.map((m) => ({ m, s: score(String(m.full_name)) })).filter((x) => x.s === want.length);
+  if (!scored.length) return [];
+  const ids = scored.slice(0, 6).map((x) => x.m.id).join(',');
+  return (await c.rest(`member_overview?select=*&gym_id=eq.${c.gym.id}&id=in.(${ids})`)) as Json[];
+}
+
 type MemberRef = { id: string; name: string; member_no: string; due_paise: number; status: string; row: Json };
 /**
  * Finds the member a tool is about: an id from an earlier lookup, or the name,
@@ -150,6 +196,7 @@ async function resolveMember(a: Json, c: Ctx): Promise<MemberRef> {
     return (await c.rest(`member_overview?select=*&gym_id=eq.${c.gym.id}&or=(${enc(parts.join(','))})&order=status.asc,full_name.asc&limit=6`)) as Json[];
   };
   let rows = await search(term);
+  if (!rows.length && MALAYALAM.test(term)) rows = await membersByMalayalamName(term, c);
   // "Rahul K" said aloud often fails as a whole; the first name usually works.
   if (!rows.length && term.includes(' ')) rows = await search(term.split(' ')[0]);
   const active = rows.filter((m) => m.status === 'active');
@@ -158,7 +205,8 @@ async function resolveMember(a: Json, c: Ctx): Promise<MemberRef> {
   const exact = pool.filter((m) => String(m.full_name).toLowerCase() === lower || String(m.member_no).toLowerCase() === lower);
   // "Nandana Chandran" when two Nandanas exist: keep those matching every word.
   const words = lower.split(' ').filter((w) => w.length >= 3);
-  const byWords = words.length > 1 ? pool.filter((m) => words.every((w) => String(m.full_name).toLowerCase().includes(w.slice(0, 4)))) : [];
+  const byWords = words.length > 1 ? pool.filter((m) => words.every((w) => String(m.full_name).toLowerCase().includes(w.slice(0, 4))
+    || String(m.full_name).split(/\s+/).some((p) => nameSkeleton(p) === nameSkeleton(w)))) : [];
   const found = exact.length === 1 ? exact : byWords.length === 1 ? byWords : pool;
   if (found.length === 0) {
     throw new ApiError(MALAYALAM.test(term)
@@ -218,7 +266,8 @@ const READ_TOOLS: ReadTool[] = [
       if (f === 'expired') q += '&membership_status=in.(expired,none)';
       if (f === 'paused') q += '&membership_status=eq.paused';
       q += f === 'dues' ? '&due_paise=gt.0&order=due_paise.desc' : '&order=full_name.asc';
-      const rows = (await c.rest(`${q}&limit=${MAX_ROWS}`)) as Json[];
+      let rows = (await c.rest(`${q}&limit=${MAX_ROWS}`)) as Json[];
+      if (!rows.length && MALAYALAM.test(term)) rows = await membersByMalayalamName(term, c);
       return { result: { count: rows.length, more_may_exist: rows.length === MAX_ROWS, members: rows.map(memberRow) } };
     } },
 

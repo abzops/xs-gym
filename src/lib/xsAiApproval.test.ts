@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { runAgent, tidy, type AgentEnv } from '../../supabase/functions/xs-ai/agent';
+import { nameSkeleton, runAgent, tidy, type AgentEnv } from '../../supabase/functions/xs-ai/agent';
 
 // A fake Supabase + fake model. Every database write goes through /rpc/<name>,
 // so `rpcCalls` shows exactly what would have changed.
@@ -132,5 +132,25 @@ describe('XS AI approval flow', () => {
 
   it('keeps replies plain', () => {
     expect(tidy('**Done**\n* Rahul - ₹500\n- Anju ₹200 रिवीजनReminder')).toBe('Done\n• Rahul - ₹500\n• Anju ₹200');
+  });
+
+  it('matches Malayalam spoken names to English spellings', () => {
+    const same = (ml: string, en: string) => expect(ml.split(' ').map(nameSkeleton)).toEqual(en.split(' ').map(nameSkeleton));
+    same('നന്ദന ചന്ദ്രൻ', 'Nandana Chandran'); same('രാഹുൽ', 'Rahul'); same('ശ്രീജിത്ത്', 'Sreejith');
+    same('സ്നേഹ ജോസഫ്', 'Sneha Joseph'); same('മുഹമ്മദ് ഷാഫി', 'Mohammed Shafi'); same('അനൂപ് വർഗീസ്', 'Anoop Varghese');
+    expect(nameSkeleton('നന്ദന')).not.toEqual(nameSkeleton('Joseph'));
+  });
+
+  it('finds a member said in Malayalam script', async () => {
+    const h = harness({ members: [], model: () => toolCall('record_payment', { member: 'രാഹുൽ മേനോൻ', amount: 500, method: 'upi' }) });
+    const fetcher = h.env.fetch!;
+    h.env.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes('/rest/v1/members?')) return new Response(JSON.stringify([RAHUL, RAHUL2].map((m) => ({ id: m.id, full_name: m.full_name }))), { status: 200 });
+      if (url.includes('/rest/v1/member_overview') && url.includes('id=in.')) return new Response(JSON.stringify([RAHUL2]), { status: 200 });
+      return fetcher(input, init);
+    }) as typeof fetch;
+    const out = await runAgent({ gym_id: GYM, messages: [{ role: 'user', content: 'രാഹുൽ മേനോൻ 500 UPI അടച്ചു' }] }, h.env);
+    expect(out.pending?.[0].lines[0]).toBe('Rahul Menon · XS-0002');
   });
 });
