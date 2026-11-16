@@ -294,13 +294,60 @@ select t.fails($sql$select public.correct_payment(t.id('gymA'),t.id('editNew'),4
   'XS403', 'reception cannot edit financial ledger');
 select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000a1', false);
 
+-- ---------------------------------------------------------------- membership pause
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000a1', false);
+insert into t.ids select 'pm', id from public.create_member(t.id('gymA'), 'Pause Member', '9000000077');
+insert into t.ids select 'pmA', id from public.sell_membership(t.id('gymA'), t.id('pm'), t.id('plan1m'), gen_random_uuid());
+insert into t.ids select 'pmB', id from public.sell_membership(t.id('gymA'), t.id('pm'), t.id('plan3m'), gen_random_uuid());
+create temp table pm_before as select id, start_date, end_date from public.member_memberships where member_id = t.id('pm');
+grant select on pm_before to authenticated;
+insert into t.ids select 'pause1', id from public.pause_membership(t.id('gymA'), t.id('pm'), 10, 'Travelling for work');
+select t.eq((select end_date from public.member_memberships where id = t.id('pmA')),
+  (select end_date + 10 from pm_before where id = t.id('pmA')), 'pause extends the running membership');
+select t.eq((select start_date from public.member_memberships where id = t.id('pmB')),
+  (select start_date + 10 from pm_before where id = t.id('pmB')), 'pause moves the queued renewal start');
+select t.eq((select end_date from public.member_memberships where id = t.id('pmB')),
+  (select end_date + 10 from pm_before where id = t.id('pmB')), 'pause moves the queued renewal end');
+select t.eq((select membership_status from public.member_overview where id = t.id('pm')), 'paused', 'paused member shows as paused');
+select t.eq((select paused_until from public.member_overview where id = t.id('pm')), private.gym_today(t.id('gymA')) + 9, 'paused_until is the last paused day');
+select t.fails($$select public.pause_membership(t.id('gymA'), t.id('pm'), 5, 'Second pause')$$, 'XS409', 'only one open pause per member');
+select t.fails($$select public.check_in(t.id('gymA'), t.id('pm'), null)$$, 'XS', 'a paused member cannot check in without an override');
+reset role;
+select t.fails($$update public.member_memberships set end_date = end_date + 1 where id = t.id('pmA')$$, 'XS405', 'dates still cannot be edited directly, even by the table owner');
+set role authenticated;
+select t.eq((select count(*) from public.audit_logs where action = 'membership.paused' and entity_id = t.id('pmA'))::int, 1, 'pause is audited');
+select public.resume_membership(t.id('gymA'), t.id('pm'), 'Back early');
+select t.eq((select end_date from public.member_memberships where id = t.id('pmA')),
+  (select end_date from pm_before where id = t.id('pmA')), 'resuming on day one gives every day back');
+select t.eq((select start_date from public.member_memberships where id = t.id('pmB')),
+  (select start_date from pm_before where id = t.id('pmB')), 'resume moves the renewal back');
+select t.eq((select membership_status from public.member_overview where id = t.id('pm')), 'active', 'resumed member is active again');
+select t.eq((select unused_days from public.membership_pauses where id = t.id('pause1')), 10, 'unused days recorded');
+select t.fails($$select public.resume_membership(t.id('gymA'), t.id('pm'))$$, 'XS404', 'nothing to resume twice');
+-- A pause planned for later can be cancelled before it starts.
+select public.pause_membership(t.id('gymA'), t.id('pm'), 7, 'Exams next week', private.gym_today(t.id('gymA')) + 3);
+select t.eq((select membership_status from public.member_overview where id = t.id('pm')), 'active', 'future pause: still active today');
+select t.eq((select pause_starts from public.member_overview where id = t.id('pm')), private.gym_today(t.id('gymA')) + 3, 'future pause start is shown');
+select public.resume_membership(t.id('gymA'), t.id('pm'), 'Plan changed');
+select t.eq((select end_date from public.member_memberships where id = t.id('pmA')),
+  (select end_date from pm_before where id = t.id('pmA')), 'cancelled future pause restores dates');
+select t.fails($$select public.pause_membership(t.id('gymA'), t.id('pm'), 181, 'Too long')$$, 'XS422', 'pause length is limited');
+select t.fails($$select public.pause_membership(t.id('gymA'), t.id('pm'), 5, '')$$, 'XS422', 'pause needs a reason');
+select t.fails($$select public.pause_membership(t.id('gymA'), t.id('pm'), 5, 'Backdated', private.gym_today(t.id('gymA')) - 1)$$, 'XS422', 'pause cannot start in the past');
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000a2', false);
+select t.fails($$select public.pause_membership(t.id('gymA'), t.id('pm'), 5, 'Reception try')$$, 'XS403', 'reception cannot pause');
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000b1', false);
+select t.fails($$select public.pause_membership(t.id('gymA'), t.id('pm'), 5, 'Other gym')$$, 'XS403', 'pause cannot cross tenant');
+select t.eq((select count(*) from public.membership_pauses)::int, 0, 'other gym cannot see pauses');
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000a1', false);
+
 -- Expired subscription: read-only
 reset role;
 update public.gym_subscriptions set trial_ends_at = now() - interval '1 minute' where gym_id = t.id('gymA');
 set role authenticated;
 select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000a1', false);
 select t.fails($$select public.create_member(t.id('gymA'), 'Late', '9000000005')$$, 'XS402', 'expired trial blocks writes');
-select t.eq((select count(*) from public.members where gym_id = t.id('gymA'))::int, 1, 'expired trial still reads');
+select t.eq((select count(*) from public.members where gym_id = t.id('gymA'))::int, 2, 'expired trial still reads');
 
 -- Anonymous gets nothing
 reset role;
