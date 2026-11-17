@@ -42,3 +42,13 @@ export function daysBetween(from: string, to: string): number {
   const b = Date.UTC(...(to.split('-').map(Number) as [number, number, number]));
   return Math.round((b - a) / 86_400_000) + 0;
 }
+
+/** Last valid day of a plan starting on `start` — same rule as the database
+ * (private.membership_end_date): N months − 1 day, clamped to month end. */
+export function membershipEndDate(start: string, unit: 'day' | 'month', count: number): string {
+  if (unit === 'day') return addDays(start, count - 1);
+  const [y, m, d] = start.split('-').map(Number);
+  const lastOfTarget = new Date(Date.UTC(y, m - 1 + count + 1, 0)).getUTCDate();
+  if (d > lastOfTarget) return new Date(Date.UTC(y, m - 1 + count, lastOfTarget)).toISOString().slice(0, 10);
+  return addDays(new Date(Date.UTC(y, m - 1 + count, d)).toISOString().slice(0, 10), -1);
+}

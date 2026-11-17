@@ -1,5 +1,5 @@
 import { useQueryClient } from '@tanstack/react-query';
-import { Archive, ArrowLeft, Pause, Pencil, Phone, Play, RefreshCw, Trash2, Wallet } from 'lucide-react';
+import { Archive, ArrowLeft, CalendarCog, Pause, Pencil, Phone, Play, RefreshCw, Trash2, Wallet } from 'lucide-react';
 import { useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router';
 import { useGym } from '../../app/gym';
@@ -8,15 +8,15 @@ import { formatDate, formatDateTime } from '../../lib/dates';
 import { errorMessage } from '../../lib/errors';
 import { formatINR } from '../../lib/money';
 import { rpc } from '../../lib/supabase';
-import { METHOD_LABEL, type Payment } from '../../lib/types';
+import { METHOD_LABEL, type Membership, type Payment } from '../../lib/types';
 import { EditPaymentSheet } from '../payments/EditPaymentSheet';
-import { PauseSheet, PaymentSheet, ReasonSheet, SellPlanSheet } from './actions';
+import { EditDatesSheet, PauseSheet, PaymentSheet, ReasonSheet, SellPlanSheet } from './actions';
 import { useMember, useMemberHistory } from './api';
 import { MemberForm } from './MemberForm';
 import { PermanentDeleteMemberSheet } from './PermanentDeleteMemberSheet';
 import { WhatsAppButton, reminderFor } from '../../components/WhatsApp';
 
-type Dialog = null | 'sell' | 'pay' | 'edit' | { reverse: string } | { editPayment: Payment } | { voidCharge: string } | 'archive' | 'delete' | 'pause';
+type Dialog = null | 'sell' | 'pay' | 'edit' | { reverse: string } | { editPayment: Payment } | { voidCharge: string } | 'archive' | 'delete' | 'pause' | { editDates: Membership };
 
 export function MemberDetail() {
   const { memberId = '' } = useParams();
@@ -158,6 +158,9 @@ export function MemberDetail() {
                       <span className="meta"><span>{formatDate(mm.start_date)} – {formatDate(mm.end_date)}</span><span>{formatINR(mm.price_paise)}</span></span>
                     </span>
                     {mm.status === 'cancelled' && <span className="badge neutral">Cancelled</span>}
+                    {mm.status === 'active' && !archived && can('memberships.edit_dates') && (
+                      <button className="btn small ghost" onClick={() => setDialog({ editDates: mm })}><CalendarCog size={14} /> Edit dates</button>
+                    )}
                   </li>
                 ))}
               </ul>
@@ -196,6 +199,11 @@ export function MemberDetail() {
       {dialog === 'sell' && <SellPlanSheet member={m} onClose={close} onSold={(due) => setDialog(due && can('payments.record') ? 'pay' : null)} />}
       {dialog === 'pay' && <PaymentSheet member={m} onClose={close} />}
       {dialog === 'pause' && <PauseSheet member={m} onClose={close} />}
+      {dialog && typeof dialog === 'object' && 'editDates' in dialog && history.data && (
+        <EditDatesSheet member={m} membership={dialog.editDates} onClose={close}
+          previousEnd={history.data.memberships.filter((x) => x.status === 'active' && x.id !== dialog.editDates.id && x.end_date < dialog.editDates.start_date)
+            .reduce<string | null>((max, x) => (!max || x.end_date > max ? x.end_date : max), null)} />
+      )}
       {dialog === 'edit' && (
         <Sheet title="Edit member" onClose={close}><MemberForm member={m} onDone={close} /></Sheet>
       )}

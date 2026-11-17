@@ -3,7 +3,7 @@ import { useRef, useState } from 'react';
 import { useNavigate } from 'react-router';
 import { useGym } from '../../app/gym';
 import { Field, Notice, Segmented, Sheet, useToast } from '../../components/ui';
-import { addDays, formatDate, todayInGym } from '../../lib/dates';
+import { addDays, daysBetween, formatDate, membershipEndDate, todayInGym } from '../../lib/dates';
 import { errorMessage } from '../../lib/errors';
 import { formatINR, paiseToInput, parseINR } from '../../lib/money';
 import { setTransition } from '../../lib/motion';
@@ -263,6 +263,75 @@ export function PauseSheet({ member, onClose }: { member: MemberOverview; onClos
         {newEnd && <Notice tone="info">Back on {formatDate(addDays(start, n))}. Plan now ends {formatDate(newEnd)} (was {formatDate(member.end_date)}).</Notice>}
         {run.error && <Notice tone="bad">{errorMessage(run.error)}</Notice>}
         <button className="btn primary block" disabled={!valid || run.isPending}>Pause for {Number.isInteger(n) && n > 0 ? n : '…'} days</button>
+      </form>
+    </Sheet>
+  );
+}
+
+/* ---------- Edit (backdate) a membership's dates ---------- */
+export function EditDatesSheet({ member, membership, previousEnd, onClose }: {
+  member: MemberOverview; membership: Membership; previousEnd: string | null; onClose: () => void;
+}) {
+  const { gym } = useGym();
+  const plans = usePlans(gym.id, true);
+  const refresh = useRefreshMember(member.id);
+  const toast = useToast();
+  const once = useOnce();
+  const plan = plans.data?.find((p) => p.id === membership.plan_id);
+  const [start, setStart] = useState(membership.start_date);
+  const [manualEnd, setManualEnd] = useState(false);
+  const [end, setEnd] = useState(membership.end_date);
+  const [moveFollowing, setMoveFollowing] = useState(true);
+  const [reason, setReason] = useState('');
+  const newEnd = manualEnd ? end : plan && start ? membershipEndDate(start, plan.duration_unit, plan.duration_count) : '';
+  const shift = newEnd ? daysBetween(membership.end_date, newEnd) : 0;
+  const unchanged = start === membership.start_date && newEnd === membership.end_date;
+  const error = !start || !newEnd ? 'Choose the dates' : newEnd < start ? 'End date cannot be before the start date'
+    : unchanged ? 'Dates are unchanged' : reason.trim().length < 3 ? 'Give a reason' : null;
+  const run = useMutation({
+    mutationFn: () => rpc<Membership>('update_membership_dates', {
+      p_gym: gym.id, p_membership: membership.id, p_start_date: start, p_reason: reason.trim(),
+      p_end_date: manualEnd ? end : null, p_move_following: moveFollowing,
+    }),
+    onSuccess: async (mm) => { await refresh(); toast(`${mm.plan_name}: ${formatDate(mm.start_date)} – ${formatDate(mm.end_date)}`); onClose(); },
+  });
+  const today = todayInGym(gym.timezone);
+  return (
+    <Sheet title="Edit membership dates" onClose={onClose}>
+      <form className="stack lg" onSubmit={(e) => { e.preventDefault(); if (!error) once((o) => run.mutate(undefined, o)); }}>
+        <p className="muted">{membership.plan_name}{plan ? ` · ${planDuration(plan)}` : ''} · now {formatDate(membership.start_date)} – {formatDate(membership.end_date)}</p>
+        {previousEnd && addDays(previousEnd, 1) !== start && (
+          <button type="button" className="btn small ghost" style={{ justifySelf: 'start' }} onClick={() => { setStart(addDays(previousEnd, 1)); setManualEnd(false); }}>
+            Start right after the previous plan ({formatDate(addDays(previousEnd, 1))})
+          </button>
+        )}
+        <Field label="Start date">
+          <input className="input" type="date" value={start} onChange={(e) => setStart(e.target.value)} />
+        </Field>
+        <label className="row" style={{ gap: 10 }}>
+          <input type="checkbox" checked={manualEnd} onChange={(e) => { setManualEnd(e.target.checked); if (e.target.checked && newEnd) setEnd(newEnd); }} />
+          Set the end date myself
+        </label>
+        {manualEnd ? (
+          <Field label="End date (last valid day)">
+            <input className="input" type="date" min={start} value={end} onChange={(e) => setEnd(e.target.value)} />
+          </Field>
+        ) : <p>Ends <strong>{formatDate(newEnd)}</strong> <span className="muted">(from the plan length)</span></p>}
+        <label className="row" style={{ gap: 10 }}>
+          <input type="checkbox" checked={moveFollowing} onChange={(e) => setMoveFollowing(e.target.checked)} />
+          Move renewals already sold after this plan by the same days
+        </label>
+        <Field label="Reason (required)">
+          <input className="input" value={reason} placeholder="e.g. Paid late, cycle starts on the due date" onChange={(e) => setReason(e.target.value)} />
+        </Field>
+        {newEnd && !unchanged && newEnd >= start && (
+          <Notice tone="info">
+            New period {formatDate(start)} – {formatDate(newEnd)}: {shift === 0 ? 'same end date' : `${Math.abs(shift)} day${Math.abs(shift) === 1 ? '' : 's'} ${shift < 0 ? 'shorter' : 'longer'}`}.
+            {newEnd < today ? ' This period has already ended.' : ` ${daysBetween(today, newEnd) + 1} days left.`} Payments stay as they are.
+          </Notice>
+        )}
+        {run.error && <Notice tone="bad">{errorMessage(run.error)}</Notice>}
+        <button className="btn primary block" disabled={!!error || run.isPending}>{error && error !== 'Give a reason' ? error : 'Save dates'}</button>
       </form>
     </Sheet>
   );

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { addDays, daysBetween, formatDate } from './dates';
+import { addDays, daysBetween, formatDate, membershipEndDate } from './dates';
 
 describe('dates', () => {
   it('formats a business date without timezone shifts', () => {
@@ -19,4 +19,13 @@ describe('dates', () => {
     expect(daysBetween('2026-11-05', '2026-11-05')).toBe(0);
     expect(daysBetween('2026-11-05', '2026-11-01')).toBe(-4);
   });
+});
+
+describe('membershipEndDate matches the database rule', () => {
+  it.each([
+    ['2027-01-15', 'month', 1, '2027-02-14'], ['2027-01-29', 'month', 1, '2027-02-28'], ['2027-01-31', 'month', 1, '2027-02-28'],
+    ['2028-01-31', 'month', 1, '2028-02-29'], ['2027-03-01', 'month', 1, '2027-03-31'], ['2027-03-31', 'month', 1, '2027-04-30'],
+    ['2027-08-31', 'month', 3, '2027-11-30'], ['2026-12-31', 'month', 2, '2027-02-28'], ['2027-01-01', 'month', 12, '2027-12-31'],
+    ['2028-02-29', 'month', 12, '2029-02-28'], ['2026-11-05', 'day', 15, '2026-11-19'], ['2026-11-02', 'month', 1, '2026-12-01'],
+  ] as const)('%s + %s %s → %s', (s, u, n, e) => expect(membershipEndDate(s, u, n)).toBe(e));
 });
