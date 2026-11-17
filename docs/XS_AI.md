@@ -44,7 +44,7 @@ Change (approval card): `record_payment`, `sell_plan`, `add_member`,
 `update_member`, `set_member_status` (archive/restore), `cancel_membership`,
 `reverse_payment`, `void_charge`, `record_expense`, `reverse_expense`,
 `add_enquiry`, `save_plan`, `update_gym_settings`, `save_staff`,
-`pause_membership`, `resume_membership`.
+`pause_membership`, `resume_membership`, `change_membership_dates`.
 
 Tools the role lacks are never offered to the model. At most 6 cards per
 request. Risky ones (archive, cancel, reverse, void, remove staff) are shown as

@@ -11,10 +11,10 @@
 | Phase | **P0 core operations built and deployed** (Phases 3–4 compressed at owner's request) |
 | Live app | <https://abzops.github.io/xs-gym/> — served from `gh-pages`, updated by CI on every push to `main` |
 | Backend | Supabase project `xs-gym`, ref `knuanihnxtxtyrgvsumq`, region `ap-south-1`, Free plan |
-| Database | 9 live migrations applied, 18 public tables; RLS on all exposed tables |
+| Database | 10 live migrations applied, 18 public tables; RLS on all exposed tables |
 | CI | `.github/workflows/pages.yml`: typecheck, lint, unit tests, DB tests on PG16, XS AI browser suite, secret scan → `gh-pages` |
 | Remote | `https://github.com/abzops/xs-gym`, branch `main`; commits authored as `abzops` |
-| Last updated | 16 Nov 2026 |
+| Last updated | 17 Nov 2026 |
 
 ## 2. Rules for whoever continues
 
@@ -61,6 +61,23 @@
 6. Phases 6–7 (AI text and voice) only after the pilot uses the core daily.
 
 ## 6. Session log
+
+### 2026-11-17 — Edit / backdate membership dates
+
+- Owner request: a renewal due 2 Nov was paid 12 Nov and sold from 12 Nov,
+  giving 10 free days. Migration `edit_membership_dates`: command
+  `update_membership_dates(gym, membership, start, reason, end?, move_following)`
+  with new permission `memberships.edit_dates` (owner, manager). End date is
+  recalculated from the plan unless given; renewals already queued after it
+  move by the same days; overlaps, end-before-start, unchanged dates, paused
+  memberships and cancelled memberships are refused; audited with old/new
+  dates. Payments, charges and allocations are untouched (no duplicates).
+  Note: a charge's description text still shows the dates it was sold with.
+- App: "Edit dates" on each active membership in the member page, with a
+  "Start right after the previous plan" shortcut and a preview of days gained/lost.
+- XS AI: `change_membership_dates` approval card.
+- Tests: 14 DB checks, end-date rule in TS matches SQL (12 cases), 3 real-schema
+  agent checks, browser step.
 
 ### 2026-11-16 — Membership pause (freeze)
 

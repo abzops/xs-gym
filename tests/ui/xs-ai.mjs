@@ -130,6 +130,25 @@ for (const device of [
       assert.equal(paused.p_reason, 'Travelling to Dubai');
     });
 
+    if (tag === 'phone-light' || tag === 'laptop-dark') await step(`${tag}: member page edits membership dates`, async () => {
+      let edited = null;
+      await page.route(`https://${REF}.supabase.co/rest/v1/rpc/update_membership_dates`, (route) => {
+        edited = JSON.parse(route.request().postData() ?? '{}');
+        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ plan_name: 'Monthly', start_date: edited.p_start_date, end_date: '2026-11-09' }) });
+      });
+      await page.goto(baseUrl + 'g/' + gym.slug + '/members/33333333-3333-4333-8333-333333333331', { waitUntil: 'networkidle' });
+      await page.getByRole('button', { name: 'Edit dates' }).first().click();
+      await page.getByLabel('Start date').fill('2026-10-10');
+      await page.getByLabel('Reason (required)').fill('Paid late, cycle from due date');
+      await page.getByText('days shorter').waitFor();
+      await page.screenshot({ path: `${shots}/${tag}-07-edit-dates.png` });
+      await page.getByRole('button', { name: 'Save dates' }).click();
+      await page.getByText('Monthly: 10 Oct 2026').waitFor();
+      assert.equal(edited.p_start_date, '2026-10-10');
+      assert.equal(edited.p_end_date, null);
+      assert.equal(edited.p_move_following, true);
+    });
+
     await step(`${tag}: no page errors`, async () => { assert.deepEqual(errors, []); });
     await ctx.close();
   }
