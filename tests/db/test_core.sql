@@ -341,6 +341,37 @@ select t.fails($$select public.pause_membership(t.id('gymA'), t.id('pm'), 5, 'Ot
 select t.eq((select count(*) from public.membership_pauses)::int, 0, 'other gym cannot see pauses');
 select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000a1', false);
 
+-- ---------------------------------------------------------------- edit membership dates (backdating)
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000a1', false);
+create temp table ed_before as select id, start_date, end_date from public.member_memberships where member_id = t.id('pm');
+grant select on ed_before to authenticated;
+create temp table ed_pay as select count(*) n from public.payments where gym_id = t.id('gymA');
+grant select on ed_pay to authenticated;
+select public.update_membership_dates(t.id('gymA'), t.id('pmA'), private.gym_today(t.id('gymA')) - 10, 'Paid late, cycle starts on due date');
+select t.eq((select start_date from public.member_memberships where id = t.id('pmA')), private.gym_today(t.id('gymA')) - 10, 'start date backdated');
+select t.eq((select end_date from public.member_memberships where id = t.id('pmA')),
+  private.membership_end_date(private.gym_today(t.id('gymA')) - 10, 'month', 1), 'end date recalculated from the plan');
+select t.eq((select start_date from public.member_memberships where id = t.id('pmB')),
+  (select end_date + 1 from public.member_memberships where id = t.id('pmA')), 'queued renewal follows the new end date');
+select t.eq((select count(*) from public.payments where gym_id = t.id('gymA')), (select n from ed_pay), 'no payment records are created');
+select t.eq((select membership_status from public.member_overview where id = t.id('pm')), 'active', 'status recalculated');
+select t.eq((select (data->>'old_start')::date from public.audit_logs where action = 'membership.dates_changed' and entity_id = t.id('pmA') order by occurred_at desc limit 1),
+  (select start_date from ed_before where id = t.id('pmA')), 'date change audited with the old date');
+select public.update_membership_dates(t.id('gymA'), t.id('pmA'), private.gym_today(t.id('gymA')) - 10, 'Manual end', private.gym_today(t.id('gymA')) + 5);
+select t.eq((select end_date from public.member_memberships where id = t.id('pmA')), private.gym_today(t.id('gymA')) + 5, 'end date can be set by hand');
+select t.fails($$select public.update_membership_dates(t.id('gymA'), t.id('pmA'), private.gym_today(t.id('gymA')), 'Bad', private.gym_today(t.id('gymA')) - 1)$$, 'XS422', 'end before start is refused');
+select t.fails($$select public.update_membership_dates(t.id('gymA'), t.id('pmA'), private.gym_today(t.id('gymA')) - 10, 'Same', private.gym_today(t.id('gymA')) + 5)$$, 'XS422', 'unchanged dates are refused');
+select t.fails($$select public.update_membership_dates(t.id('gymA'), t.id('pmA'), private.gym_today(t.id('gymA')) - 10, 'Overlap', private.gym_today(t.id('gymA')) + 200, false)$$, 'XS409', 'overlapping another membership is refused');
+select t.fails($$select public.update_membership_dates(t.id('gymA'), t.id('pmA'), private.gym_today(t.id('gymA')), '')$$, 'XS422', 'a reason is required');
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000a2', false);
+select t.fails($$select public.update_membership_dates(t.id('gymA'), t.id('pmA'), private.gym_today(t.id('gymA')), 'Desk try')$$, 'XS403', 'reception cannot edit membership dates');
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000b1', false);
+select t.fails($$select public.update_membership_dates(t.id('gymA'), t.id('pmA'), private.gym_today(t.id('gymA')), 'Other gym')$$, 'XS403', 'date edit cannot cross tenant');
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000a1', false);
+select public.pause_membership(t.id('gymA'), t.id('pm'), 3, 'Short pause');
+select t.fails($$select public.update_membership_dates(t.id('gymA'), t.id('pmA'), private.gym_today(t.id('gymA')) - 5, 'While paused')$$, 'XS409', 'paused membership must be resumed before editing');
+select public.resume_membership(t.id('gymA'), t.id('pm'), 'done');
+
 -- Expired subscription: read-only
 reset role;
 update public.gym_subscriptions set trial_ends_at = now() - interval '1 minute' where gym_id = t.id('gymA');
