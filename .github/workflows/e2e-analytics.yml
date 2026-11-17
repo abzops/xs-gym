@@ -2,7 +2,7 @@ name: Full XS Gym end-to-end (isolated)
 
 on:
   push:
-    branches: [main, 'feature/xs-ai-rebuild-20261114']
+    branches: [main, 'feat/edit-membership-dates-20261117']
     paths:
       - 'src/**'
       - 'supabase/migrations/**'

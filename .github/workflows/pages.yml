@@ -5,7 +5,7 @@ name: Test and deploy
 
 on:
   push:
-    branches: [main, 'feature/xs-ai-rebuild-20261114']
+    branches: [main, 'feat/edit-membership-dates-20261117']
   workflow_dispatch:
 
 concurrency:
