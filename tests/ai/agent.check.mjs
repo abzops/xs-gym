@@ -271,6 +271,26 @@ const payments = () => Number(sql(`select count(*) from payments where member_id
   check('reception is not offered the pause tool', !desk.pending && !lastBody.tools.some((t) => t.function.name === 'pause_membership'));
 }
 
+// 15. Backdate a membership: card first, approve moves the dates, no payments added.
+{
+  const mm = sql(`select o.id || '|' || o.member_no || '|' || o.start_date || '|' || o.membership_id from member_overview o where o.gym_id = '${gym}' and o.status = 'active' and o.membership_status = 'active' and o.paused_until is null
+    and not exists (select 1 from member_memberships p where p.member_id = o.id and p.status = 'active' and p.id <> o.membership_id and p.end_date >= o.start_date - 10 and p.start_date < o.start_date)
+    order by o.member_no limit 1`).split('|');
+  const newStart = sql(`select ('${mm[2]}'::date - 10)::text`);
+  const paysBefore = sql(`select count(*) from payments where gym_id = '${gym}'`);
+  script = () => ({ role: 'assistant', content: '', tool_calls: [call('change_membership_dates', { member: mm[1], start_date: newStart, reason: 'Paid late, cycle from due date' })] });
+  const out = await runAgent({ gym_id: gym, messages: [{ role: 'user', content: 'backdate' }] }, env(owner));
+  check('date change comes back as a card', out.pending?.[0]?.tool === 'change_membership_dates' && sql(`select start_date from member_memberships where id = '${mm[3]}'`) === mm[2], JSON.stringify(out.pending?.[0]?.lines ?? out.reply));
+  const done = await approve(out, owner);
+  check('approved: start backdated, end recalculated, no payment added', done.actions[0]?.ok
+    && sql(`select start_date from member_memberships where id = '${mm[3]}'`) === newStart
+    && sql(`select end_date = private.membership_end_date(start_date, p.duration_unit, p.duration_count) from member_memberships m join membership_plans p on p.id = m.plan_id where m.id = '${mm[3]}'`) === 't'
+    && sql(`select count(*) from payments where gym_id = '${gym}'`) === paysBefore, done.actions[0]?.summary);
+  script = () => ({ role: 'assistant', content: '', tool_calls: [call('change_membership_dates', { member: mm[1], start_date: newStart, reason: 'desk' })] });
+  await runAgent({ gym_id: gym, messages: [{ role: 'user', content: 'backdate' }] }, env(reception));
+  check('reception is not offered the date-edit tool', !lastBody.tools.some((t) => t.function.name === 'change_membership_dates'));
+}
+
 llm.close();
 console.log(failures ? `${failures} AI FAILURES` : 'AI AGENT OK');
 process.exit(failures ? 1 : 0);

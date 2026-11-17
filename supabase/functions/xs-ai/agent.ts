@@ -233,6 +233,14 @@ async function resolvePlan(a: Json, c: Ctx, includeArchived = false): Promise<Pl
   if (pick.length !== 1) throw new ApiError(pick.length ? `more than one plan matches "${want}": ${pick.map((p) => p.name).join(', ')}` : `no plan named "${want}". Plans: ${plans.map((p) => p.name).join(', ') || 'none yet'}`, 409);
   return pick[0];
 }
+/** Same rule as private.membership_end_date: N months − 1 day, clamped to month end. */
+export function planEndDate(start: string, unit: string, count: number): string {
+  if (unit === 'day') return addDays(start, count - 1);
+  const [y, m, d] = start.split('-').map(Number);
+  const last = new Date(Date.UTC(y, m - 1 + count + 1, 0)).getUTCDate();
+  if (d > last) return new Date(Date.UTC(y, m - 1 + count, last)).toISOString().slice(0, 10);
+  return addDays(new Date(Date.UTC(y, m - 1 + count, d)).toISOString().slice(0, 10), -1);
+}
 const planLength = (p: { duration_unit: string; duration_count: number }) => `${p.duration_count} ${p.duration_unit}${p.duration_count === 1 ? '' : 's'}`;
 const who = (m: { name: string; member_no: string }) => `${m.name} · ${m.member_no}`;
 
@@ -524,6 +532,35 @@ const WRITE_TOOLS: WriteTool[] = [
       const name = str(a.member_name, 120);
       return { action: { summary: `${name} is back (${p.unused_days} unused days returned)`, summaryMl: `${name}: പോസ് അവസാനിപ്പിച്ചു` },
         navigate: `members/${a.member_id}`, changed: ['dashboard', 'member', 'members'] };
+    } },
+
+  { name: 'change_membership_dates', perm: 'memberships.edit_dates', write: true,
+    description: "Correct or backdate the start date of a member's current membership (e.g. paid late, but the cycle should start on the due date). The end date is recalculated from the plan unless end_date is given; renewals already sold after it move by the same days. Payments are not changed. Needs a reason.",
+    parameters: { type: 'object', properties: { ...MEMBER_PARAMS, start_date: { type: 'string', description: 'new start YYYY-MM-DD' }, end_date: { type: 'string', description: 'optional new last valid day YYYY-MM-DD' }, reason: { type: 'string' } }, required: ['start_date', 'reason'] },
+    prepare: async (a, c) => {
+      need(str(a.reason).length >= 3, 'a reason is required');
+      const start = optDate(a.start_date, 'start_date'); need(start, 'start_date is required');
+      const endGiven = optDate(a.end_date, 'end_date');
+      const m = await resolveMember(a, c);
+      need(isUuid(m.row.membership_id), `${m.name} has no membership to edit`);
+      need(!m.row.paused_until, `${m.name} is paused; resume the pause first`);
+      const rows = (await c.rest(`member_memberships?select=id,plan_name,start_date,end_date,status,membership_plans(duration_unit,duration_count)&gym_id=eq.${c.gym.id}&id=eq.${m.row.membership_id}`)) as Json[];
+      const mm = rows[0]; need(mm && mm.status === 'active', `${m.name} has no active membership to edit`);
+      const plan = (mm.membership_plans ?? {}) as Json;
+      const end = endGiven ?? planEndDate(start as string, String(plan.duration_unit), Number(plan.duration_count));
+      need(end >= (start as string), 'end date cannot be before the start date');
+      need(!(start === mm.start_date && end === mm.end_date), 'the dates are unchanged');
+      return { args: { membership_id: mm.id, member_name: m.name, start_date: start, end_date: endGiven, reason: str(a.reason, 300) },
+        title: 'Edit membership dates', titleMl: 'മെമ്പർഷിപ്പ് തീയതി മാറ്റുക',
+        lines: [who(m), `${mm.plan_name}: ${mm.start_date} – ${mm.end_date}`, `→ ${start} – ${end}`, `Reason: ${str(a.reason, 80)}`] };
+    },
+    exec: async (a, c) => {
+      need(isUuid(a.membership_id), 'membership is missing');
+      const mm = (await c.rpc('update_membership_dates', { p_gym: c.gym.id, p_membership: a.membership_id, p_start_date: optDate(a.start_date, 'start_date'),
+        p_reason: str(a.reason, 300), p_end_date: optDate(a.end_date, 'end_date'), p_move_following: true })) as Json;
+      const name = str(a.member_name, 120);
+      return { action: { summary: `${name}: ${mm.plan_name} now ${mm.start_date} – ${mm.end_date}`, summaryMl: `${name}: ${mm.plan_name} ഇനി ${mm.start_date} – ${mm.end_date}` },
+        changed: ['dashboard', 'member', 'members'] };
     } },
 
   { name: 'reverse_payment', perm: 'payments.reverse', write: true,

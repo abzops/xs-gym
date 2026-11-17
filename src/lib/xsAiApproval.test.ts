@@ -153,4 +153,16 @@ describe('XS AI approval flow', () => {
     const out = await runAgent({ gym_id: GYM, messages: [{ role: 'user', content: 'രാഹുൽ മേനോൻ 500 UPI അടച്ചു' }] }, h.env);
     expect(out.pending?.[0].lines[0]).toBe('Rahul Menon · XS-0002');
   });
+
+  it('prepares a backdated membership with the plan end date recalculated', async () => {
+    const running = { ...RAHUL, membership_id: '55555555-5555-4555-8555-555555555555', membership_status: 'active', paused_until: null };
+    const h = harness({ perms: [...OWNER, 'memberships.edit_dates'], members: [running], model: () => toolCall('change_membership_dates', { member: 'Rahul', start_date: '2026-11-02', reason: 'Paid late on 12 Nov' }) });
+    const base = h.env.fetch!;
+    h.env.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => String(input).includes('/rest/v1/member_memberships')
+      ? new Response(JSON.stringify([{ id: running.membership_id, plan_name: 'Monthly', start_date: '2026-11-12', end_date: '2026-12-11', status: 'active', membership_plans: { duration_unit: 'month', duration_count: 1 } }]), { status: 200 })
+      : base(input, init)) as typeof fetch;
+    const out = await runAgent({ gym_id: GYM, messages: [{ role: 'user', content: 'Rahul paid late, start his plan from 2 Nov' }] }, h.env);
+    expect(out.pending?.[0].lines).toContain('→ 2026-11-02 – 2026-12-01');
+    expect(h.rpcCalls).toHaveLength(0);
+  });
 });
