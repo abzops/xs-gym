@@ -4,7 +4,7 @@ Gym management SaaS by Xelorsoft: members, memberships, attendance, payments,
 expenses, reports and an AI voice assistant, as an installable web app for phone,
 tablet and laptop. Backend: Supabase. Hosting: GitHub Pages.
 
-**Status:** P0 core operations live for the pilot — <https://abzops.github.io/xs-gym/>.
+**Status:** P0 core operations live for the pilot — <https://gym.xelorsoft.com/>.
 See [`PROGRESS.md`](PROGRESS.md) for what works, what is pending and owner actions.
 
 ## Start here

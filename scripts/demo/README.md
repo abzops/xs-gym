@@ -10,7 +10,7 @@ For pitching and live demos. Run in the Supabase SQL editor for project `xs-gym`
 
 ## Steps
 
-1. Sign up once at <https://abzops.github.io/xs-gym/login?mode=signup> with the demo email
+1. Sign up once at <https://gym.xelorsoft.com/login?mode=signup> with the demo email
    (for example `demo@xsgym.in`), or create the user in Supabase → Authentication → Users → Add user.
 2. Put that email in `v_email` in `seed_demo_gym.sql` and run it.
 3. Sign in with that email and password.

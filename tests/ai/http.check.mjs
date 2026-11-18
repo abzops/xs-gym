@@ -30,6 +30,12 @@ const options = await handler(new Request(endpoint, { method: 'OPTIONS', headers
 check('OPTIONS returns 204 and only the approved CORS origin', options.status === 204 &&
   options.headers.get('access-control-allow-origin') === 'https://abzops.github.io');
 
+const optionsNew = await handler(new Request(endpoint, { method: 'OPTIONS', headers: { origin: 'https://gym.xelorsoft.com' } }));
+check('the gym.xelorsoft.com origin is allowed', optionsNew.status === 204 &&
+  optionsNew.headers.get('access-control-allow-origin') === 'https://gym.xelorsoft.com');
+const optionsBad = await handler(new Request(endpoint, { method: 'OPTIONS', headers: { origin: 'https://evil.example' } }));
+check('an unknown origin is not echoed', optionsBad.headers.get('access-control-allow-origin') !== 'https://evil.example');
+
 const health = await responseJson(await handler(new Request(endpoint, { method: 'GET', headers })));
 check('health says approval is required and exposes no key',
   health.status === 200 && health.body.approval_required === true &&

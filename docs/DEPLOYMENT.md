@@ -21,24 +21,30 @@
 - Phase 3 onward: runs `npm ci && npm run build`, then publishes `dist/`. The
   deploy job runs only after lint, typecheck, tests and the secret scan pass.
 
-**Base path.** Until the custom domain is live the site is served at
-`https://abzops.github.io/xs-gym/`, so the build uses `VITE_BASE_PATH=/xs-gym/`.
-After DNS cut-over it becomes `/`.
+**Live address (since 18 Nov 2026).** `https://gym.xelorsoft.com`, built with
+`VITE_BASE_PATH=/` into `dist-cf/` and force-pushed by CI to branch `cf-deploy`.
+The Cloudflare Worker `xs-gym` (source: `worker/index.js`, custom domain
+`gym.xelorsoft.com` on zone xelorsoft.com) reads that branch from
+raw.githubusercontent.com, sets the right content types and security headers,
+caches hashed `/assets/*` for a year and sends every other path to `index.html`
+(deep links work, no 404 status). Worker code changes are uploaded with the
+Cloudflare API; app changes need only a push to `main`.
 
-**Deep links.** Pages has no rewrites. The build copies `index.html` to
-`404.html`, so `/g/<gym>/members/123` loads the app (HTTP status 404 is harmless
-for a signed-in app that is not indexed). The PWA service worker handles
-navigation once installed.
+**Old address.** `gh-pages` now holds only `hosting/github-pages-redirect/`
+(`index.html` and `404.html`), which forwards
+`https://abzops.github.io/xs-gym/<path>?<query>#<hash>` to
+`https://gym.xelorsoft.com/<path>?<query>#<hash>`. Sign-in is stored per site,
+so people sign in once more on the new address. There is no service worker, so
+nothing cached on phones keeps the old copy.
 
-**Security headers** are not possible on Pages; see `SECURITY.md` §7.
+**Rollback.** Publish `dist/` (base `/xs-gym/`, still built by CI) to `gh-pages`
+again and detach the custom domain from the Worker.
 
-## 3. Custom domain (Phase 10, D-14)
+## 3. Custom domain
 
-1. DNS: `CNAME gym → abzops.github.io`.
-2. Verify the domain for the `abzops` account in GitHub settings (TXT record) to
-   prevent takeover.
-3. Repo → Pages → Custom domain `gym.xelorsoft.com` → Enforce HTTPS.
-4. Update Supabase Auth Site URL and redirect URLs; rebuild with `VITE_BASE_PATH=/`.
+Done with Cloudflare instead of GitHub Pages DNS (see above). Remaining owner
+step: Supabase → Authentication → URL Configuration → Site URL
+`https://gym.xelorsoft.com`, Redirect URLs `https://gym.xelorsoft.com/**`.
 
 ## 4. Supabase
 

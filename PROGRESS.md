@@ -9,7 +9,7 @@
 | | |
 |---|---|
 | Phase | **P0 core operations built and deployed** (Phases 3–4 compressed at owner's request) |
-| Live app | <https://abzops.github.io/xs-gym/> — served from `gh-pages`, updated by CI on every push to `main` |
+| Live app | <https://gym.xelorsoft.com/> — Cloudflare Worker `xs-gym` serves branch `cf-deploy`, updated by CI on every push to `main`. The old address <https://abzops.github.io/xs-gym/> forwards there, keeping the page |
 | Backend | Supabase project `xs-gym`, ref `knuanihnxtxtyrgvsumq`, region `ap-south-1`, Free plan |
 | Database | 10 live migrations applied, 18 public tables; RLS on all exposed tables |
 | CI | `.github/workflows/pages.yml`: typecheck, lint, unit tests, DB tests on PG16, XS AI browser suite, secret scan → `gh-pages` |
@@ -30,7 +30,7 @@
 | # | Item | Owner action | Status |
 |---|---|---|---|
 | X5 | Pages publishes `main` source, so the site is blank. Each push to `main` republishes the raw source. | Settings → Pages → Source: **GitHub Actions** (or Deploy from a branch → `gh-pages` / root) → Save. CI publishes both ways. | **Resolved** 05 Nov 2026 |
-| X6 | Supabase Auth Site URL is the default, so email links (confirm, reset) redirect to localhost. | Supabase → Authentication → URL Configuration: Site URL `https://abzops.github.io/xs-gym/`; add the same to Redirect URLs. | Open |
+| X6 | Supabase Auth Site URL is the default, so email links (confirm, reset) redirect to localhost. | Supabase → Authentication → URL Configuration: Site URL `https://gym.xelorsoft.com`; add `https://gym.xelorsoft.com/**` to Redirect URLs. | Open |
 | X7 | Supabase's built-in email only delivers to members of the Supabase organisation and is rate-limited. Staff sign-ups may never get a confirmation email. | Either set up custom SMTP (e.g. a free transactional email account) or, for the pilot only, turn off "Confirm email" in Authentication → Providers → Email. | Open |
 | X8 | Free plan: no backups, pauses after 1 week idle (D-09). | Upgrade to Pro before real member data, or approve scheduled encrypted dumps. | Open — before go-live |
 | X2 | Build workspace cannot reach Supabase or github.io from the shell. | None needed: CI runs DB tests; Supabase changes go through the connector. | Workaround |

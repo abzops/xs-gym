@@ -1,4 +1,5 @@
-# Checks, builds and publishes the app to GitHub Pages (gh-pages branch).
+# Checks and builds the app, publishes it to branch cf-deploy (served at gym.xelorsoft.com
+# by the Cloudflare Worker xs-gym) and keeps gh-pages as a redirect from the old address.
 # The Supabase URL and publishable key are public by design; all access is
 # enforced by row level security and command functions in the database.
 name: Test and deploy
@@ -107,22 +108,6 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
-          name: dist
-          path: dist
-      - name: Publish to gh-pages
-        env:
-          TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          cd dist
-          touch .nojekyll
-          git init -q -b gh-pages
-          git config user.name "abzops"
-          git config user.email "87251316+abzops@users.noreply.github.com"
-          git add -A
-          git commit -q -m "Deploy ${GITHUB_SHA::7}"
-          git push -q -f "https://x-access-token:${TOKEN}@github.com/${GITHUB_REPOSITORY}.git" gh-pages
-      - uses: actions/download-artifact@v4
-        with:
           name: dist-cf
           path: dist-cf
       - name: Publish to cf-deploy (gym.xelorsoft.com)
@@ -136,3 +121,21 @@ jobs:
           git add -A
           git commit -q -m "Deploy ${GITHUB_SHA::7}"
           git push -q -f "https://x-access-token:${TOKEN}@github.com/${GITHUB_REPOSITORY}.git" cf-deploy
+      # The old address abzops.github.io/xs-gym/ now only forwards to gym.xelorsoft.com,
+      # keeping the path, so bookmarks and home-screen icons still land in the app.
+      - uses: actions/checkout@v6
+        with:
+          path: src
+          sparse-checkout: hosting/github-pages-redirect
+      - name: Publish redirect to gh-pages
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cd src/hosting/github-pages-redirect
+          touch .nojekyll
+          git init -q -b gh-pages
+          git config user.name "abzops"
+          git config user.email "87251316+abzops@users.noreply.github.com"
+          git add -A
+          git commit -q -m "Redirect to gym.xelorsoft.com (${GITHUB_SHA::7})"
+          git push -q -f "https://x-access-token:${TOKEN}@github.com/${GITHUB_REPOSITORY}.git" gh-pages
