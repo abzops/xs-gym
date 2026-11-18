@@ -5,7 +5,7 @@ name: Test and deploy
 
 on:
   push:
-    branches: [main, 'feat/edit-membership-dates-20261117']
+    branches: [main, 'feat/cloudflare-gym-domain-20261118']
   workflow_dispatch:
 
 concurrency:
@@ -71,6 +71,23 @@ jobs:
           name: dist
           path: dist
           retention-days: 7
+      # Same app built for the site root: served at https://gym.xelorsoft.com
+      # by the Cloudflare Worker `xs-gym` (worker/index.js) from branch cf-deploy.
+      - name: Build for gym.xelorsoft.com
+        env:
+          VITE_BASE_PATH: /
+        run: |
+          npx vite build --outDir dist-cf --emptyOutDir
+          if grep -rEno "sb_secret_[A-Za-z0-9_-]{16,}|eyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}|sk-[A-Za-z0-9]{20,}|AIza[0-9A-Za-z_-]{30,}|-----BEGIN [A-Z ]*PRIVATE KEY" dist-cf/; then
+            echo "Possible secret in dist-cf/ — refusing to publish." >&2
+            exit 1
+          fi
+          grep -q '"/assets/' dist-cf/index.html
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist-cf
+          path: dist-cf
+          retention-days: 7
 
   database:
     runs-on: ubuntu-24.04
@@ -104,3 +121,18 @@ jobs:
           git add -A
           git commit -q -m "Deploy ${GITHUB_SHA::7}"
           git push -q -f "https://x-access-token:${TOKEN}@github.com/${GITHUB_REPOSITORY}.git" gh-pages
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist-cf
+          path: dist-cf
+      - name: Publish to cf-deploy (gym.xelorsoft.com)
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cd dist-cf
+          git init -q -b cf-deploy
+          git config user.name "abzops"
+          git config user.email "87251316+abzops@users.noreply.github.com"
+          git add -A
+          git commit -q -m "Deploy ${GITHUB_SHA::7}"
+          git push -q -f "https://x-access-token:${TOKEN}@github.com/${GITHUB_REPOSITORY}.git" cf-deploy

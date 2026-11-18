@@ -2,7 +2,7 @@ name: Full XS Gym end-to-end (isolated)
 
 on:
   push:
-    branches: [main, 'feat/edit-membership-dates-20261117']
+    branches: [main, 'feat/cloudflare-gym-domain-20261118']
     paths:
       - 'src/**'
       - 'supabase/migrations/**'

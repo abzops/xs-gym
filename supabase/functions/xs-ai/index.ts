@@ -15,7 +15,7 @@
 //   XAI_API_KEY             xAI Grok
 import { ApiError, runAgent, type AgentRequest, type LlmProvider } from './agent.ts';
 
-const ALLOWED_ORIGINS = ['https://abzops.github.io', 'http://localhost:5173', 'http://localhost:4173', 'http://localhost:4185'];
+const ALLOWED_ORIGINS = ['https://gym.xelorsoft.com', 'https://abzops.github.io', 'http://localhost:5173', 'http://localhost:4173', 'http://localhost:4185'];
 const env = (k: string) => { try { return Deno.env.get(k)?.trim() || undefined; } catch { return undefined; } };
 const uniq = (xs: (string | undefined)[]) => [...new Set(xs.filter((x): x is string => !!x))];
 const sarvamKey = () => env('SARVAM_API_KEY') ?? env('SARVAM_AI') ?? env('Sarvam AI') ?? env('SARVAM_KEY');
