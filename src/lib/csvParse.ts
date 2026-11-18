@@ -21,6 +21,7 @@ export function parseCSV(text: string): string[][] {
       row = [];
     } else field += c;
   }
+  if (quoted) throw new Error('CSV contains an unclosed quoted field');
   row.push(field);
   if (row.some((f) => f.trim() !== '')) rows.push(row);
   return rows;
@@ -38,6 +39,21 @@ const HEADERS: Record<string, keyof Omit<ImportRow, 'line' | 'problems'>> = {
   dob: 'date_of_birth', 'date of birth': 'date_of_birth', birthday: 'date_of_birth',
   'join date': 'join_date', joined: 'join_date', 'joining date': 'join_date', 'date joined': 'join_date',
 };
+
+/** Normalize the valid Indian 10-digit phone formats used by the server.
+ * Returns null on 11/12-digit foreign codes, incomplete or malformed values.
+ */
+export function phoneKey(phone: string): string | null {
+  const original = phone.trim();
+  if (!original || !/^[+\d\s().-]+$/.test(original)) return null;
+  const digits = original.replace(/\D/g, '');
+  const normalized = digits.length === 12 && digits.startsWith('91')
+    ? digits.slice(2)
+    : digits.length === 11 && digits.startsWith('0')
+      ? digits.slice(1)
+      : digits;
+  return /^\d{10}$/.test(normalized) ? normalized : null;
+}
 
 /** Accepts 2026-11-05, 05/11/2026 or 5-11-2026 (day first, as written in India). */
 export function normaliseDate(value: string): string | null {
@@ -61,11 +77,11 @@ export function toImportRows(table: string[][]): { rows: ImportRow[]; missing: s
   const rows = body.map((cells, i) => {
     const r: ImportRow = { line: i + 2, full_name: '', phone: '', email: '', gender: '', date_of_birth: '', join_date: '', problems: [] };
     cells.forEach((value, c) => { const k = map[c]; if (k) r[k] = value.trim(); });
-    const digits = r.phone.replace(/\D/g, '').replace(/^(91|0)(?=\d{10}$)/, '');
+    const phone = phoneKey(r.phone);
     if (!r.full_name) r.problems.push('name missing');
-    if (digits.length < 10) r.problems.push('phone needs 10 digits');
-    else if (seen.has(digits)) r.problems.push(`same phone as line ${seen.get(digits)}`);
-    else seen.set(digits, r.line);
+    if (!phone) r.problems.push('phone must be a valid 10-digit Indian number');
+    else if (seen.has(phone)) r.problems.push(`same phone as line ${seen.get(phone)}`);
+    else seen.set(phone, r.line);
     const g = r.gender.toLowerCase();
     r.gender = ['m', 'male'].includes(g) ? 'male' : ['f', 'female'].includes(g) ? 'female' : g ? 'other' : '';
     for (const k of ['date_of_birth', 'join_date'] as const) {
