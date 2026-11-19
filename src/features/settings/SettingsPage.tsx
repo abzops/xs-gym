@@ -4,9 +4,9 @@ import { Copy, KeyRound, MessageCircle, Trash2, UserPlus } from 'lucide-react';
 import { useState } from 'react';
 import { useGym } from '../../app/gym';
 import { AppearanceControl } from '../../components/Appearance';
+import { SubscriptionSection } from './Subscription';
 import { waLink } from '../../components/WhatsApp';
 import { Field, Loading, Notice, Segmented, Sheet, useToast } from '../../components/ui';
-import { formatDate } from '../../lib/dates';
 import { errorMessage } from '../../lib/errors';
 import { credentialsText, loginUrl, ROLE_ACCESS, type CredentialLang, type Credentials } from '../../lib/staffLogin';
 import { createStaffLogin, removeStaffLogin, resetStaffPassword } from '../../lib/staffLoginApi';
@@ -14,7 +14,7 @@ import { rpc } from '../../lib/supabase';
 import { ROLE_LABEL, type Role, type StaffRow } from '../../lib/types';
 
 export function SettingsPage() {
-  const { can, subscription } = useGym();
+  const { can } = useGym();
   return (
     <div className="stack lg" style={{ maxWidth: 820 }}>
       <div className="page-head"><h1>Settings</h1></div>
@@ -24,16 +24,7 @@ export function SettingsPage() {
       </section>
       {can('gym.settings') && <GymSettings />}
       <StaffSection />
-      <section className="card stack">
-        <h2>Subscription</h2>
-        {subscription ? (
-          <dl className="kv">
-            <dt>Plan</dt><dd>XS Gym {subscription.plan.toUpperCase()}{subscription.status === 'trial' ? ' (trial)' : ''}</dd>
-            {subscription.trial_ends_at && <><dt>Trial ends</dt><dd>{formatDate(subscription.trial_ends_at.slice(0, 10))}</dd></>}
-            {subscription.paid_until && <><dt>Paid until</dt><dd>{formatDate(subscription.paid_until.slice(0, 10))}</dd></>}
-          </dl>
-        ) : <p className="muted">No subscription found.</p>}
-      </section>
+      <SubscriptionSection />
     </div>
   );
 }

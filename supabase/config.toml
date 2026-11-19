@@ -5,3 +5,11 @@ verify_jwt = true
 
 [functions.staff-login]
 verify_jwt = true
+
+# Subscription billing (Razorpay payment links). The app calls xs-billing as the
+# signed-in owner; Razorpay calls the webhook, which checks Razorpay's signature itself.
+[functions.xs-billing]
+verify_jwt = true
+
+[functions.xs-billing-webhook]
+verify_jwt = false

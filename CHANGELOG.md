@@ -5,6 +5,20 @@ Versions follow semantic versioning from the first app release.
 
 ## [Unreleased]
 
+### Added — Pay for XS Gym with Razorpay (19 Nov 2026)
+
+- Settings → Subscription: the gym owner picks Monthly or Yearly and pays on Razorpay's
+  page (UPI, card, net banking), then returns to XS Gym. The paid period starts when the
+  trial or current period ends, so no days are lost. Works when the subscription has
+  ended (the "Subscription ended" banner links to it).
+- Edge Function `xs-billing` makes the Razorpay payment link and confirms payment with
+  Razorpay before anything changes; `xs-billing-webhook` applies payments even if the
+  owner closes the browser (Razorpay `payment_link.paid`, signature checked).
+- Migration `saas_billing`: `saas_prices` (change prices here), `saas_payments`,
+  `prepare_saas_payment` (owner only), `apply_saas_payment` (server only, idempotent, audited).
+- Secrets: `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`, `RAZORPAY_WEBHOOK_SECRET`.
+- DB tests: tests/db/test_billing.sql (19 checks).
+
 ### Added — Staff logins made by the owner (19 Nov 2026)
 
 - Settings → Staff → Add staff: the owner enters name, WhatsApp number and access

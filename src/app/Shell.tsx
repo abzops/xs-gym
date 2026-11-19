@@ -134,7 +134,7 @@ export function Shell() {
         <main className="main">
           {!canWrite && (
             <div style={{ marginBottom: 20 }}>
-              <Notice tone="warn">Subscription ended. You can view and export, but changes are paused.</Notice>
+              <Notice tone="warn">Subscription ended. You can view and export, but changes are paused.{can('billing.manage') && <> <NavLink to={`${base}/settings`}><b>Renew now</b></NavLink></>}</Notice>
             </div>
           )}
           <Outlet />
