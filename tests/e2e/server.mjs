@@ -209,6 +209,36 @@ async function auth(req, url, body, claims) {
   return err(404, 'not_found', `no route ${path}`);
 }
 
+// ---------- Edge Function staff-login (same contract as supabase/functions/staff-login) ----------
+async function staffLogin(body, claims) {
+  if (!claims?.sub) return { status: 401, body: { error: 'XS401: sign in required' } };
+  const b = body ? JSON.parse(body) : {};
+  const asUser = (sql, params) => withRole(claims, async (c) => (await c.query(sql, params)).rows[0].j);
+  const password = () => { const a = 'abcdefghjkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYZ23456789'; const r = crypto.randomBytes(8); let s = ''; for (const x of r) s += a[x % a.length]; return `${s.slice(0, 4)}-${s.slice(4, 8)}`; };
+  try {
+    if (b.action === 'create') {
+      const p = await asUser('select public.prepare_staff_login($1, $2, $3, $4) j', [b.gym_id, b.name ?? '', b.phone ?? '', b.role ?? '']);
+      const id = crypto.randomUUID(); const pw = password();
+      await pool.query('insert into auth.users (id, email, raw_user_meta_data, raw_app_meta_data) values ($1, $2, $3, $4)',
+        [id, p.email, JSON.stringify({ display_name: p.name }), JSON.stringify({ xs_staff_gym: b.gym_id, xs_staff_login: true })]);
+      await pool.query('insert into auth.passwords values ($1, $2)', [id, pw]);
+      try {
+        const staff = await asUser('select to_jsonb(s) j from public.attach_staff_login($1, $2, $3, $4, $5, $6) s', [b.gym_id, id, p.username, p.name, p.phone, b.role]);
+        return { status: 200, body: { staff, username: p.username, password: pw } };
+      } catch (e) { await pool.query('delete from auth.passwords where user_id=$1', [id]); await pool.query('delete from auth.users where id=$1', [id]); throw e; }
+    }
+    if (b.action === 'reset') {
+      const t = await asUser('select public.prepare_staff_password_reset($1, $2) j', [b.gym_id, b.staff_id]);
+      const pw = password();
+      await pool.query('update auth.passwords set password=$2 where user_id=$1', [t.user_id, pw]);
+      return { status: 200, body: { username: t.username, password: pw, name: t.name, phone: t.phone, role: t.role } };
+    }
+    return { status: 400, body: { error: 'XS400: unknown action' } };
+  } catch (e) {
+    return { status: e.code === '42501' ? 403 : 400, body: { error: e.message } };
+  }
+}
+
 await loadSchema();
 http.createServer((req, res) => {
   let body = ''; req.on('data', (c) => (body += c));
@@ -224,6 +254,7 @@ http.createServer((req, res) => {
       if (token && !claims) out = { status: 401, body: { code: 'PGRST301', message: 'JWT expired or invalid' } };
       else if (url.pathname.startsWith('/rest/v1/')) out = await rest(req, url, body, claims);
       else if (url.pathname.startsWith('/auth/v1/')) out = await auth(req, url, body, claims);
+      else if (url.pathname === '/functions/v1/staff-login' && req.method === 'POST') out = await staffLogin(body, claims);
       else out = { status: 404, body: { message: 'not found' } };
     } catch (e) { out = pgErr(e); }
     log({ t: new Date().toISOString(), ms: Date.now() - t0, method: req.method, path: url.pathname, query: url.search, body: body || undefined, user: claims?.sub ?? null, status: out.status,

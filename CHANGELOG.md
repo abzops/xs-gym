@@ -5,6 +5,21 @@ Versions follow semantic versioning from the first app release.
 
 ## [Unreleased]
 
+### Added — Staff logins made by the owner (19 Nov 2026)
+
+- Settings → Staff → Add staff: the owner enters name, WhatsApp number and access
+  (Reception, Trainer or Manager). XS Gym makes a username (e.g. `ravi.chaos`) and a
+  password, shown once, with a ready WhatsApp message in English or Malayalam
+  (one tap to send; it includes a sign-in link with the username filled in).
+- Staff sign in with their username — no email or sign-up needed. The owner can edit
+  name, phone, access, switch access off, or reset the password (old one stops working).
+- Edge Function `staff-login`: every check runs in the database as the owner
+  (`prepare_staff_login`, `attach_staff_login`, `prepare_staff_password_reset`,
+  `update_staff`); the service key only creates the account or sets its password.
+  Accounts are rolled back if linking fails. Passwords are never stored or logged by XS Gym.
+- Adding an existing account by email still works ("Add by email").
+- Tests: 30 database checks, 14 function contract checks, 3 browser steps on phone, tablet, laptop.
+
 ### Added — P0 core operations (05 Nov 2026)
 
 - Supabase backend: tenants, staff roles and permissions, 30-day trial, append-only audit log,

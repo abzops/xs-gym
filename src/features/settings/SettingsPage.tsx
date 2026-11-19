@@ -1,12 +1,15 @@
 import { staffQuery } from '../../lib/sections';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { UserPlus } from 'lucide-react';
+import { Copy, KeyRound, MessageCircle, UserPlus } from 'lucide-react';
 import { useState } from 'react';
 import { useGym } from '../../app/gym';
 import { AppearanceControl } from '../../components/Appearance';
-import { Field, Loading, Notice, Sheet, useToast } from '../../components/ui';
+import { waLink } from '../../components/WhatsApp';
+import { Field, Loading, Notice, Segmented, Sheet, useToast } from '../../components/ui';
 import { formatDate } from '../../lib/dates';
 import { errorMessage } from '../../lib/errors';
+import { credentialsText, loginUrl, ROLE_ACCESS, type CredentialLang, type Credentials } from '../../lib/staffLogin';
+import { createStaffLogin, resetStaffPassword } from '../../lib/staffLoginApi';
 import { rpc } from '../../lib/supabase';
 import { ROLE_LABEL, type Role, type StaffRow } from '../../lib/types';
 
@@ -68,23 +71,24 @@ function GymSettings() {
 
 function StaffSection() {
   const { gym, can } = useGym();
-  const [adding, setAdding] = useState<StaffRow | 'new' | null>(null);
+  const [open, setOpen] = useState<StaffRow | 'new' | null>(null);
+  const [shown, setShown] = useState<{ creds: Credentials; reset: boolean } | null>(null);
   const staff = useQuery(staffQuery(gym.id));
   const manage = can('staff.manage');
   return (
     <section className="card flush">
       <div className="card-head" style={{ padding: '16px 16px 0' }}>
         <h2>Staff</h2>
-        {manage && <button className="btn small" onClick={() => setAdding('new')}><UserPlus size={16} /> Add staff</button>}
+        {manage && <button className="btn small" onClick={() => setOpen('new')}><UserPlus size={16} /> Add staff</button>}
       </div>
       {staff.isPending ? <div style={{ padding: 16 }}><Loading rows={2} /></div> : staff.error ? <Notice tone="bad">{errorMessage(staff.error)}</Notice> : (
         <ul className="list">
           {staff.data.map((s) => (
             <li key={s.id}>
-              <button className="item" disabled={!manage || s.role === 'owner'} onClick={() => setAdding(s)}>
+              <button className="item" disabled={!manage || s.role === 'owner'} onClick={() => setOpen(s)}>
                 <span className="main-col">
-                  <span className="title">{s.display_name ?? s.email}</span>
-                  <span className="meta">{s.email}</span>
+                  <span className="title">{s.display_name ?? s.username ?? s.email}</span>
+                  <span className="meta">{s.username ? `Username ${s.username}${s.phone ? ` · ${s.phone}` : ''}` : s.email}</span>
                 </span>
                 <span className="end-col">
                   <span className="badge neutral">{ROLE_LABEL[s.role]}</span>
@@ -95,40 +99,163 @@ function StaffSection() {
           ))}
         </ul>
       )}
-      {manage && <p className="muted" style={{ padding: '0 18px 18px' }}>Staff sign up first; then add them by email.</p>}
-      {adding && <StaffSheet staff={adding === 'new' ? null : adding} onClose={() => setAdding(null)} />}
+      {manage && <p className="muted" style={{ padding: '0 18px 18px' }}>Add staff with their name and WhatsApp number. XS Gym makes a username and password you can send them on WhatsApp.</p>}
+      {open === 'new' && <AddStaffSheet onClose={() => setOpen(null)} onCreated={(creds) => { setOpen(null); setShown({ creds, reset: false }); }} />}
+      {open && open !== 'new' && <EditStaffSheet staff={open} onClose={() => setOpen(null)} onReset={(creds) => { setOpen(null); setShown({ creds, reset: true }); }} />}
+      {shown && <CredentialsSheet creds={shown.creds} reset={shown.reset} onClose={() => setShown(null)} />}
     </section>
   );
 }
 
-function StaffSheet({ staff, onClose }: { staff: StaffRow | null; onClose: () => void }) {
+type StaffRole = Exclude<Role, 'owner'>;
+
+function RolePicker({ value, onChange }: { value: StaffRole; onChange: (r: StaffRole) => void }) {
+  return (
+    <Field label="Access" hint={ROLE_ACCESS[value]}>
+      <select className="input" value={value} onChange={(e) => onChange(e.target.value as StaffRole)}>
+        <option value="reception">Reception</option>
+        <option value="trainer">Trainer</option>
+        <option value="manager">Manager</option>
+      </select>
+    </Field>
+  );
+}
+
+function AddStaffSheet({ onClose, onCreated }: { onClose: () => void; onCreated: (c: Credentials) => void }) {
+  const { gym } = useGym();
+  const qc = useQueryClient();
+  const [byEmail, setByEmail] = useState(false);
+  const [name, setName] = useState('');
+  const [phone, setPhone] = useState('');
+  const [email, setEmail] = useState('');
+  const [role, setRole] = useState<StaffRole>('reception');
+  const toast = useToast();
+  const create = useMutation({
+    mutationFn: () => createStaffLogin(gym.id, name.trim(), phone.trim(), role),
+    onSuccess: async (r) => {
+      await qc.invalidateQueries({ queryKey: ['staff', gym.id] });
+      onCreated({ username: r.username, password: r.password, name: r.staff.display_name ?? name.trim(), phone: r.staff.phone ?? null, role });
+    },
+  });
+  const addByEmail = useMutation({
+    mutationFn: () => rpc('save_staff', { p_gym: gym.id, p_email: email, p_role: role, p_status: 'active' }),
+    onSuccess: async () => { await qc.invalidateQueries({ queryKey: ['staff', gym.id] }); toast('Staff added'); onClose(); },
+  });
+  const digits = phone.replace(/\D/g, '');
+  const ready = byEmail ? !!email.trim() : name.trim().length >= 2 && digits.length >= 10;
+  const pending = create.isPending || addByEmail.isPending;
+  const err = create.error ?? addByEmail.error;
+  return (
+    <Sheet title="Add staff" onClose={onClose}>
+      <form className="stack lg" onSubmit={(e) => { e.preventDefault(); if (ready && !pending) (byEmail ? addByEmail : create).mutate(); }}>
+        {byEmail ? (
+          <Field label="Email they signed up with">
+            <input className="input" type="email" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="off" />
+          </Field>
+        ) : (
+          <>
+            <Field label="Name"><input className="input" value={name} onChange={(e) => setName(e.target.value)} autoComplete="off" /></Field>
+            <Field label="WhatsApp number" hint="The login is sent to this number.">
+              <input className="input" type="tel" inputMode="tel" value={phone} onChange={(e) => setPhone(e.target.value)} autoComplete="off" />
+            </Field>
+          </>
+        )}
+        <RolePicker value={role} onChange={setRole} />
+        {err && <Notice tone="bad">{errorMessage(err)}</Notice>}
+        <button className="btn primary block" disabled={!ready || pending}>
+          {pending ? <span className="spinner" /> : byEmail ? 'Add staff' : <><KeyRound size={16} aria-hidden /> Create login</>}
+        </button>
+        <button type="button" className="text-link" onClick={() => { setByEmail((v) => !v); create.reset(); addByEmail.reset(); }}>
+          {byEmail ? 'Make a username and password instead' : 'Already has an XS Gym account? Add by email'}
+        </button>
+      </form>
+    </Sheet>
+  );
+}
+
+function EditStaffSheet({ staff, onClose, onReset }: { staff: StaffRow; onClose: () => void; onReset: (c: Credentials) => void }) {
   const { gym } = useGym();
   const qc = useQueryClient();
   const toast = useToast();
-  const [email, setEmail] = useState(staff?.email ?? '');
-  const [role, setRole] = useState<Exclude<Role, 'owner'>>((staff?.role as Exclude<Role, 'owner'>) ?? 'reception');
-  const [active, setActive] = useState(staff ? staff.status === 'active' : true);
+  const [name, setName] = useState(staff.display_name ?? '');
+  const [phone, setPhone] = useState(staff.phone ?? '');
+  const [role, setRole] = useState<StaffRole>(staff.role as StaffRole);
+  const [active, setActive] = useState(staff.status === 'active');
+  const [confirmReset, setConfirmReset] = useState(false);
   const save = useMutation({
-    mutationFn: () => rpc('save_staff', { p_gym: gym.id, p_email: email, p_role: role, p_status: active ? 'active' : 'inactive' }),
+    mutationFn: () => rpc('update_staff', { p_gym: gym.id, p_staff: staff.id, p_name: name, p_phone: phone || null, p_role: role, p_status: active ? 'active' : 'inactive' }),
     onSuccess: async () => { await qc.invalidateQueries({ queryKey: ['staff', gym.id] }); toast('Staff saved'); onClose(); },
   });
+  const reset = useMutation({
+    mutationFn: () => resetStaffPassword(gym.id, staff.id),
+    onSuccess: (c) => onReset(c),
+  });
   return (
-    <Sheet title={staff ? 'Edit staff access' : 'Add staff'} onClose={onClose}>
-      <form className="stack lg" onSubmit={(e) => { e.preventDefault(); if (email.trim()) save.mutate(); }}>
-        <Field label="Email they signed up with">
-          <input className="input" type="email" value={email} onChange={(e) => setEmail(e.target.value)} disabled={!!staff} />
-        </Field>
-        <Field label="Role">
-          <select className="input" value={role} onChange={(e) => setRole(e.target.value as Exclude<Role, 'owner'>)}>
-            <option value="reception">Reception</option>
-            <option value="manager">Manager</option>
-            <option value="trainer">Trainer</option>
-          </select>
-        </Field>
-        {staff && <label className="row" style={{ gap: 10 }}><input type="checkbox" checked={active} onChange={(e) => setActive(e.target.checked)} /> Has access</label>}
+    <Sheet title="Edit staff" onClose={onClose}>
+      <form className="stack lg" onSubmit={(e) => { e.preventDefault(); if (name.trim().length >= 2) save.mutate(); }}>
+        <p className="muted" style={{ margin: 0 }}>{staff.username ? <>Signs in with username <strong>{staff.username}</strong></> : <>Signs in with {staff.email}</>}</p>
+        <Field label="Name"><input className="input" value={name} onChange={(e) => setName(e.target.value)} /></Field>
+        <Field label="WhatsApp number"><input className="input" type="tel" inputMode="tel" value={phone} onChange={(e) => setPhone(e.target.value)} /></Field>
+        <RolePicker value={role} onChange={setRole} />
+        <label className="row" style={{ gap: 10 }}><input type="checkbox" checked={active} onChange={(e) => setActive(e.target.checked)} /> Has access</label>
         {save.error && <Notice tone="bad">{errorMessage(save.error)}</Notice>}
-        <button className="btn primary block" disabled={!email.trim() || save.isPending}>Save</button>
+        <button className="btn primary block" disabled={name.trim().length < 2 || save.isPending}>Save</button>
+        {staff.username && (
+          <div className="stack">
+            {confirmReset ? (
+              <Notice tone="warn">
+                <span className="stack">
+                  <span>The old password stops working right away. You'll get a new one to send on WhatsApp.</span>
+                  <span className="row" style={{ gap: 8 }}>
+                    <button type="button" className="btn small" onClick={() => setConfirmReset(false)}>Cancel</button>
+                    <button type="button" className="btn small primary" disabled={reset.isPending} onClick={() => reset.mutate()}>
+                      {reset.isPending ? <span className="spinner" /> : 'Reset password'}
+                    </button>
+                  </span>
+                </span>
+              </Notice>
+            ) : (
+              <button type="button" className="btn block" onClick={() => setConfirmReset(true)}><KeyRound size={16} aria-hidden /> Reset password</button>
+            )}
+            {reset.error && <Notice tone="bad">{errorMessage(reset.error)}</Notice>}
+          </div>
+        )}
       </form>
+    </Sheet>
+  );
+}
+
+const CRED_LANG_KEY = 'xs-wa-lang';
+
+/** Shown once after a login is made or reset: the details plus a ready WhatsApp message. */
+function CredentialsSheet({ creds, reset, onClose }: { creds: Credentials; reset: boolean; onClose: () => void }) {
+  const { gym } = useGym();
+  const toast = useToast();
+  const [lang, setLangState] = useState<CredentialLang>(() => { try { return localStorage.getItem(CRED_LANG_KEY) === 'ml' ? 'ml' : 'en'; } catch { return 'en'; } });
+  const setLang = (l: CredentialLang) => { setLangState(l); try { localStorage.setItem(CRED_LANG_KEY, l); } catch { /* private mode */ } };
+  const text = credentialsText(lang, creds, gym.name, loginUrl(creds.username), reset);
+  const copy = async (value: string, what: string) => {
+    try { await navigator.clipboard.writeText(value); toast(`${what} copied`); } catch { toast('Copy failed — select the text instead'); }
+  };
+  return (
+    <Sheet title={reset ? 'New password' : 'Login created'} onClose={onClose}>
+      <div className="stack lg">
+        <p className="muted" style={{ margin: 0 }}>For <strong>{creds.name}</strong> · {ROLE_LABEL[creds.role]}</p>
+        <dl className="kv cred">
+          <dt>Username</dt><dd className="mono"><strong>{creds.username}</strong></dd>
+          <dt>Password</dt><dd className="mono"><strong data-testid="staff-password">{creds.password}</strong></dd>
+        </dl>
+        <Notice tone="warn">This password is shown only now. If it's lost, use Reset password.</Notice>
+        <Segmented label="Message language" value={lang} onChange={setLang} options={[{ value: 'en', label: 'English' }, { value: 'ml', label: 'മലയാളം' }]} />
+        <pre className="cred-message">{text}</pre>
+        {creds.phone ? (
+          <a className="btn primary block xl wa" href={waLink(creds.phone, text)} target="_blank" rel="noopener noreferrer">
+            <MessageCircle size={18} aria-hidden /> Send on WhatsApp to {creds.phone}
+          </a>
+        ) : <Notice>Add a WhatsApp number to this staff member to send it directly.</Notice>}
+        <button type="button" className="btn block" onClick={() => copy(text, 'Message')}><Copy size={16} aria-hidden /> Copy message</button>
+        <button type="button" className="text-link" onClick={onClose}>Done</button>
+      </div>
     </Sheet>
   );
 }

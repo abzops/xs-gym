@@ -7,6 +7,7 @@ on:
       - 'src/**'
       - 'supabase/migrations/**'
       - 'supabase/functions/xs-ai/**'
+      - 'supabase/functions/staff-login/**'
       - 'tests/e2e/**'
       - 'tests/ai/**'
       - '.github/workflows/e2e-analytics.yml'

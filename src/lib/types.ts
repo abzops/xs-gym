@@ -11,6 +11,8 @@ export type Gym = {
 export type StaffRow = {
   id: string; gym_id: string; user_id: string; role: Role; status: 'active' | 'inactive';
   display_name: string | null; email: string | null; created_at: string;
+  /** Set for logins the owner made in XS Gym (sign in with username, no email). */
+  username?: string | null; phone?: string | null;
 };
 
 export type Subscription = {

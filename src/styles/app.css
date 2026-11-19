@@ -559,3 +559,9 @@ body:has(.overlay) .toasts { top: calc(12px + env(safe-area-inset-top)); bottom:
     width: 40px; height: 40px; min-height: 40px; padding: 0; margin-right: -4px;
     border: 0; background: transparent; color: var(--graphite); border-radius: 50%; cursor: pointer; }
 }
+
+/* Staff login details shown once to the owner */
+.kv.cred { padding: 14px 16px; border-radius: 14px; background: var(--paper-2); }
+.kv.cred dd { font-size: 1.05rem; word-break: break-all; }
+.cred-message { margin: 0; padding: 12px 14px; border-radius: 12px; border: 1px solid var(--hair);
+  white-space: pre-wrap; word-break: break-word; font: inherit; font-size: 0.9rem; color: var(--graphite); max-height: 220px; overflow: auto; }

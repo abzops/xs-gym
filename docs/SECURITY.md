@@ -133,3 +133,15 @@ GitHub Pages cannot send HTTP response headers, so:
 | Data leakage to AI providers | Opaque refs, redaction, provider terms review | Context-capture tests |
 | Brute-force login | Supabase rate limits; lockout messaging | Manual + config review |
 | Backup exposure | Encrypted dumps, private storage, no dumps in Git (`.gitignore`) | Backup drill |
+
+## Staff logins made by the owner (19 Nov 2026)
+
+- Username → internal address `<username>@staff.xelorsoft.com` (never mailed; Supabase Auth).
+- Only `staff.manage` (owner) can make or reset a login; checked in the database as the
+  signed-in owner before the Edge Function `staff-login` uses the service key.
+- The account carries `app_metadata.xs_staff_gym` (settable only with the service key);
+  `attach_staff_login` refuses any account not made for that gym, so an owner cannot
+  attach someone else's account.
+- Passwords: 8 random characters from 54 look-alike-free symbols (~46 bits), shown once,
+  returned with `Cache-Control: no-store`, never stored or logged; audit records only the username.
+- Switched-off staff (`status = inactive`) see nothing through RLS.

@@ -2,3 +2,6 @@
 # inside the function (RLS and command-function permission checks).
 [functions.xs-ai]
 verify_jwt = true
+
+[functions.staff-login]
+verify_jwt = true

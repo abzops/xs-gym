@@ -372,6 +372,63 @@ select public.pause_membership(t.id('gymA'), t.id('pm'), 3, 'Short pause');
 select t.fails($$select public.update_membership_dates(t.id('gymA'), t.id('pmA'), private.gym_today(t.id('gymA')) - 5, 'While paused')$$, 'XS409', 'paused membership must be resumed before editing');
 select public.resume_membership(t.id('gymA'), t.id('pm'), 'done');
 
+-- ---------------------------------------------------------------- staff logins (owner-made)
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000a1', false);
+select t.eq(public.prepare_staff_login(t.id('gymA'), 'Ravi Kumar', '98765 22222', 'reception') ->> 'username',
+  'ravi.iron', 'username from first name + gym');
+select t.eq(public.prepare_staff_login(t.id('gymA'), 'രവി', '98765 22222', 'reception') ->> 'username',
+  'staff.iron', 'non-latin name falls back to staff');
+select t.fails($$select public.prepare_staff_login(t.id('gymA'), 'Ravi', '98765 22222', 'owner')$$, 'XS422', 'cannot make an owner login');
+select t.fails($$select public.prepare_staff_login(t.id('gymA'), 'Ravi', '123', 'reception')$$, 'XS422', 'staff phone validated');
+select t.fails($$select public.prepare_staff_login(t.id('gymA'), ' ', '98765 22222', 'reception')$$, 'XS422', 'staff name required');
+-- The Edge Function makes the auth account with the service key (simulated here).
+reset role;
+insert into auth.users (id, email, raw_app_meta_data) values
+  ('00000000-0000-0000-0000-0000000000c1', 'ravi.iron@staff.xelorsoft.com', jsonb_build_object('xs_staff_gym', (select v from t.ids where k = 'gymA'))),
+  ('00000000-0000-0000-0000-0000000000c2', 'fake.iron@staff.xelorsoft.com', '{}'),
+  ('00000000-0000-0000-0000-0000000000c3', 'bee.gym@staff.xelorsoft.com', jsonb_build_object('xs_staff_gym', (select v from t.ids where k = 'gymB')));
+set role authenticated;
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000a1', false);
+insert into t.ids select 'staffRavi', id from public.attach_staff_login(t.id('gymA'), '00000000-0000-0000-0000-0000000000c1',
+  'ravi.iron', 'Ravi Kumar', '98765 22222', 'reception');
+select t.eq((select username || '|' || phone || '|' || role from public.gym_staff where id = t.id('staffRavi')),
+  'ravi.iron|+919876522222|reception', 'staff login linked with username, phone, role');
+select t.eq((select count(*) from public.audit_logs where action = 'staff.login_created' and entity_id = t.id('staffRavi'))::int, 1, 'staff login audited');
+select t.eq((select count(*) from public.audit_logs where action = 'staff.login_created' and data::text ilike '%password%')::int, 0, 'no password in audit');
+select t.eq(public.prepare_staff_login(t.id('gymA'), 'Ravi M', '98765 33333', 'trainer') ->> 'username', 'ravi.iron2', 'taken username gets a number');
+select t.fails($$select public.prepare_staff_login(t.id('gymA'), 'Ravi Again', '98765 22222', 'trainer')$$, 'XS409', 'one active login per phone');
+select t.fails($$select public.attach_staff_login(t.id('gymA'), '00000000-0000-0000-0000-0000000000c1', 'ravi.iron', 'Ravi', '98765 22222', 'reception')$$, 'XS409', 'login linked once');
+select t.fails($$select public.attach_staff_login(t.id('gymA'), '00000000-0000-0000-0000-0000000000c2', 'fake.iron', 'Fake', '98765 44444', 'reception')$$, 'XS422', 'account without server marker rejected');
+select t.fails($$select public.attach_staff_login(t.id('gymA'), '00000000-0000-0000-0000-0000000000c3', 'bee.gym', 'Bee', '98765 44444', 'reception')$$, 'XS422', 'account made for another gym rejected');
+select t.fails($$select public.attach_staff_login(t.id('gymA'), '00000000-0000-0000-0000-0000000000a2', 'desk.a', 'Desk', '98765 44444', 'reception')$$, 'XS422', 'ordinary account cannot be attached');
+select t.eq(public.prepare_staff_password_reset(t.id('gymA'), t.id('staffRavi')) ->> 'username', 'ravi.iron', 'owner can reset staff password');
+select t.fails($$select public.prepare_staff_password_reset(t.id('gymA'), (select id from public.gym_staff where gym_id = t.id('gymA') and role = 'owner'))$$, 'XS403', 'owner password not reset here');
+select t.fails($$select public.prepare_staff_password_reset(t.id('gymA'), (select id from public.gym_staff where email = 'desk.a@test.local'))$$, 'XS422', 'email staff use forgot password');
+select public.update_staff(t.id('gymA'), t.id('staffRavi'), 'Ravi K', '98765 22223', 'trainer', 'active');
+select t.eq((select display_name || '|' || phone || '|' || role from public.gym_staff where id = t.id('staffRavi')),
+  'Ravi K|+919876522223|trainer', 'owner edits staff name, phone, role');
+select t.fails($$select public.update_staff(t.id('gymA'), (select id from public.gym_staff where gym_id = t.id('gymA') and role = 'owner'), 'Me', null, 'manager', 'active')$$, 'XS403', 'owner row cannot be edited');
+-- Limited roles cannot make or reset logins; other gyms cannot either.
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000a2', false);
+select t.fails($$select public.prepare_staff_login(t.id('gymA'), 'Sneaky', '98765 55555', 'manager')$$, 'XS403', 'reception cannot make logins');
+select t.fails($$select public.prepare_staff_password_reset(t.id('gymA'), t.id('staffRavi'))$$, 'XS403', 'reception cannot reset passwords');
+select t.fails($$select public.update_staff(t.id('gymA'), t.id('staffRavi'), 'X', null, 'manager', 'active')$$, 'XS403', 'reception cannot edit staff');
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000a4', false);
+select t.fails($$select public.prepare_staff_login(t.id('gymA'), 'Sneaky', '98765 55555', 'reception')$$, 'XS403', 'manager cannot make logins');
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000b1', false);
+select t.fails($$select public.prepare_staff_password_reset(t.id('gymA'), t.id('staffRavi'))$$, 'XS403', 'other gym cannot reset');
+-- The new login sees only what its role allows.
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000c1', false);
+select t.eq((select count(*) from public.gyms)::int, 1, 'staff login sees its gym');
+select t.eq((select count(*) from public.audit_logs)::int, 0, 'staff login cannot read audit log');
+select t.fails($$select public.record_expense(t.id('gymA'), 'rent', 1000, current_date, 'cash', gen_random_uuid())$$, 'XS403', 'trainer login cannot record expenses');
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000a1', false);
+select public.update_staff(t.id('gymA'), t.id('staffRavi'), 'Ravi K', '98765 22223', 'trainer', 'inactive');
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000c1', false);
+select t.eq((select count(*) from public.gyms)::int, 0, 'switched-off staff login sees nothing');
+select t.eq((select count(*) from public.members)::int, 0, 'switched-off staff login sees no members');
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000a1', false);
+
 -- Expired subscription: read-only
 reset role;
 update public.gym_subscriptions set trial_ends_at = now() - interval '1 minute' where gym_id = t.id('gymA');

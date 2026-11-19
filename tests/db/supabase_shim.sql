@@ -11,7 +11,8 @@ grant usage on schema public, auth, extensions to anon, authenticated, service_r
 create table auth.users (
   id                 uuid primary key,
   email              text unique,
-  raw_user_meta_data jsonb not null default '{}'
+  raw_user_meta_data jsonb not null default '{}',
+  raw_app_meta_data  jsonb not null default '{}'
 );
 
 create function auth.uid() returns uuid language sql stable as $$

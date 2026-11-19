@@ -5,6 +5,7 @@ import { Link, Navigate, useNavigate, useSearchParams } from 'react-router';
 import { useAuth } from '../../app/auth';
 import { Collapse, Logo, Notice, Segmented, useToast } from '../../components/ui';
 import { errorMessage } from '../../lib/errors';
+import { isUsername, loginEmail } from '../../lib/staffLogin';
 import { rpc, supabase } from '../../lib/supabase';
 import type { Gym } from '../../lib/types';
 import './auth.css';
@@ -62,7 +63,8 @@ export function LoginPage() {
   const { session } = useAuth();
   const [params] = useSearchParams();
   const [mode, setMode] = useState<'signin' | 'signup' | 'reset'>(params.get('mode') === 'signup' ? 'signup' : 'signin');
-  const [email, setEmail] = useState('');
+  // Staff logins arrive as /login?u=<username> from the WhatsApp message.
+  const [email, setEmail] = useState(params.get('u') ?? '');
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -77,8 +79,11 @@ export function LoginPage() {
     setBusy(true);
     try {
       if (mode === 'signin') {
-        const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
-        if (error) throw error;
+        const { error } = await supabase.auth.signInWithPassword({ email: loginEmail(email), password });
+        if (error) {
+          if (isUsername(email) && /Invalid login credentials/i.test(error.message)) throw new Error('XS401: username or password is incorrect');
+          throw error;
+        }
       } else if (mode === 'signup') {
         if (password.length < 8) throw new Error('Password should be at least 8 characters');
         const { data, error } = await supabase.auth.signUp({
@@ -89,6 +94,7 @@ export function LoginPage() {
         if (error) throw error;
         if (!data.session) setSent(`Check ${email.trim()} for a confirmation link, then sign in.`);
       } else {
+        if (isUsername(email)) throw new Error('XS422: staff logins are reset by the gym owner. Ask them for a new password.');
         const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), { redirectTo: appUrl() });
         if (error) throw error;
         setSent(`If ${email.trim()} has an account, a reset link is on its way.`);
@@ -129,7 +135,8 @@ export function LoginPage() {
             <Collapse open={mode === 'signup'}>
               <Row label="Your name" value={name} onChange={setName} autoComplete="name" tabIndex={mode === 'signup' ? 0 : -1} />
             </Collapse>
-            <Row label="Email" type="email" inputMode="email" value={email} onChange={setEmail} autoComplete="email" />
+            <Row label={mode === 'signin' ? 'Email or username' : 'Email'} type="email" inputMode="email"
+              value={email} onChange={setEmail} autoComplete={mode === 'signin' ? 'username' : 'email'} />
             <Collapse open={mode !== 'reset'}>
               <PasswordRow value={password} onChange={setPassword} tabIndex={mode !== 'reset' ? 0 : -1}
                 autoComplete={mode === 'signup' ? 'new-password' : 'current-password'} />

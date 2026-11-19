@@ -717,12 +717,88 @@ with sync_playwright() as p:
     @step('staff: adding an unknown email explains what to do')
     def _():
         tap(page.get_by_role('button', name='Add staff'))
-        d = dialog(); d.get_by_label('Email they signed up with').fill('nobody.here@example.com')
+        d = dialog(); tap(d.get_by_role('button', name=re.compile('Add by email')))
+        d.get_by_label('Email they signed up with').fill('nobody.here@example.com')
         tap(d.locator('form button.btn.primary.block:not([type=button])')); page.wait_for_timeout(1500)
         text = d.inner_text() if d.count() else page.locator('.toasts').inner_text()
         if re.search(r'violates|SQLSTATE|exception|P0001', text): note('BUG', f'raw error when adding unknown staff email: {text[:160]!r}')
         state['staff_unknown_msg'] = text[-160:]
         if d.count(): tap(d.get_by_role('button', name='Close'))
+
+    @step('staff login: owner makes a username + password and sends it on WhatsApp')
+    def _():
+        expect(dialog()).to_have_count(0, timeout=5000)
+        tap(page.locator('main').get_by_role('button', name='Add staff'))
+        d = dialog()
+        d.get_by_label('Name').fill('Ravi Desk')
+        d.get_by_label('WhatsApp number').fill('98470 55555')
+        d.get_by_label('Access').select_option('reception')
+        expect(d).to_contain_text('No expenses')
+        tap(d.get_by_role('button', name='Create login'))
+        expect(dialog()).to_contain_text('Login created', timeout=10000)
+        d = dialog()
+        password = d.get_by_test_id('staff-password').inner_text().strip()
+        username = sql(f"select username from gym_staff where gym_id = '{state['gym']}' and display_name = 'Ravi Desk'")[0][0]
+        expect(d).to_contain_text(username)
+        wa = d.get_by_role('link', name=re.compile('Send on WhatsApp'))
+        href = wa.get_attribute('href')
+        assert href.startswith('https://wa.me/919847055555?text='), href
+        from urllib.parse import unquote
+        msg = unquote(href.split('text=', 1)[1])
+        assert f'Username: {username}' in msg and f'Password: {password}' in msg and f'login?u={username}' in msg, msg
+        tap(d.get_by_role('group', name='Message language').get_by_role('button', name='മലയാളം'))
+        assert 'ചേർത്തു' in unquote(dialog().get_by_role('link', name=re.compile('Send on WhatsApp')).get_attribute('href'))
+        page.screenshot(path=f'{OUT}/10-staff-login-created.png', full_page=True)
+        tap(dialog().get_by_role('button', name='Done'))
+        expect(page.locator('main')).to_contain_text(f'Username {username}', timeout=8000)
+        assert sql(f"select count(*) from audit_logs where gym_id = '{state['gym']}' and action = 'staff.login_created'")[0][0] == '1'
+        state['staff_login'] = (username, password)
+
+    @step('staff login: reception signs in with the username and sees only its pages')
+    def _():
+        username, password = state['staff_login']
+        sctx = browser.new_context(**PROFILES[PLATFORM], timezone_id='Asia/Kolkata', locale='en-IN')
+        sp = sctx.new_page()
+        try:
+            sp.goto(U + f'login?u={username}'); sp.wait_for_load_state('networkidle')
+            assert sp.locator('input[type=email]').input_value() == username, 'username not prefilled from the link'
+            sp.locator('input[autocomplete=current-password]').fill(password)
+            sp.locator('form button.btn.primary').click()
+            sp.wait_for_url(re.compile(r'/g/' + re.escape(state['slug'])), timeout=10000); sp.wait_for_load_state('networkidle')
+            sp.wait_for_timeout(800)
+            # Labels, even where the tablet icon rail hides them visually.
+            navtext = sp.evaluate('''() => [...document.querySelectorAll('nav a')].map(a => (a.textContent + ' ' + (a.getAttribute('aria-label') || '') + ' ' + (a.title || ''))).join(' | ')''')
+            if PLATFORM == 'phone':
+                sp.locator('nav.tabbar').get_by_role('button', name='More').tap(); sp.wait_for_timeout(400)
+                navtext += sp.get_by_role('dialog').inner_text()
+            for hidden in ['Expenses', 'Analytics']:
+                assert hidden not in navtext, f'reception login sees {hidden}: {navtext!r}'
+            assert 'Members' in navtext, navtext
+            sp.goto(U + f"g/{state['slug']}/settings"); sp.wait_for_load_state('networkidle'); sp.wait_for_timeout(600)
+            assert sp.get_by_role('button', name='Add staff').count() == 0, 'reception can see Add staff'
+            sp.screenshot(path=f'{OUT}/10-staff-login-reception.png', full_page=True)
+        finally:
+            sctx.close()
+
+    @step('staff login: owner resets the password; old one stops working')
+    def _():
+        username, old = state['staff_login']
+        tap(page.locator('main').get_by_role('button', name=re.compile('Ravi Desk')))
+        d = dialog()
+        tap(d.get_by_role('button', name='Reset password'))
+        tap(d.locator('.notice').get_by_role('button', name='Reset password'))
+        expect(dialog()).to_contain_text('New password', timeout=10000)
+        new = dialog().get_by_test_id('staff-password').inner_text().strip()
+        assert new != old
+        tap(dialog().get_by_role('button', name='Done'))
+        sctx = browser.new_context(**PROFILES[PLATFORM]); sp = sctx.new_page()
+        try:
+            sp.goto(U + f'login?u={username}'); sp.wait_for_load_state('networkidle')
+            sp.locator('input[autocomplete=current-password]').fill(old)
+            sp.locator('form button.btn.primary').click()
+            expect(sp.locator('form')).to_contain_text('incorrect', timeout=8000)
+        finally:
+            sctx.close()
 
     @step('import CSV: good rows added, bad rows explained, duplicates reported')
     def _():
