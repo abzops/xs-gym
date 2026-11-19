@@ -25,6 +25,6 @@ for f in "$ROOT"/supabase/migrations/*.sql; do
   echo "migrate: $(basename "$f")"
   "${PSQL[@]}" -f "$f"
 done
-for t in "$ROOT"/tests/db/test_core.sql "$ROOT"/tests/db/test_billing.sql; do
+for t in "$ROOT"/tests/db/test_core.sql "$ROOT"/tests/db/test_billing.sql "$ROOT"/tests/db/test_subscriptions.sql; do
   "${PSQL[@]}" -f "$t" 2>&1 | sed 's/^psql:[^ ]* NOTICE:  //'
 done
