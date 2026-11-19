@@ -115,9 +115,6 @@ end $$;
 
 -- 6. Columns (legacy columns already hold the right values)
 drop policy if exists saas_plan_versions_read on public.saas_plan_versions;
-update public.gym_subscriptions set plan = 'max' where plan not in ('starter', 'growth', 'max');
-alter table public.gym_subscriptions drop constraint gym_subscriptions_plan_check;
-alter table public.gym_subscriptions add constraint gym_subscriptions_plan_check check (plan in ('starter', 'growth', 'max'));
 alter table public.gym_subscriptions
   drop column state, drop column plan_version_id, drop column billing_cycle, drop column current_period_start,
   drop column current_period_end, drop column past_due_since, drop column grace_ends_at, drop column canceled_at,

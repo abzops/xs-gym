@@ -206,10 +206,6 @@ $$;
 -- ===========================================================================
 -- 3. Subscriptions: new columns on gym_subscriptions + state machine
 -- ===========================================================================
-alter table public.gym_subscriptions drop constraint gym_subscriptions_plan_check;
-alter table public.gym_subscriptions add constraint gym_subscriptions_plan_check
-  check (plan in ('starter', 'growth', 'max', 'pro', 'launch', 'pilot'));
-
 alter table public.gym_subscriptions
   add column state                  text check (state in ('TRIALING', 'ACTIVE', 'PAST_DUE', 'GRACE_PERIOD', 'CANCELED', 'EXPIRED')),
   add column plan_version_id        uuid references public.saas_plan_versions (id),
@@ -338,8 +334,9 @@ begin
             jsonb_build_object('status', new.status, 'paid_until', new.paid_until));
   end if;
   new.status := case new.state when 'TRIALING' then 'trial' when 'EXPIRED' then 'suspended' else 'active' end;
+  -- The old column only knows starter / growth / max; everything else reads as max.
   select plan_id into v_plan from public.saas_plan_versions where id = new.plan_version_id;
-  if v_plan is not null then new.plan := v_plan; end if;
+  if v_plan is not null then new.plan := case when v_plan in ('starter', 'growth') then v_plan else 'max' end; end if;
   new.paid_until := case
     when new.state = 'TRIALING' then null
     when new.complimentary_until = 'infinity'::timestamptz then null

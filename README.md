@@ -20,7 +20,7 @@ See [`PROGRESS.md`](PROGRESS.md) for what works, what is pending and owner actio
 Design: [`ARCHITECTURE`](docs/ARCHITECTURE.md) · [`DATABASE`](docs/DATABASE.md) ·
 [`SECURITY`](docs/SECURITY.md) · [`AI_AND_VOICE`](docs/AI_AND_VOICE.md) ·
 [`TEST_PLAN`](docs/TEST_PLAN.md) · [`DEPLOYMENT`](docs/DEPLOYMENT.md) ·
-[`PRODUCT_REQUIREMENTS`](docs/PRODUCT_REQUIREMENTS.md) · [ADRs](docs/DECISIONS/)
+[`PRODUCT_REQUIREMENTS`](docs/PRODUCT_REQUIREMENTS.md) · [`BILLING`](docs/BILLING.md) · [ADRs](docs/DECISIONS/)
 
 ## Repository layout
 
