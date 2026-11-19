@@ -5,6 +5,21 @@ Versions follow semantic versioning from the first app release.
 
 ## [Unreleased]
 
+### Added — XS Gym plans and subscription engine (branch feat/saas-subscriptions, not deployed)
+
+- Starter, Growth and Pro plans as versioned, **provisional** prices (draft until a Xelorsoft
+  owner activates them); the earlier single price is kept as the hidden launch plan.
+- Subscription states TRIALING, ACTIVE, PAST_DUE, GRACE_PERIOD, CANCELED, EXPIRED with
+  validated transitions and an event log; trial once per email/phone; upgrades with credit,
+  scheduled downgrades, cancel/resume; expiry never deletes data.
+- Member/staff limits and Analytics, Enquiries and XS AI gated by plan on the server.
+- Invoices/receipts with gapless numbering per financial year and configurable GST.
+- Replay-safe Razorpay webhook ledger, refunds, disputes, failed payments, reconciliation.
+- Public /pricing, Settings → Subscription, invoices, Xelorsoft /admin (MRR, ARR, churn,
+  margins, customers, prices, settings, cost model, audit, CSV).
+- Every existing gym grandfathered as a complimentary pilot. Reversible migration with a
+  tested rollback. See docs/BILLING.md.
+
 ### Added — Pay for XS Gym with Razorpay (19 Nov 2026)
 
 - Settings → Subscription: the gym owner picks Monthly or Yearly and pays on Razorpay's

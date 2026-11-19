@@ -851,12 +851,18 @@ async function loadContext(req: AgentRequest, env: AgentEnv, f: typeof fetch, ex
   const user = (await auth.json().catch(() => null)) as Json | null;
   const userId = typeof user?.id === 'string' ? user.id : '';
   if (!isUuid(userId)) throw new ApiError('not signed in', 401);
-  const [gyms, staff, extraResult] = await Promise.all([
+  const [gyms, staff, plan, extraResult] = await Promise.all([
     rest(`gyms?select=id,name,slug,timezone,grace_days&id=eq.${req.gym_id}`) as Promise<Ctx['gym'][]>,
     rest(`gym_staff?select=role,status&gym_id=eq.${req.gym_id}&user_id=eq.${userId}`) as Promise<Json[]>,
+    // XS Gym plan: XS AI is a Growth/Pro feature. A database without the
+    // subscriptions migration has no such function; then nothing is gated.
+    (rpc('gym_entitlements', { p_gym: req.gym_id }) as Promise<Json | null>).catch(() => null),
     extra ? extra() : Promise.resolve(null),
   ]);
   if (!gyms[0] || !staff[0] || staff[0].status !== 'active') throw new ApiError('you are not staff in this gym', 403);
+  if ((plan?.features as Json | undefined)?.xs_ai === false) {
+    throw new ApiError('XS AI is part of the Growth and Pro plans. The gym owner can upgrade in Settings → Subscription.', 402);
+  }
   const role = String(staff[0].role);
   const perms = new Set(((await rest(`role_permissions?select=permission&role=eq.${role}`)) as Json[]).map((p) => String(p.permission)));
   return { ctx: { gym: gyms[0], role, perms, today: gymToday(gyms[0].timezone, env.now?.() ?? new Date()), rest, rpc }, extra: extraResult };

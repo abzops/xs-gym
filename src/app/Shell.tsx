@@ -1,12 +1,13 @@
 import {
-  BarChart3, ClipboardList, Home, Inbox, LogOut, Menu, Receipt, Settings, Sparkles, Users, Wallet,
+  BarChart3, ClipboardList, CreditCard, Home, Inbox, LogOut, Menu, Receipt, Settings, Sparkles, Users, Wallet,
 } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
 import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState, type ComponentType } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router';
 import { AppearanceButton, AppearanceControl } from '../components/Appearance';
 import { Logo, Notice, Sheet } from '../components/ui';
-import { daysBetween, todayInGym } from '../lib/dates';
+import { daysBetween, formatDate, todayInGym } from '../lib/dates';
+import { isComplimentary } from '../lib/billingApi';
 import { setTransition } from '../lib/motion';
 import { pageModules, prefetchSection } from '../lib/sections';
 import { supabase } from '../lib/supabase';
@@ -28,6 +29,7 @@ const NAV: NavItem[] = [
   { to: 'plans', label: 'Plans', icon: ClipboardList, perm: 'plans.read' },
   { to: 'expenses', label: 'Expenses', icon: Receipt, perm: 'expenses.read' },
   { to: 'settings', label: 'Settings', icon: Settings, perm: 'staff.read' },
+  { to: 'billing', label: 'Subscription', icon: CreditCard, perm: 'billing.manage' },
 ];
 
 // Transparent badge: black on light backgrounds, white on dark (brand rule).
@@ -35,7 +37,7 @@ const mark = `${import.meta.env.BASE_URL}brand/badge-black.svg`;
 const markOnDark = `${import.meta.env.BASE_URL}brand/badge-white.svg`;
 
 export function Shell() {
-  const { gym, role, can, canWrite, subscription } = useGym();
+  const { gym, role, can, canWrite, subscription, entitlements: ent, has } = useGym();
   const [more, setMore] = useState(false);
   const [ai, setAi] = useState(false);
   function openAi() {
@@ -60,21 +62,30 @@ export function Shell() {
   const base = `/g/${gym.slug}`;
   const link = (n: NavItem) => (n.to ? `${base}/${n.to}` : base);
   const onOverflowRoute = overflow.some((n) => location.pathname.startsWith(link(n)));
-  const trialDays = subscription?.status === 'trial' && subscription.trial_ends_at
-    ? Math.max(0, daysBetween(todayInGym(gym.timezone), subscription.trial_ends_at.slice(0, 10)))
-    : null;
+  const trialEnds = ent ? (ent.effective_state === 'TRIALING' ? ent.trial_ends_at : null)
+    : subscription?.status === 'trial' ? subscription.trial_ends_at : null;
+  const trialDays = trialEnds ? Math.max(0, daysBetween(todayInGym(gym.timezone), trialEnds.slice(0, 10))) : null;
+  const billingLink = can('billing.manage') ? <> <NavLink to={`${base}/billing`}><b>{canWrite ? 'See plans' : 'Renew now'}</b></NavLink></> : null;
+  const day = (iso: string | null | undefined) => (iso ? formatDate(iso.slice(0, 10)) : '');
+  const banner = !canWrite
+    ? <Notice tone="warn">Subscription ended. You can view and export, but changes are paused.{can('billing.manage') ? billingLink : ' Ask the gym owner to renew.'}</Notice>
+    : ent && !isComplimentary(ent) && (ent.effective_state === 'PAST_DUE' || ent.effective_state === 'GRACE_PERIOD')
+      ? <Notice tone="warn">Your XS Gym period ended on {day(ent.current_period_end)}. Everything keeps working until {day(ent.grace_ends_at)}.{billingLink}</Notice>
+      : ent && ent.effective_state === 'TRIALING' && trialDays !== null && trialDays <= 7 && can('billing.manage')
+        ? <Notice tone="info">Your free trial ends in {trialDays} day{trialDays === 1 ? '' : 's'}.{billingLink}</Notice>
+        : null;
   const tab = () => setTransition('tab');
 
   // Make every section open instantly: once the app is idle, fetch the code and
   // first data of each section this role can open; repeat on touch/hover.
   const qc = useQueryClient();
-  const warm = (n: NavItem) => { void prefetchSection(qc, gym, n.to); };
+  const warm = (n: NavItem) => { void prefetchSection(qc, gym, n.to, has); };
   useEffect(() => {
     let cancelled = false;
     const idle = (fn: () => void) => ('requestIdleCallback' in window ? requestIdleCallback(fn, { timeout: 2500 }) : setTimeout(fn, 900));
     idle(async () => {
       for (const load of Object.values(pageModules)) { if (cancelled) return; await load().catch(() => {}); }
-      for (const n of items) { if (cancelled) return; await prefetchSection(qc, gym, n.to)?.catch(() => {}); }
+      for (const n of items) { if (cancelled) return; await prefetchSection(qc, gym, n.to, has)?.catch(() => {}); }
     });
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -116,9 +127,11 @@ export function Shell() {
           </NavLink>
         ))}
         <div className="grow" />
-        <button className="signout xsai-side" onClick={openAi} title="XS AI" onPointerEnter={() => void import('../features/ai/XsAi')}>
-          <span className="xsai-mark" aria-hidden><Sparkles size={13} strokeWidth={2.4} /></span> <span className="nav-label">XS AI</span>
-        </button>
+        {has('xs_ai') && (
+          <button className="signout xsai-side" onClick={openAi} title="XS AI" onPointerEnter={() => void import('../features/ai/XsAi')}>
+            <span className="xsai-mark" aria-hidden><Sparkles size={13} strokeWidth={2.4} /></span> <span className="nav-label">XS AI</span>
+          </button>
+        )}
         <AppearanceButton className="signout" />
         <button className="signout" onClick={() => supabase.auth.signOut()} title="Sign out">
           <LogOut size={20} strokeWidth={1.9} /> <span className="nav-label">Sign out</span>
@@ -132,11 +145,7 @@ export function Shell() {
           <span className="gym">{gym.name}</span>
         </header>
         <main className="main">
-          {!canWrite && (
-            <div style={{ marginBottom: 20 }}>
-              <Notice tone="warn">Subscription ended. You can view and export, but changes are paused.{can('billing.manage') && <> <NavLink to={`${base}/settings`}><b>Renew now</b></NavLink></>}</Notice>
-            </div>
-          )}
+          {banner && <div style={{ marginBottom: 20 }}>{banner}</div>}
           <Outlet />
         </main>
       </div>
@@ -154,7 +163,7 @@ export function Shell() {
         </button>
       </nav>
 
-      {!ai && <FloatingXsAi gymId={gym.id} onOpen={openAi} />}
+      {!ai && has('xs_ai') && <FloatingXsAi gymId={gym.id} onOpen={openAi} />}
       {ai && <Suspense fallback={null}><XsAiPanel onClose={() => setAi(false)} /></Suspense>}
 
       {more && (

@@ -33,6 +33,10 @@ const ReceiptPage = lazy(() => pageModules.receipt().then((m) => ({ default: m.R
 const ImportPage = lazy(() => pageModules.import().then((m) => ({ default: m.ImportPage })));
 const Onboarding = lazy(() => import('./features/onboarding/Onboarding').then((m) => ({ default: m.Onboarding })));
 const SettingsPage = lazy(() => pageModules.settings().then((m) => ({ default: m.SettingsPage })));
+const BillingPage = lazy(() => pageModules.billing().then((m) => ({ default: m.BillingPage })));
+const InvoicePage = lazy(() => import('./features/billing/InvoicePage').then((m) => ({ default: m.InvoicePage })));
+const PricingPage = lazy(() => import('./features/pricing/PricingPage').then((m) => ({ default: m.PricingPage })));
+const AdminPage = lazy(() => import('./features/admin/AdminPage').then((m) => ({ default: m.AdminPage })));
 
 // GitHub Pages cannot send frame-ancestors; refuse to render inside a frame.
 if (window.top !== window.self) {
@@ -118,7 +122,9 @@ const router = createBrowserRouter(
     <>
       <Route path="/" element={<Root />} />
       <Route path="/login" element={<LoginPage />} />
+      <Route path="/pricing" element={<Suspense fallback={<Splash />}><PricingPage /></Suspense>} />
       <Route element={<RequireAuth />}>
+        <Route path="/admin" element={<Suspense fallback={<Splash />}><AdminPage /></Suspense>} />
         <Route path="/setup" element={<SetupGym />} />
         <Route path="/g/:slug" element={<GymLayout />}>
           <Route index element={<GymHome />} />
@@ -138,6 +144,8 @@ const router = createBrowserRouter(
           <Route path="reports" element={<Navigate to="../analytics" relative="path" replace />} />
           <Route path="enquiries" element={<Allow perm="members.read"><EnquiriesPage /></Allow>} />
           <Route path="settings" element={<Allow perm="staff.read"><SettingsPage /></Allow>} />
+          <Route path="billing" element={<Allow perm="staff.read"><BillingPage /></Allow>} />
+          <Route path="billing/invoice/:invoiceId" element={<Allow perm="billing.manage"><InvoicePage /></Allow>} />
           <Route path="*" element={<Empty title="Page not found" />} />
         </Route>
       </Route>

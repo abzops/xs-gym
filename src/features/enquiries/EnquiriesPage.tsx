@@ -3,6 +3,7 @@ import { Phone, Plus, UserCheck } from 'lucide-react';
 import { useState } from 'react';
 import { useNavigate } from 'react-router';
 import { useGym } from '../../app/gym';
+import { UpgradePrompt } from '../billing/UpgradePrompt';
 import { WhatsAppButton } from '../../components/WhatsApp';
 import { Empty, Field, Loading, Notice, Segmented, Sheet, useToast } from '../../components/ui';
 import { addDays, formatDate, todayInGym } from '../../lib/dates';
@@ -18,7 +19,8 @@ const STATUS_LABEL: Record<EnquiryStatus, string> = { new: 'New', follow_up: 'Fo
 type View = 'open' | 'joined' | 'lost';
 
 export function EnquiriesPage() {
-  const { gym, can } = useGym();
+  const { gym, can, has } = useGym();
+  const allowed = has('enquiries');
   const [view, setView] = useState<View>('open');
   const [editing, setEditing] = useState<Enquiry | 'new' | null>(null);
   const q = useQuery(enquiriesQuery(gym.id));
@@ -36,8 +38,13 @@ export function EnquiriesPage() {
     <div className="stack lg">
       <div className="page-head">
         <h1>Enquiries</h1>
-        {can('members.write') && <button className="btn primary" onClick={() => setEditing('new')} aria-label="Add enquiry"><Plus size={18} /> <span className="btn-text">Add enquiry</span></button>}
+        {allowed && can('members.write') && <button className="btn primary" onClick={() => setEditing('new')} aria-label="Add enquiry"><Plus size={18} /> <span className="btn-text">Add enquiry</span></button>}
       </div>
+      {!allowed && (
+        <UpgradePrompt feature="enquiries" title="Never lose a walk-in or Instagram lead">
+          {all.length ? 'Your saved enquiries stay here. Adding new ones and follow-ups need a plan with Enquiries.' : 'Track enquiries with follow-up dates and see how many join.'}
+        </UpgradePrompt>
+      )}
       <div className="tiles">
         <div className="tile"><span className="label">Open</span><span className="value num">{open.length}</span><span className="sub">people to follow up</span></div>
         <div className="tile"><span className="label">Follow up today</span><span className="value num">{due}</span><span className="sub">due or overdue</span></div>

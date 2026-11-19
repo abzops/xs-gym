@@ -9,7 +9,7 @@ const RAHUL = { id: '33333333-3333-4333-8333-333333333331', full_name: 'Rahul Kr
 const RAHUL2 = { ...RAHUL, id: '33333333-3333-4333-8333-333333333332', full_name: 'Rahul Menon', member_no: 'XS-0002', due_paise: 0 };
 const OWNER = ['members.read', 'members.write', 'payments.read', 'payments.record', 'payments.reverse', 'reports.financial', 'reports.operational'];
 
-function harness(opts: { perms?: string[]; members?: unknown[]; model?: (body: { messages: { role: string; content: string }[] }) => unknown; signedIn?: boolean } = {}) {
+function harness(opts: { perms?: string[]; members?: unknown[]; model?: (body: { messages: { role: string; content: string }[] }) => unknown; signedIn?: boolean; plan?: unknown } = {}) {
   const rpcCalls: { fn: string; args: Record<string, unknown> }[] = [];
   const modelCalls: unknown[] = [];
   const json = (v: unknown, status = 200) => new Response(JSON.stringify(v), { status, headers: { 'content-type': 'application/json' } });
@@ -24,6 +24,8 @@ function harness(opts: { perms?: string[]; members?: unknown[]; model?: (body: {
     if (url.includes('/rest/v1/rpc/')) {
       const fn = url.split('/rpc/')[1];
       const args = JSON.parse(String(init?.body));
+      // The plan check is a read; only commands count as changes.
+      if (fn === 'gym_entitlements') return json(opts.plan ?? { features: { xs_ai: true } });
       rpcCalls.push({ fn, args });
       if (fn === 'record_payment') return json({ id: '44444444-4444-4444-8444-444444444444', amount_paise: args.p_amount_paise, method: args.p_method });
       if (fn === 'dashboard_summary') return json({ financial: { collections_today: 250000, reversals_today: 0, cash_today: 100000, upi_today: 150000 } });
@@ -163,6 +165,12 @@ describe('XS AI approval flow', () => {
       : base(input, init)) as typeof fetch;
     const out = await runAgent({ gym_id: GYM, messages: [{ role: 'user', content: 'Rahul paid late, start his plan from 2 Nov' }] }, h.env);
     expect(out.pending?.[0].lines).toContain('→ 2026-11-02 – 2026-12-01');
+    expect(h.rpcCalls).toHaveLength(0);
+  });
+  it('refuses XS AI when the gym plan does not include it, before calling the model', async () => {
+    const h = harness({ plan: { features: { xs_ai: false } } });
+    await expect(runAgent({ gym_id: GYM, messages: [{ role: 'user', content: 'who has dues?' }] }, h.env)).rejects.toMatchObject({ status: 402 });
+    expect(h.modelCalls).toHaveLength(0);
     expect(h.rpcCalls).toHaveLength(0);
   });
 });

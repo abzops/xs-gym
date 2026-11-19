@@ -62,6 +62,21 @@
 
 ## 6. Session log
 
+### 2026-11-19 — Plans, subscription engine and Xelorsoft admin (branch feat/saas-subscriptions)
+
+- NOT deployed; production untouched. Read `docs/BILLING.md` (design, tests, deploy and
+  rollback steps, founder decisions).
+- Migration `20261119170000_saas_subscriptions` (+ rollback in `supabase/rollback/`):
+  versioned plans (Starter/Growth/Pro drafts, provisional), state machine, entitlements,
+  trial registry, invoices, gateway event ledger, refunds/disputes, reminders queue,
+  platform admins, cost model and metrics. Existing gyms grandfathered as pilots.
+- `xs-billing` (plan checkout, reconcile, tick), `xs-billing-webhook` (event-id ledger,
+  secret rotation), `xs-ai` plan check.
+- App: /pricing, /g/:slug/billing, invoices, plan gates, banners, /admin.
+- Tests: DB 350 checks (144 new), migration safety (upgrade/rollback/re-upgrade on
+  pilot-shaped data), billing function contracts (34), unit 92, browser 26 screens.
+- Live issue found: CHAOS COMBAT and Super Gym trials lock on 9 Dec under the current rule.
+
 ### 2026-11-17 — Edit / backdate membership dates
 
 - Owner request: a renewal due 2 Nov was paid 12 Nov and sold from 12 Nov,

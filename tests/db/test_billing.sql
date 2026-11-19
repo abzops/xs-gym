@@ -5,6 +5,8 @@ set client_min_messages = notice;
 \o /dev/null
 
 reset role;
+-- This is a test database: Razorpay test-mode payments may grant access here.
+update public.saas_billing_settings set test_payments_grant_access = true;
 grant usage on schema t to service_role;
 grant execute on all functions in schema t to service_role;
 grant select on t.ids to service_role;
@@ -48,7 +50,8 @@ select t.eq((select paid_until = trial_ends_at + interval '1 month' from public.
 select t.eq((select count(*) from public.audit_logs where gym_id = t.id('gymC') and action = 'billing.paid')::int, 1, 'billing: payment audited once');
 
 -- Ended subscription: owner can still prepare a payment, and paying restarts from now
-update public.gym_subscriptions set paid_until = now() - interval '2 days' where gym_id = t.id('gymC');
+-- Period ended long enough ago to be past the reminder and grace days
+update public.gym_subscriptions set current_period_start = now() - interval '60 days', current_period_end = now() - interval '30 days' where gym_id = t.id('gymC');
 set role authenticated;
 select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000d1', false);
 select t.fails($$select public.create_member(t.id('gymC'), 'Late', '9000000077')$$, 'XS402', 'billing: ended subscription is read-only');

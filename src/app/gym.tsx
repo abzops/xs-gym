@@ -2,13 +2,18 @@ import { useQuery } from '@tanstack/react-query';
 import { createContext, useContext, type ReactNode } from 'react';
 import { supabase } from '../lib/supabase';
 import type { Gym, Role, StaffRow, Subscription } from '../lib/types';
+import type { Entitlements } from '../lib/billingApi';
 import { useAuth } from './auth';
 
 export type GymContextValue = {
   gym: Gym;
   role: Role;
   subscription: Subscription | null;
+  /** Plan, state, features and limits decided by the server (null on an older database). */
+  entitlements: Entitlements | null;
   canWrite: boolean;
+  /** UI hint for plan features (analytics, enquiries, xs_ai); the server enforces them. */
+  has: (feature: string) => boolean;
   /** UI hint only — the database enforces every permission. */
   can: (permission: string) => boolean;
 };
@@ -53,9 +58,10 @@ export function useGymBySlug(slug: string | undefined) {
       const { data: gym, error } = await supabase.from('gyms').select('*').eq('slug', slug!).maybeSingle();
       if (error) throw error;
       if (!gym) return null;
-      const [staff, sub] = await Promise.all([
+      const [staff, sub, ent] = await Promise.all([
         supabase.from('gym_staff').select('role').eq('gym_id', gym.id).eq('user_id', session!.user.id).single(),
         supabase.from('gym_subscriptions').select('*').eq('gym_id', gym.id).maybeSingle(),
+        supabase.rpc('gym_entitlements', { p_gym: gym.id }),
       ]);
       if (staff.error) throw staff.error;
       const role = staff.data.role as Role;
@@ -63,13 +69,16 @@ export function useGymBySlug(slug: string | undefined) {
       if (perms.error) throw perms.error;
       const set = new Set(perms.data.map((p) => p.permission as string));
       const subscription = (sub.data ?? null) as Subscription | null;
+      const entitlements = ent.error ? null : (ent.data as Entitlements | null);
       const now = Date.now();
-      const canWrite =
+      // The server's answer when it has one; otherwise the old trial / paid_until rule.
+      const canWrite = entitlements ? entitlements.can_write :
         gym.status === 'active' &&
         !!subscription &&
         ((subscription.status === 'trial' && !!subscription.trial_ends_at && Date.parse(subscription.trial_ends_at) > now) ||
           (subscription.status === 'active' && (!subscription.paid_until || Date.parse(subscription.paid_until) > now)));
-      return { gym: gym as Gym, role, subscription, canWrite, can: (p) => set.has(p) };
+      const has = (f: string) => !entitlements || entitlements.features?.[f as keyof Entitlements['features']] !== false;
+      return { gym: gym as Gym, role, subscription, entitlements, canWrite, has, can: (p) => set.has(p) };
     },
   });
 }
