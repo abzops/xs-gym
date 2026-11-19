@@ -314,6 +314,29 @@ returns trigger language plpgsql security definer set search_path = '' as $$
 declare v_plan text;
 begin
   if new.state is null then return new; end if;
+  -- A hand edit of the old columns (support scripts, older tools) is translated
+  -- into the new model instead of being silently overwritten.
+  if tg_op = 'UPDATE' and new.state is not distinct from old.state
+     and new.current_period_end is not distinct from old.current_period_end
+     and new.complimentary_until is not distinct from old.complimentary_until
+     and (new.status is distinct from old.status or new.paid_until is distinct from old.paid_until) then
+    if new.status = 'active' then
+      new.state := 'ACTIVE';
+      new.complimentary_until := coalesce(new.paid_until, 'infinity');
+      new.complimentary_reason := 'Set by hand on the legacy columns';
+      new.current_period_start := coalesce(new.current_period_start, now());
+      new.current_period_end := new.paid_until;
+    elsif new.status = 'trial' then
+      new.state := 'TRIALING';
+    elsif new.status = 'suspended' then
+      new.state := 'EXPIRED';
+      new.complimentary_until := null;
+      new.current_period_end := least(coalesce(new.current_period_end, now()), now());
+    end if;
+    insert into public.saas_subscription_events (gym_id, event, from_state, to_state, source, actor, details)
+    values (new.gym_id, 'legacy.edit', old.state, new.state, 'system', auth.uid(),
+            jsonb_build_object('status', new.status, 'paid_until', new.paid_until));
+  end if;
   new.status := case new.state when 'TRIALING' then 'trial' when 'EXPIRED' then 'suspended' else 'active' end;
   select plan_id into v_plan from public.saas_plan_versions where id = new.plan_version_id;
   if v_plan is not null then new.plan := v_plan; end if;

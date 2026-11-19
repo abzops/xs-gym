@@ -368,6 +368,13 @@ select t.eq(jsonb_array_length(public.admin_subscriptions()) >= 5, true, 'subscr
 select t.eq(jsonb_typeof(public.admin_gym_billing(t.id('gymE'))->'events'), 'array', 'customer billing history');
 reset role;
 
+-- ================================================================ hand edits of the old columns are translated, not lost
+update public.gym_subscriptions set status = 'active', paid_until = now() + interval '1 year' where gym_id = t.id('gymE3');
+select t.eq((t.sub(t.id('gymE3'))).state, 'ACTIVE', 'legacy edit: active → ACTIVE');
+select t.eq(private.can_write(t.id('gymE3')), true, 'legacy edit: write access granted');
+select t.eq((t.sub(t.id('gymE3'))).complimentary_until > now() + interval '364 days', true, 'legacy edit: recorded as complimentary until paid_until');
+select t.eq((select count(*) from public.saas_subscription_events where gym_id = t.id('gymE3') and event = 'legacy.edit')::int, 1, 'legacy edit: logged');
+
 -- ================================================================ member money untouched
 select t.eq((select md5(string_agg(x, ',' order by x)) from (
   select id::text || amount_paise || method x from public.payments
