@@ -429,6 +429,27 @@ select t.eq((select count(*) from public.gyms)::int, 0, 'switched-off staff logi
 select t.eq((select count(*) from public.members)::int, 0, 'switched-off staff login sees no members');
 select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000a1', false);
 
+-- Removing staff
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000a2', false);
+select t.fails($$select public.remove_staff(t.id('gymA'), t.id('staffRavi'))$$, 'XS403', 'reception cannot remove staff');
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000b1', false);
+select t.fails($$select public.remove_staff(t.id('gymA'), t.id('staffRavi'))$$, 'XS403', 'other gym cannot remove staff');
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000a1', false);
+select t.fails($$select public.remove_staff(t.id('gymA'), (select id from public.gym_staff where gym_id = t.id('gymA') and role = 'owner'))$$, 'XS403', 'owner cannot be removed');
+select t.eq(public.remove_staff(t.id('gymA'), t.id('staffRavi')) ->> 'username', 'ravi.iron', 'owner removes a staff login');
+select t.eq((select count(*) from public.gym_staff where id = t.id('staffRavi'))::int, 0, 'removed staff row is gone');
+select t.eq((select count(*) from public.audit_logs where action = 'staff.removed' and entity_id = t.id('staffRavi'))::int, 1, 'removal audited');
+select t.eq(public.prepare_staff_login(t.id('gymA'), 'Ravi Kumar', '98765 22223', 'reception') ->> 'phone', '+919876522223', 'phone free again after removal');
+insert into t.ids select 'deskStaff', id from public.gym_staff where email = 'desk.a@test.local';
+select t.eq(public.remove_staff(t.id('gymA'), t.id('deskStaff')) ->> 'username', null, 'email staff removed from gym (account kept)');
+reset role;
+select t.eq((select count(*) from auth.users where email = 'desk.a@test.local')::int, 1, 'their own account is not deleted');
+set role authenticated;
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000a2', false);
+select t.eq((select count(*) from public.members)::int, 0, 'removed staff sees no members');
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000a1', false);
+select public.save_staff(t.id('gymA'), 'desk.a@test.local', 'reception');
+
 -- Expired subscription: read-only
 reset role;
 update public.gym_subscriptions set trial_ends_at = now() - interval '1 minute' where gym_id = t.id('gymA');

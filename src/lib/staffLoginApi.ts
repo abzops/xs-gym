@@ -19,3 +19,6 @@ export const createStaffLogin = (gymId: string, name: string, phone: string, rol
 
 export const resetStaffPassword = (gymId: string, staffId: string) =>
   call<Credentials>({ action: 'reset', gym_id: gymId, staff_id: staffId });
+
+export const removeStaffLogin = (gymId: string, staffId: string) =>
+  call<{ removed: true }>({ action: 'remove', gym_id: gymId, staff_id: staffId });

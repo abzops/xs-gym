@@ -1,6 +1,6 @@
 import { staffQuery } from '../../lib/sections';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Copy, KeyRound, MessageCircle, UserPlus } from 'lucide-react';
+import { Copy, KeyRound, MessageCircle, Trash2, UserPlus } from 'lucide-react';
 import { useState } from 'react';
 import { useGym } from '../../app/gym';
 import { AppearanceControl } from '../../components/Appearance';
@@ -9,7 +9,7 @@ import { Field, Loading, Notice, Segmented, Sheet, useToast } from '../../compon
 import { formatDate } from '../../lib/dates';
 import { errorMessage } from '../../lib/errors';
 import { credentialsText, loginUrl, ROLE_ACCESS, type CredentialLang, type Credentials } from '../../lib/staffLogin';
-import { createStaffLogin, resetStaffPassword } from '../../lib/staffLoginApi';
+import { createStaffLogin, removeStaffLogin, resetStaffPassword } from '../../lib/staffLoginApi';
 import { rpc } from '../../lib/supabase';
 import { ROLE_LABEL, type Role, type StaffRow } from '../../lib/types';
 
@@ -182,6 +182,11 @@ function EditStaffSheet({ staff, onClose, onReset }: { staff: StaffRow; onClose:
   const [role, setRole] = useState<StaffRole>(staff.role as StaffRole);
   const [active, setActive] = useState(staff.status === 'active');
   const [confirmReset, setConfirmReset] = useState(false);
+  const [confirmRemove, setConfirmRemove] = useState(false);
+  const remove = useMutation({
+    mutationFn: () => staff.username ? removeStaffLogin(gym.id, staff.id) : rpc('remove_staff', { p_gym: gym.id, p_staff: staff.id }),
+    onSuccess: async () => { await qc.invalidateQueries({ queryKey: ['staff', gym.id] }); toast(`${staff.display_name ?? 'Staff member'} removed`); onClose(); },
+  });
   const save = useMutation({
     mutationFn: () => rpc('update_staff', { p_gym: gym.id, p_staff: staff.id, p_name: name, p_phone: phone || null, p_role: role, p_status: active ? 'active' : 'inactive' }),
     onSuccess: async () => { await qc.invalidateQueries({ queryKey: ['staff', gym.id] }); toast('Staff saved'); onClose(); },
@@ -220,6 +225,24 @@ function EditStaffSheet({ staff, onClose, onReset }: { staff: StaffRow; onClose:
             {reset.error && <Notice tone="bad">{errorMessage(reset.error)}</Notice>}
           </div>
         )}
+        {confirmRemove ? (
+          <Notice tone="bad">
+            <span className="stack">
+              <span>{staff.username
+                ? 'Remove from the gym and delete this login? They can no longer sign in. Their past work stays in the records.'
+                : 'Remove from the gym? They lose access to this gym. Their own XS Gym account is not deleted.'}</span>
+              <span className="row" style={{ gap: 8 }}>
+                <button type="button" className="btn small" onClick={() => setConfirmRemove(false)}>Cancel</button>
+                <button type="button" className="btn small danger" disabled={remove.isPending} onClick={() => remove.mutate()}>
+                  {remove.isPending ? <span className="spinner" /> : 'Remove staff'}
+                </button>
+              </span>
+            </span>
+          </Notice>
+        ) : (
+          <button type="button" className="btn block danger" onClick={() => setConfirmRemove(true)}><Trash2 size={16} aria-hidden /> Remove from gym</button>
+        )}
+        {remove.error && <Notice tone="bad">{errorMessage(remove.error)}</Notice>}
       </form>
     </Sheet>
   );

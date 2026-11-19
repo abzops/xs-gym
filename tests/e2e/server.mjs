@@ -233,6 +233,11 @@ async function staffLogin(body, claims) {
       await pool.query('update auth.passwords set password=$2 where user_id=$1', [t.user_id, pw]);
       return { status: 200, body: { username: t.username, password: pw, name: t.name, phone: t.phone, role: t.role } };
     }
+    if (b.action === 'remove') {
+      const r = await asUser('select public.remove_staff($1, $2) j', [b.gym_id, b.staff_id]);
+      if (r.username) { await pool.query('delete from auth.passwords where user_id=$1', [r.user_id]); await pool.query('delete from auth.users where id=$1', [r.user_id]); }
+      return { status: 200, body: { removed: true } };
+    }
     return { status: 400, body: { error: 'XS400: unknown action' } };
   } catch (e) {
     return { status: e.code === '42501' ? 403 : 400, body: { error: e.message } };

@@ -176,6 +176,29 @@ begin
 end;
 $$;
 
+-- Remove a staff member from the gym (not the owner, not yourself). The row is
+-- deleted; the audit log keeps who they were. For logins made in XS Gym the
+-- Edge Function then deletes the auth account as well.
+create function public.remove_staff(p_gym uuid, p_staff uuid)
+returns jsonb language plpgsql security definer set search_path = '' as $$
+declare v_staff public.gym_staff;
+begin
+  perform private.require(p_gym, 'staff.manage');
+  select * into v_staff from public.gym_staff where id = p_staff and gym_id = p_gym;
+  if v_staff.id is null then
+    raise exception 'XS404: staff member not found' using errcode = 'P0002';
+  end if;
+  if v_staff.role = 'owner' or v_staff.user_id = auth.uid() then
+    raise exception 'XS403: the owner cannot be removed' using errcode = '42501';
+  end if;
+  delete from public.gym_staff where id = p_staff;
+  perform private.audit(p_gym, 'staff.removed', 'gym_staff', v_staff.id,
+    jsonb_build_object('name', v_staff.display_name, 'username', v_staff.username,
+                       'email', v_staff.email, 'role', v_staff.role));
+  return jsonb_build_object('user_id', v_staff.user_id, 'username', v_staff.username);
+end;
+$$;
+
 revoke execute on function private.staff_login_domain() from public, anon;
 revoke execute on function private.staff_role_check(text) from public, anon;
 revoke execute on function private.staff_name_check(text) from public, anon;
@@ -187,7 +210,9 @@ revoke execute on function public.prepare_staff_login(uuid, text, text, text) fr
 revoke execute on function public.attach_staff_login(uuid, uuid, text, text, text, text) from public, anon;
 revoke execute on function public.prepare_staff_password_reset(uuid, uuid) from public, anon;
 revoke execute on function public.update_staff(uuid, uuid, text, text, text, text) from public, anon;
+revoke execute on function public.remove_staff(uuid, uuid) from public, anon;
 grant execute on function public.prepare_staff_login(uuid, text, text, text) to authenticated;
 grant execute on function public.attach_staff_login(uuid, uuid, text, text, text, text) to authenticated;
 grant execute on function public.prepare_staff_password_reset(uuid, uuid) to authenticated;
 grant execute on function public.update_staff(uuid, uuid, text, text, text, text) to authenticated;
+grant execute on function public.remove_staff(uuid, uuid) to authenticated;

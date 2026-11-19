@@ -800,6 +800,21 @@ with sync_playwright() as p:
         finally:
             sctx.close()
 
+    @step('staff login: owner removes the staff member; login is deleted')
+    def _():
+        username, _ = state['staff_login']
+        expect(dialog()).to_have_count(0, timeout=5000)
+        tap(page.locator('main').get_by_role('button', name=re.compile('Ravi Desk')))
+        d = dialog()
+        tap(d.get_by_role('button', name='Remove from gym'))
+        expect(d).to_contain_text('delete this login')
+        tap(d.get_by_role('button', name='Remove staff'))
+        toast('Ravi Desk removed')
+        expect(page.locator('main')).not_to_contain_text('Ravi Desk', timeout=8000)
+        assert sql(f"select count(*) from gym_staff where username = '{username}'")[0][0] == '0'
+        assert sql(f"select count(*) from auth.users where email = '{username}@staff.xelorsoft.com'")[0][0] == '0'
+        assert sql(f"select count(*) from audit_logs where gym_id = '{state['gym']}' and action = 'staff.removed'")[0][0] == '1'
+
     @step('import CSV: good rows added, bad rows explained, duplicates reported')
     def _():
         go(base() + '/members/import')

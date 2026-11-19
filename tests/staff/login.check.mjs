@@ -87,7 +87,25 @@ res = await post({ action: 'reset', gym_id: GYM, staff_id: STAFF });
 body = await res.json();
 check('reset checks as owner, then sets a new password', res.status === 200 && calls[0].headers.authorization === 'Bearer owner-jwt' && calls[1].method === 'PUT' && calls[1].body.password === body.password && body.username === 'ravi.chaos');
 
+// --- remove
+calls = []; script = {
+  'rpc/remove_staff': () => reply(200, { user_id: USER, username: 'ravi.chaos' }),
+  'admin/users': (c) => c.method === 'DELETE' ? reply(200, {}) : reply(500, {}),
+};
+res = await post({ action: 'remove', gym_id: GYM, staff_id: STAFF });
+check('remove checks as owner, then deletes the made login', res.status === 200 && calls[0].headers.authorization === 'Bearer owner-jwt' && calls[1].method === 'DELETE' && calls[1].url.endsWith(`/admin/users/${USER}`));
+calls = []; script = { 'rpc/remove_staff': () => reply(200, { user_id: USER, username: null }) };
+res = await post({ action: 'remove', gym_id: GYM, staff_id: STAFF });
+check('email staff: own account is never deleted', res.status === 200 && !calls.some((c) => c.url.includes('/auth/v1/admin')));
+calls = []; script = { 'rpc/remove_staff': () => reply(400, { message: 'XS403: you do not have permission to do this' }) };
+res = await post({ action: 'remove', gym_id: GYM, staff_id: STAFF }, 'desk-jwt');
+check('reception cannot remove; nothing deleted', res.status === 403 && !calls.some((c) => c.url.includes('/auth/v1/admin')));
+
 // --- passwords are varied and readable
+script = {
+  'rpc/prepare_staff_password_reset': () => reply(200, { user_id: USER, username: 'ravi.chaos', name: 'Ravi', phone: '+919876522222', role: 'reception' }),
+  'admin/users': (c) => c.method === 'PUT' ? reply(200, { id: USER }) : reply(500, {}),
+};
 const many = new Set();
 for (let i = 0; i < 300; i++) {
   calls = []; res = await post({ action: 'reset', gym_id: GYM, staff_id: STAFF }); many.add((await res.json()).password);

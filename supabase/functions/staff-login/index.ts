@@ -1,6 +1,7 @@
 // Supabase Edge Function: /functions/v1/staff-login
 //   POST { action: 'create', gym_id, name, phone, role } → { staff, username, password }
 //   POST { action: 'reset',  gym_id, staff_id }          → { username, password, name, phone, role }
+//   POST { action: 'remove', gym_id, staff_id }          → { removed: true }  (deletes logins made in XS Gym)
 //
 // The owner makes a login for a staff member; no email or sign-up is needed.
 // Every permission check runs in the database as the signed-in owner
@@ -120,6 +121,22 @@ async function resetPassword(b: Record<string, unknown>, token: string) {
   return { username: t.username, password, name: t.name, phone: t.phone, role: t.role };
 }
 
+async function removeStaff(b: Record<string, unknown>, token: string) {
+  const gym = String(b.gym_id ?? '');
+  const staffId = String(b.staff_id ?? '');
+  if (!UUID.test(gym) || !UUID.test(staffId)) throw new ApiError('XS422: staff member is missing', 400);
+  const r = await rpcAsUser<{ user_id: string; username: string | null }>('remove_staff', { p_gym: gym, p_staff: staffId }, token);
+  // Only logins made in XS Gym are deleted; people who signed up keep their own account.
+  if (r.username) {
+    await admin('DELETE', `/${r.user_id}`).catch(async () => {
+      // Still referenced somewhere: block sign-in instead (they already see nothing).
+      await admin('PUT', `/${r.user_id}`, { ban_duration: '876000h' }).catch(() => console.error('staff-login remove: could not delete or block', r.user_id));
+    });
+  }
+  console.log('staff-login removed', gym);
+  return { removed: true };
+}
+
 Deno.serve(async (req) => {
   const origin = req.headers.get('origin') ?? '';
   const cors = {
@@ -142,6 +159,7 @@ Deno.serve(async (req) => {
     if (!body || typeof body !== 'object' || Array.isArray(body)) throw new ApiError('XS400: request body must be a JSON object', 400);
     if (body.action === 'create') return json(200, await createLogin(body, token));
     if (body.action === 'reset') return json(200, await resetPassword(body, token));
+    if (body.action === 'remove') return json(200, await removeStaff(body, token));
     throw new ApiError('XS400: unknown action', 400);
   } catch (e) {
     const status = e instanceof ApiError ? e.status : 500;
