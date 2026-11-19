@@ -8,6 +8,7 @@ import { formatINR } from '../../lib/money';
 import { analyticsQuery, type Analytics } from '../../lib/sections';
 import { BarList, ChartCard, ColumnChart, LineChart, ShareBar } from './charts';
 import { DailyReport, MemberReport } from './reports';
+import { UpgradePrompt } from '../billing/UpgradePrompt';
 import './analytics.css';
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -35,13 +36,19 @@ type Range = '3' | '6' | '12';
 type Tab = 'overview' | 'daily' | 'dues' | 'expiring';
 
 export function AnalyticsPage() {
-  const [tab, setTab] = useState<Tab>('overview');
+  const { has } = useGym();
+  const charts = has('analytics');
+  const [tab, setTab] = useState<Tab>(charts ? 'overview' : 'daily');
   return (
     <div className="stack lg">
       <div className="page-head"><h1>Analytics</h1></div>
       <Segmented label="View" value={tab} onChange={setTab}
         options={[{ value: 'overview', label: 'Overview' }, { value: 'daily', label: 'Daily' }, { value: 'dues', label: 'Dues' }, { value: 'expiring', label: 'Expiring' }]} />
-      {tab === 'overview' && <Overview />}
+      {tab === 'overview' && (charts ? <Overview /> : (
+        <UpgradePrompt feature="analytics" title="See how your gym is doing">
+          Revenue, profit, renewals, churn and charts for the last 3 to 12 months.
+        </UpgradePrompt>
+      ))}
       {tab === 'daily' && <DailyReport />}
       {tab === 'dues' && <MemberReport kind="dues" />}
       {tab === 'expiring' && <MemberReport kind="expiring" />}

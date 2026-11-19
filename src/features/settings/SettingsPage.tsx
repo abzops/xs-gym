@@ -2,9 +2,11 @@ import { staffQuery } from '../../lib/sections';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Copy, KeyRound, MessageCircle, Trash2, UserPlus } from 'lucide-react';
 import { useState } from 'react';
+import { Link, Navigate, useSearchParams } from 'react-router';
+import { isComplimentary, STATE_LABEL, STATE_TONE } from '../../lib/billingApi';
+import { statusLine } from '../billing/status';
 import { useGym } from '../../app/gym';
 import { AppearanceControl } from '../../components/Appearance';
-import { SubscriptionSection } from './Subscription';
 import { waLink } from '../../components/WhatsApp';
 import { Field, Loading, Notice, Segmented, Sheet, useToast } from '../../components/ui';
 import { errorMessage } from '../../lib/errors';
@@ -14,7 +16,10 @@ import { rpc } from '../../lib/supabase';
 import { ROLE_LABEL, type Role, type StaffRow } from '../../lib/types';
 
 export function SettingsPage() {
-  const { can } = useGym();
+  const { can, gym } = useGym();
+  const [params] = useSearchParams();
+  // Payment links made before the Subscription page existed return here.
+  if (params.get('billing')) return <Navigate to={`/g/${gym.slug}/billing?${params.toString()}`} replace />;
   return (
     <div className="stack lg" style={{ maxWidth: 820 }}>
       <div className="page-head"><h1>Settings</h1></div>
@@ -24,7 +29,7 @@ export function SettingsPage() {
       </section>
       {can('gym.settings') && <GymSettings />}
       <StaffSection />
-      <SubscriptionSection />
+      <SubscriptionSummary />
     </div>
   );
 }
@@ -271,5 +276,19 @@ function CredentialsSheet({ creds, reset, onClose }: { creds: Credentials; reset
         <button type="button" className="text-link" onClick={onClose}>Done</button>
       </div>
     </Sheet>
+  );
+}
+
+function SubscriptionSummary() {
+  const { gym, can, entitlements: ent } = useGym();
+  return (
+    <section className="card stack">
+      <div className="card-head">
+        <h2>Subscription</h2>
+        {ent && <span className={`badge ${isComplimentary(ent) ? 'ok' : STATE_TONE[ent.effective_state]}`}>{isComplimentary(ent) ? 'Complimentary' : STATE_LABEL[ent.effective_state]}</span>}
+      </div>
+      {ent ? <p className="muted">XS Gym {ent.plan_name}. {statusLine(ent)}</p> : <p className="muted">No subscription found.</p>}
+      {can('billing.manage') && <div className="row"><Link className="btn" to={`/g/${gym.slug}/billing`}>Plans, payments and invoices</Link></div>}
+    </section>
   );
 }

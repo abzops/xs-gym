@@ -1,0 +1,126 @@
+/* XS Gym billing, pricing and Xelorsoft admin. Uses the app's tokens only. */
+
+/* ---------- plan cards (pricing page and Subscription) ---------- */
+.plan-grid { display: grid; gap: 14px; grid-template-columns: 1fr; }
+@media (min-width: 860px) { .plan-grid { grid-template-columns: repeat(3, 1fr); align-items: stretch; } }
+.plan-card {
+  position: relative; display: flex; flex-direction: column; gap: 14px;
+  background: var(--paper); border: 1px solid var(--hair); border-radius: var(--r-xl); padding: 22px 20px 20px;
+  box-shadow: var(--elev-1, 0 1px 2px rgba(0,0,0,.05));
+}
+.plan-card.featured { border-color: var(--ink); box-shadow: var(--elev-2, 0 8px 24px rgba(0,0,0,.08)); }
+.plan-card.current { outline: 2px solid var(--ok-vivid); outline-offset: -2px; }
+.plan-card .plan-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.plan-card h3 { margin: 0; font-size: var(--t-lg); font-weight: 700; letter-spacing: -0.01em; }
+.plan-card .tagline { margin: 0; color: var(--graphite); font-size: var(--t-sm); min-height: 2.6em; }
+.plan-price { display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap; }
+.plan-price .amount { font-size: 2.1rem; font-weight: 700; letter-spacing: -0.03em; font-variant-numeric: tabular-nums; line-height: 1; }
+.plan-price .per { color: var(--graphite); font-size: var(--t-sm); }
+.plan-price-note { margin: -6px 0 0; color: var(--graphite); font-size: var(--t-xs); min-height: 1.3em; }
+.plan-feats { list-style: none; margin: 0; padding: 0; display: grid; gap: 9px; font-size: var(--t-sm); }
+.plan-feats li { display: grid; grid-template-columns: 18px 1fr; gap: 8px; align-items: start; }
+.plan-feats li svg { margin-top: 2px; }
+.plan-feats li.head { display: block; font-weight: 700; margin-top: 4px; }
+.plan-feats li.soon { color: var(--graphite); }
+.plan-card .grow { flex: 1; }
+.provisional-pill {
+  display: inline-flex; align-items: center; gap: 6px; font-size: var(--t-xs); font-weight: 600;
+  color: var(--warn); background: var(--warn-bg); border-radius: 999px; padding: 4px 10px;
+}
+.cycle-switch { display: flex; justify-content: center; }
+.save-chip { margin-left: 6px; font-size: var(--t-xs); font-weight: 700; color: var(--ok); }
+
+/* ---------- comparison table ---------- */
+.compare { width: 100%; border-collapse: collapse; font-size: var(--t-sm); }
+.compare th, .compare td { padding: 12px 10px; border-bottom: 1px solid var(--hair); text-align: center; }
+.compare th:first-child, .compare td:first-child { text-align: left; }
+.compare thead th { font-weight: 700; position: sticky; top: 0; background: var(--paper); }
+.compare td .soon { font-size: var(--t-xs); color: var(--graphite); }
+.compare-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+
+/* ---------- subscription page ---------- */
+.sub-hero {
+  border-radius: var(--r-xl); padding: 22px 20px; background: var(--nav-bg); color: var(--nav-ink);
+  display: grid; gap: 14px;
+}
+.sub-hero .eyebrow { color: var(--nav-muted); font-size: var(--t-xs); text-transform: uppercase; letter-spacing: .08em; font-weight: 600; }
+.sub-hero h2 { margin: 0; font-size: 1.6rem; letter-spacing: -0.02em; color: #fff; }
+.sub-hero .when { color: var(--nav-muted); font-size: var(--t-sm); }
+.sub-hero .row { flex-wrap: wrap; }
+.sub-hero .badge { align-self: start; }
+.meters { display: grid; gap: 12px; grid-template-columns: 1fr; }
+@media (min-width: 640px) { .meters { grid-template-columns: 1fr 1fr; } }
+.meter { display: grid; gap: 6px; }
+.meter .label { display: flex; justify-content: space-between; font-size: var(--t-sm); }
+.meter .bar { height: 8px; border-radius: 99px; background: var(--hair); overflow: hidden; }
+.meter .bar > span { display: block; height: 100%; border-radius: inherit; background: var(--ink); transition: width .4s var(--ease-out); }
+.meter.near .bar > span { background: var(--warn-vivid); }
+.meter.full .bar > span { background: var(--bad-vivid); }
+.terms { color: var(--graphite); font-size: var(--t-sm); line-height: 1.55; }
+.quote { display: grid; gap: 8px; }
+.quote .line { display: flex; justify-content: space-between; gap: 12px; font-size: var(--t-sm); }
+.quote .line.total { font-size: var(--t-md); font-weight: 700; border-top: 1px solid var(--hair); padding-top: 10px; }
+
+/* ---------- upgrade prompt (gated pages) ---------- */
+.upgrade-card { text-align: center; display: grid; gap: 12px; justify-items: center; padding: 34px 22px; }
+.upgrade-card .icon { width: 52px; height: 52px; border-radius: 16px; display: grid; place-items: center; background: var(--paper-2, var(--hair)); }
+.upgrade-card p { margin: 0; color: var(--graphite); max-width: 420px; }
+
+/* ---------- invoice ---------- */
+.invoice { background: #fff; color: #111; max-width: 760px; margin: 0 auto; padding: 32px; border-radius: var(--r-lg); border: 1px solid var(--hair); }
+.invoice h1 { font-size: 1.4rem; margin: 0; }
+.invoice .inv-head { display: flex; justify-content: space-between; gap: 18px; flex-wrap: wrap; border-bottom: 2px solid #111; padding-bottom: 16px; margin-bottom: 18px; }
+.invoice .parties { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; font-size: var(--t-sm); margin-bottom: 18px; }
+.invoice .parties b { display: block; margin-bottom: 4px; text-transform: uppercase; font-size: var(--t-xs); letter-spacing: .06em; color: #555; }
+.invoice table { width: 100%; border-collapse: collapse; font-size: var(--t-sm); }
+.invoice td, .invoice th { padding: 9px 6px; border-bottom: 1px solid #e3e3e3; text-align: left; }
+.invoice td.n, .invoice th.n { text-align: right; font-variant-numeric: tabular-nums; }
+.invoice tr.total td { font-weight: 700; border-bottom: 2px solid #111; font-size: var(--t-md); }
+.invoice .fine { color: #555; font-size: var(--t-xs); margin-top: 18px; line-height: 1.5; }
+.invoice .test-stamp { color: #C93400; border: 2px solid #C93400; border-radius: 6px; padding: 2px 8px; font-weight: 800; font-size: var(--t-xs); }
+@media (max-width: 560px) { .invoice { padding: 18px; } .invoice .parties { grid-template-columns: 1fr; } }
+@media print {
+  .no-print, .sidebar, .tabbar, .topbar, .xsai-fab { display: none !important; }
+  .invoice { border: 0; padding: 0; }
+  body, .content, .main { background: #fff !important; }
+}
+
+/* ---------- public pricing page ---------- */
+.pr-hero { padding: 132px 0 40px; text-align: center; color: #fff; }
+.pr-hero h1 { font-size: clamp(2rem, 6vw, 3.4rem); letter-spacing: -0.035em; margin: 0 0 12px; line-height: 1.05; }
+.pr-hero p { color: var(--silver); margin: 0 auto; max-width: 560px; font-size: var(--t-md); }
+.pr-body { background: var(--canvas); padding: 36px 0 64px; }
+.pr-body .stack.xl > * { min-width: 0; }
+.pr-note { text-align: center; color: var(--graphite); font-size: var(--t-sm); max-width: 680px; margin: 0 auto; line-height: 1.55; }
+.pr-faq dt { font-weight: 700; margin-top: 16px; }
+.pr-faq dd { margin: 6px 0 0; color: var(--graphite); line-height: 1.55; }
+
+/* ---------- Xelorsoft admin ---------- */
+.admin-tabs { overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; max-width: 100%; }
+.admin-tabs::-webkit-scrollbar { display: none; }
+.admin-tabs .segmented { min-width: max-content; }
+.admin-shell { min-height: 100dvh; background: var(--canvas); }
+.admin-top { position: sticky; top: 0; z-index: 5; background: var(--nav-bg); color: var(--nav-ink); }
+.admin-top-in { max-width: 1240px; margin: 0 auto; padding: 12px 18px; display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.admin-top .who { margin-left: auto; color: var(--nav-muted); font-size: var(--t-sm); }
+.admin-main { max-width: 1240px; margin: 0 auto; padding: 20px 18px 60px; }
+.kpis { display: grid; gap: 12px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+@media (min-width: 760px) { .kpis { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+.kpi { background: var(--paper); border: 1px solid var(--hair); border-radius: var(--r-lg); padding: 14px 16px; display: grid; gap: 4px; min-width: 0; }
+.kpi .k { font-size: var(--t-xs); color: var(--graphite); text-transform: uppercase; letter-spacing: .06em; font-weight: 600; }
+.kpi .v { font-size: 1.5rem; font-weight: 700; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.kpi .s { font-size: var(--t-xs); color: var(--graphite); }
+.dist { display: grid; gap: 8px; }
+.dist .r { display: grid; grid-template-columns: 110px 1fr 40px; align-items: center; gap: 10px; font-size: var(--t-sm); }
+.dist .r .bar { height: 10px; background: var(--hair); border-radius: 99px; overflow: hidden; }
+.dist .r .bar span { display: block; height: 100%; background: var(--ink); border-radius: inherit; }
+.dist .r .n { text-align: right; font-variant-numeric: tabular-nums; }
+.adm-table { width: 100%; border-collapse: collapse; font-size: var(--t-sm); }
+.adm-table th, .adm-table td { padding: 10px 10px; border-bottom: 1px solid var(--hair); text-align: left; white-space: nowrap; }
+.adm-table th { font-size: var(--t-xs); text-transform: uppercase; letter-spacing: .05em; color: var(--graphite); font-weight: 600; }
+.adm-table td.n { text-align: right; font-variant-numeric: tabular-nums; }
+.adm-table tbody tr { cursor: pointer; }
+.adm-table tbody tr:hover { background: var(--paper-2, var(--hair)); }
+.defs { font-size: var(--t-sm); color: var(--graphite); display: grid; gap: 6px; }
+.defs b { color: var(--ink); }
+.json { font-family: var(--mono); font-size: 11px; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--graphite); max-height: 160px; overflow: auto; }

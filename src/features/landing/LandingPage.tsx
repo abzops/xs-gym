@@ -249,7 +249,7 @@ export function LandingPage() {
         <div className="lp-wrap lp-nav-in">
           <Link to="/" aria-label="XS Gym home"><Logo onDark width={132} /></Link>
           <nav className="lp-links" aria-label="Sections">
-            <a href="#desk">Front desk</a><a href="#money">Payments</a><a href="#features">Features</a><a href="#faq">Questions</a>
+            <a href="#desk">Front desk</a><a href="#money">Payments</a><a href="#features">Features</a><Link to="/pricing">Pricing</Link><a href="#faq">Questions</a>
           </nav>
           <div className="row">
             <Link className="btn ghost on-dark" to="/login">Sign in</Link>
@@ -386,7 +386,10 @@ export function LandingPage() {
           <Reveal className="cta-in">
             <h2>Try it on tomorrow morning’s rush.</h2>
             <p>30 days, every feature, your own data.</p>
-            <Link className="btn primary on-dark lg" to="/login?mode=signup">Start free trial</Link>
+            <div className="row" style={{ justifyContent: 'center' }}>
+              <Link className="btn primary on-dark lg" to="/login?mode=signup">Start free trial</Link>
+              <Link className="btn on-dark lg" to="/pricing">See pricing</Link>
+            </div>
           </Reveal>
         </div>
       </section>

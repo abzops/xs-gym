@@ -90,19 +90,20 @@ export const pageModules = {
   receipt: () => import('../features/payments/ReceiptPage'),
   import: () => import('../features/members/ImportPage'),
   settings: () => import('../features/settings/SettingsPage'),
+  billing: () => import('../features/billing/BillingPage'),
 };
 
 type Section = '' | 'members' | 'payments' | 'plans' | 'expenses' | 'analytics' | 'enquiries' | 'settings';
 
 /** Warms code and data for one section. Cheap when already fresh (staleTime). */
-export function prefetchSection(qc: QueryClient, gym: Gym, section: string) {
+export function prefetchSection(qc: QueryClient, gym: Gym, section: string, has: (feature: string) => boolean = () => true) {
   const today = todayInGym(gym.timezone);
   switch (section as Section) {
     case 'members': return qc.prefetchQuery(membersQuery(gym.id, '', 'all', gym.timezone));
     case 'payments': pageModules.payments(); return qc.prefetchQuery(paymentsDayQuery(gym.id, today));
     case 'plans': pageModules.plans(); return qc.prefetchQuery(plansQuery(gym.id, true));
     case 'expenses': pageModules.expenses(); return qc.prefetchQuery(expensesMonthQuery(gym.id, today.slice(0, 7)));
-    case 'analytics': pageModules.analytics(); return qc.prefetchQuery(analyticsQuery(gym.id, 6));
+    case 'analytics': pageModules.analytics(); return has('analytics') ? qc.prefetchQuery(analyticsQuery(gym.id, 6)) : undefined;
     case 'enquiries': pageModules.enquiries(); return qc.prefetchQuery(enquiriesQuery(gym.id));
     case 'settings': pageModules.settings(); return qc.prefetchQuery(staffQuery(gym.id));
     default: return undefined;
