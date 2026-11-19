@@ -52,6 +52,8 @@ Deno.serve(async (req) => {
   if (!res.ok) {
     const msg = out?.message ?? `db ${res.status}`;
     if (/^XS404/.test(msg)) return reply(200, { ignored: 'unknown link' });
+    // Test-mode payment for a real gym: refused for good, so stop Razorpay retrying.
+    if (/^XS403/.test(msg)) { console.error('xs-billing-webhook refused', notes.gym_id ?? ''); return reply(200, { ignored: 'refused' }); }
     console.error('xs-billing-webhook apply', res.status, msg.slice(0, 200));
     return reply(500, { error: 'apply failed' }); // Razorpay retries
   }

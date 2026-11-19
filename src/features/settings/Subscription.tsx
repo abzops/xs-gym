@@ -7,7 +7,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router';
 import { useGym } from '../../app/gym';
 import { Notice } from '../../components/ui';
-import { checkSubscriptionPayment, loadPrices, loadSubscriptionPayments, startSubscriptionPayment, type SaasPayment } from '../../lib/billingApi';
+import { checkSubscriptionPayment, loadBillingStatus, loadPrices, loadSubscriptionPayments, startSubscriptionPayment, type SaasPayment } from '../../lib/billingApi';
 import { formatDate } from '../../lib/dates';
 import { errorMessage } from '../../lib/errors';
 import { formatINR } from '../../lib/money';
@@ -26,7 +26,10 @@ export function SubscriptionSection() {
   const [params, setParams] = useSearchParams();
   const returned = params.get('billing');
 
-  const prices = useQuery({ queryKey: ['saas-prices'], queryFn: loadPrices, enabled: owner, staleTime: 10 * 60_000 });
+  // Payment is open with live keys, or with test keys only for Xelorsoft's test gyms.
+  const billing = useQuery({ queryKey: ['saas-billing-status'], queryFn: loadBillingStatus, enabled: owner, staleTime: 10 * 60_000, retry: 1 });
+  const open = !!billing.data?.configured && (billing.data.mode === 'live' || !!subscription?.billing_test);
+  const prices = useQuery({ queryKey: ['saas-prices'], queryFn: loadPrices, enabled: owner && open, staleTime: 10 * 60_000 });
   const history = useQuery({ queryKey: ['saas-payments', gym.id], queryFn: () => loadSubscriptionPayments(gym.id), enabled: owner });
 
   const start = useMutation({
@@ -91,7 +94,14 @@ export function SubscriptionSection() {
         : null
       )}
 
-      {owner ? (
+      {owner && !open ? (
+        <Notice>
+          {billing.isPending ? 'Checking online payment…'
+            : stillRunning
+              ? `Online payment for XS Gym is opening soon. Your access continues until ${day(periodEnd)}, and Xelorsoft will contact you before then.`
+              : 'Online payment for XS Gym is opening soon. Please contact Xelorsoft at support@xelorsoft.com to renew.'}
+        </Notice>
+      ) : owner ? (
         <div className="stack">
           <p className="muted">
             {stillRunning

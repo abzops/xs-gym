@@ -27,6 +27,10 @@ export const startSubscriptionPayment = (gymId: string, price: string, returnUrl
 export const checkSubscriptionPayment = (gymId: string, paymentId: string) =>
   call<{ status: SaasPayment['status']; paid_until?: string | null }>({ action: 'check', gym_id: gymId, payment_id: paymentId });
 
+/** Whether online payment is set up, and in which Razorpay mode. */
+export const loadBillingStatus = () =>
+  call<{ configured: boolean; mode: 'test' | 'live'; webhook: boolean }>({ action: 'status' });
+
 export async function loadPrices(): Promise<SaasPrice[]> {
   const { data, error } = await supabase.from('saas_prices').select('code,label,months,amount_paise,sort').order('sort');
   if (error) throw error;

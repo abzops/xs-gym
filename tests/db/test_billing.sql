@@ -33,8 +33,33 @@ select t.fails($$select public.prepare_saas_payment(t.id('gymC'), 'monthly')$$, 
 select t.fails($$select public.apply_saas_payment('plink_x', 'pay_x', 49900)$$, 'permission denied', 'billing: client cannot apply a payment');
 select t.fails($$insert into public.saas_payments (gym_id, price_code, months, amount_paise, created_by) values (t.id('gymC'), 'monthly', 1, 1, auth.uid())$$, 'permission denied', 'billing: client cannot insert a payment');
 
--- Server records a link, then applies it
+-- Test-mode guard: a real gym cannot get paid time from a Razorpay test payment
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000d1', false);
+select t.eq(public.prepare_saas_payment(t.id('gymC'), 'monthly')->>'billing_test', 'false', 'billing: real gym is not a test gym');
 reset role;
+insert into public.saas_payments (gym_id, price_code, months, amount_paise, created_by, link_id, mode)
+  values (t.id('gymC'), 'monthly', 1, 49900, '00000000-0000-0000-0000-0000000000d1', 'plink_test_0', 'test');
+set role service_role;
+select t.fails($$select public.apply_saas_payment('plink_test_0', 'pay_0', 49900)$$, 'XS403', 'billing: test payment refused for a real gym');
+reset role;
+select t.eq((select status from public.gym_subscriptions where gym_id = t.id('gymC')), 'trial', 'billing: real gym still on trial after test payment');
+select t.eq((select status from public.saas_payments where link_id = 'plink_test_0'), 'created', 'billing: refused test payment not marked paid');
+update public.saas_payments set status = 'cancelled' where link_id = 'plink_test_0';
+set role authenticated;
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000d1', false);
+-- Real Supabase grants table privileges and relies on RLS (no update policy = 0 rows); the shim refuses outright. Either way nothing changes.
+do $$ begin update public.gym_subscriptions set billing_test = true where gym_id = t.id('gymC'); exception when insufficient_privilege then null; end $$;
+reset role;
+select t.eq((select billing_test from public.gym_subscriptions where gym_id = t.id('gymC')), false, 'billing: test flag unchanged by owner');
+
+-- From here gymC is a Xelorsoft test gym, so the existing flow runs on test links.
+update public.gym_subscriptions set billing_test = true where gym_id = t.id('gymC');
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000d1', false);
+set role authenticated;
+select t.eq(public.prepare_saas_payment(t.id('gymC'), 'monthly')->>'billing_test', 'true', 'billing: test gym flagged in prepare');
+reset role;
+
+-- Server records a link, then applies it
 insert into public.saas_payments (gym_id, price_code, months, amount_paise, created_by, link_id, mode)
   values (t.id('gymC'), 'monthly', 1, 49900, '00000000-0000-0000-0000-0000000000d1', 'plink_test_1', 'test');
 set role service_role;
@@ -53,7 +78,7 @@ set role authenticated;
 select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000d1', false);
 select t.fails($$select public.create_member(t.id('gymC'), 'Late', '9000000077')$$, 'XS402', 'billing: ended subscription is read-only');
 select t.eq((public.prepare_saas_payment(t.id('gymC'), 'yearly')->>'months')::int, 12, 'billing: ended gym can still pay');
-select t.eq((select count(*) from public.saas_payments where gym_id = t.id('gymC'))::int, 1, 'billing: owner reads own payments');
+select t.eq((select count(*) from public.saas_payments where gym_id = t.id('gymC'))::int, 2, 'billing: owner reads own payments');
 reset role;
 insert into public.saas_payments (gym_id, price_code, months, amount_paise, created_by, link_id, mode)
   values (t.id('gymC'), 'yearly', 12, 499000, '00000000-0000-0000-0000-0000000000d1', 'plink_test_2', 'test');

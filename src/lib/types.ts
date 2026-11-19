@@ -18,6 +18,8 @@ export type StaffRow = {
 export type Subscription = {
   gym_id: string; plan: 'starter' | 'growth' | 'max'; status: 'trial' | 'active' | 'suspended';
   trial_started_at: string | null; trial_ends_at: string | null; paid_until: string | null;
+  /** Xelorsoft-only: this gym may pay with Razorpay test keys. */
+  billing_test?: boolean;
 };
 
 export type MemberOverview = {

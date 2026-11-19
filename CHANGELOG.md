@@ -5,6 +5,16 @@ Versions follow semantic versioning from the first app release.
 
 ## [Unreleased]
 
+### Fixed — Razorpay test mode can no longer give a real gym paid time (19 Nov 2026)
+
+- `gym_subscriptions.billing_test` (Xelorsoft-only; demo gym = true). With test keys,
+  `xs-billing` refuses to make a link for any other gym, `apply_saas_payment` refuses a
+  test-mode payment for it, and the webhook acknowledges the refusal so Razorpay stops retrying.
+- Settings → Subscription hides prices and pay buttons for real gyms until live keys exist,
+  and says access continues until the trial/paid date.
+- Repo migration `staff_logins` renamed to its production version (20261119080643).
+- Tests: 6 DB checks, 8 billing function contract checks (new, in CI).
+
 ### Added — Pay for XS Gym with Razorpay (19 Nov 2026)
 
 - Settings → Subscription: the gym owner picks Monthly or Yearly and pays on Razorpay's

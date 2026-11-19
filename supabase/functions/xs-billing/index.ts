@@ -3,6 +3,9 @@
 //        Makes a Razorpay payment link for the gym owner. The app sends the owner to `url`;
 //        Razorpay sends them back to return_url (?billing=<payment_id>&razorpay_...).
 //   POST { action: 'check', gym_id, payment_id }          → { status, paid_until? }
+//   POST { action: 'status' }                              → { configured, mode, webhook }
+//        With test keys only gyms marked billing_test (Xelorsoft's demo gym) can pay;
+//        start refuses everyone else and apply_saas_payment refuses test payments for them.
 //        Asks Razorpay whether the link is paid and, if so, applies it (idempotent).
 //
 // The owner's permission is checked in the database as the signed-in user
@@ -83,8 +86,11 @@ function safeReturnUrl(raw: unknown): URL {
 
 type Prepared = {
   gym_id: string; gym_name: string; gym_phone: string | null; slug: string; user_id: string; email: string | null;
-  price_code: string; label: string; months: number; amount_paise: number;
+  price_code: string; label: string; months: number; amount_paise: number; billing_test: boolean;
 };
+
+// Test keys must never be used to "pay" for a real gym (only Xelorsoft test gyms).
+const NOT_OPEN = 'XS503: online payment is not open yet. Your XS Gym access continues; Xelorsoft will contact you before it ends.';
 
 async function start(b: Record<string, unknown>, token: string) {
   const gym = String(b.gym_id ?? '');
@@ -96,6 +102,7 @@ async function start(b: Record<string, unknown>, token: string) {
   const p = await rest('/rest/v1/rpc/prepare_saas_payment', {
     method: 'POST', token, body: JSON.stringify({ p_gym: gym, p_price: String(b.price ?? '') }),
   }) as Prepared;
+  if (mode !== 'live' && !p.billing_test) throw new ApiError(NOT_OPEN, 503);
 
   // 2. Record the attempt.
   const [row] = await rest('/rest/v1/saas_payments', {
