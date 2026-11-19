@@ -3,10 +3,11 @@
 //        Makes a Razorpay payment link for the gym owner. The app sends the owner to `url`;
 //        Razorpay sends them back to return_url (?billing=<payment_id>&razorpay_...).
 //   POST { action: 'check', gym_id, payment_id }          → { status, paid_until? }
-//   POST { action: 'status' }                              → { configured, mode, webhook }
-//        With test keys only gyms marked billing_test (Xelorsoft's demo gym) can pay;
-//        start refuses everyone else and apply_saas_payment refuses test payments for them.
 //        Asks Razorpay whether the link is paid and, if so, applies it (idempotent).
+//   POST { action: 'status' }                              → { configured, mode, webhook }
+//
+// With test keys only gyms marked billing_test (Xelorsoft's demo gym) can pay: start
+// refuses everyone else and apply_saas_payment refuses test payments for them.
 //
 // The owner's permission is checked in the database as the signed-in user
 // (prepare_saas_payment, and RLS on saas_payments). The service key only records the
